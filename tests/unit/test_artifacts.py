@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from niharness.domain.artifacts import (
     AcceptanceCriterion,
+    ContextSummary,
     Decision,
     DodItem,
     FinalAnswer,
@@ -17,6 +18,8 @@ from niharness.domain.artifacts import (
     SpecOrigin,
     Task,
     Verdict,
+    grounded,
+    ungrounded_paths,
 )
 from niharness.domain.identity import Digest
 
@@ -154,3 +157,30 @@ def test_artifacts_are_frozen() -> None:
     task = Task(id="a", title="A", intent="do a")
     with pytest.raises(ValidationError):
         task.title = "B"  # type: ignore[misc]  # frozen models refuse assignment
+
+
+def test_a_summary_may_not_invent_files_it_never_saw() -> None:
+    transcript = "read_file src/niharness/domain/gate.py\napply_patch src/niharness/cli/main.py"
+    summary = ContextSummary(
+        files_touched=(
+            "src/niharness/domain/gate.py",
+            "src/niharness/adapters/qdrant/store.py",
+        ),
+        text="touched the gate and, allegedly, a store that was never mentioned",
+    )
+    assert ungrounded_paths(summary, transcript) == ("src/niharness/adapters/qdrant/store.py",)
+    cleaned = grounded(summary, transcript)
+    assert cleaned.files_touched == ("src/niharness/domain/gate.py",)
+    assert cleaned.text == summary.text
+
+
+def test_a_grounded_summary_is_returned_untouched() -> None:
+    transcript = "read_file src/a.py"
+    summary = ContextSummary(files_touched=("src/a.py",), text="read one file")
+    assert grounded(summary, transcript) is summary
+
+
+def test_quoting_a_path_does_not_make_it_invented() -> None:
+    transcript = "the implementer patched src/a.py twice"
+    summary = ContextSummary(files_touched=("`src/a.py`",), text="patched it")
+    assert ungrounded_paths(summary, transcript) == ()

@@ -14,7 +14,7 @@ from typing import Protocol
 
 import structlog
 
-from niharness.domain.artifacts import ContextSummary
+from niharness.domain.artifacts import ContextSummary, grounded, ungrounded_paths
 from niharness.domain.messages import (
     ChatRequest,
     Message,
@@ -80,10 +80,17 @@ class ModelSummarizer:
         )
         response = await self._backend.chat(request)
         summary = ContextSummary.model_validate_json(response.content)
+        invented = ungrounded_paths(summary, transcript)
+        if invented:
+            # A path the transcript never mentioned would send the next step
+            # reading a file that does not exist. Drop it and say so.
+            _log.warning("context.summary_ungrounded", paths=list(invented))
+            summary = grounded(summary, transcript)
         _log.debug(
             "context.summarised",
             decisions=len(summary.decisions),
             failed_attempts=len(summary.failed_attempts),
+            dropped_paths=len(invented),
             tokens=response.usage.completion_tokens,
         )
         return summary

@@ -253,6 +253,39 @@ class ContextSummary(Artifact):
     text: NonEmpty = Field(description="The prose form injected into the window.")
 
 
+def ungrounded_paths(summary: ContextSummary, transcript: str) -> tuple[str, ...]:
+    """Return the paths a summary claims that its source text never mentioned.
+
+    The utility model is the smallest model in the harness, and the failure mode
+    of a small summariser is not clumsy prose, it is invention: a file that was
+    never touched, named confidently. A path in `files_touched` is the one claim
+    that can be checked mechanically, so it is checked - the model's word is not
+    evidence, here or anywhere else in this project.
+
+    Args:
+        summary: what the model produced.
+        transcript: the text it was asked to summarise.
+
+    Returns:
+        The claimed paths that do not occur in the transcript, in order.
+    """
+    return tuple(path for path in summary.files_touched if path.strip("`'\"") not in transcript)
+
+
+def grounded(summary: ContextSummary, transcript: str) -> ContextSummary:
+    """Return `summary` with unsupported path claims removed."""
+    invented = set(ungrounded_paths(summary, transcript))
+    if not invented:
+        return summary
+    return summary.model_copy(
+        update={
+            "files_touched": tuple(
+                path for path in summary.files_touched if path not in invented
+            ),
+        },
+    )
+
+
 class DodItem(Artifact):
     """One line of the Definition of Done checklist, filled by the model."""
 

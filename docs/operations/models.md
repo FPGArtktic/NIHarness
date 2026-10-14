@@ -42,6 +42,42 @@ the same job.
 | **BitNet b1.58-2B-4T** (shipped default) | natively trained ternary, not post-quantized; MIT; `bitnet.cpp` is its reference CPU runtime, so the air-gapped host needs one binary and no CUDA | `bitnet.cpp`'s server does not offer GBNF, so the summary schema cannot be *enforced*, only validated after the fact |
 | **Falcon-E / Falcon-Edge 1B and 3B** (TII) | also natively ternary on the BitNet architecture, released with bf16, BitNet and pre-quantized variants; TII reports Llama-ecosystem compatibility, so it can be served by `llama-server` | the license is a TII Falcon licence rather than plain Apache-2.0 - read the model card before downloading - and the pre-quantized variant is what makes later fine-tuning on this project's own summaries possible |
 
+### How big should it be?
+
+Bigger is cheap in memory and expensive in the only resource that is actually
+scarce here. The numbers, for this model family at 1.58 bits:
+
+| Model | Weights resident | What it costs on a CPU-bound host |
+|---|---|---|
+| Falcon-E-1B | ~0.3 GiB | the cheapest summary; the most likely to invent one |
+| BitNet b1.58-2B-4T | ~0.6 GiB | the shipped default |
+| Falcon-E-3B | ~0.9 GiB | roughly three times the prompt-processing work of the 1B |
+
+None of those threaten a 32 GiB machine, let alone a 64 GiB one - next to about
+18 GiB of coder weights they are a rounding error. The constraint is **cores**,
+not bytes: on the `cpu-only` and `hybrid-small-vram` profiles the coder's
+experts already run on the CPU, so every second the utility model spends
+summarising is a second the coder is not generating, and compaction runs at
+every step boundary. That is the whole argument for keeping this model small,
+and it is why "just use a 7B Falcon for summaries" is the wrong trade: it is not
+the gigabytes, it is the contention.
+
+Going up *within* the ternary family is a different question, and a fair one.
+The failure that matters for this role is not clumsy prose, it is **invention** -
+a file that was never touched, named confidently, sending the next step to read
+something that does not exist. Larger models invent less. So the rule is:
+
+> Use the smallest model whose summaries are faithful under a grammar
+> constraint; move up a size when the golden check says it invents, not because
+> a larger number looks safer.
+
+The harness does not have to buy that trust with parameters alone. A
+`ContextSummary` claims which files were touched, and that claim is checkable:
+`niharness.domain.artifacts.ungrounded_paths` compares it against the text the
+model was given, and the summarizer drops any path the transcript never
+mentioned, logging what it dropped. The model's word is not evidence here
+either.
+
 The argument that actually decides it is structured output. The utility model's
 only deliverable is a `ContextSummary` that validates; the harness already
 tolerates a model that answers prose, by replacing the folded-away turns with a

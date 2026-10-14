@@ -33,7 +33,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   compaction policy before every model call, emits `context.compacted`, and keeps
   the message list in the order the protocol requires.
 - `ModelSummarizer`: produces a `ContextSummary` with the utility model when the
-  deterministic compaction passes are not enough.
+  deterministic compaction passes are not enough, and drops any file it claims
+  to have seen that the summarised text never mentioned.
 - Ports: `ModelBackend`, `Tokenizer`, `ToolProvider`, `VectorStore`, `Vcs`,
   `Sandbox`, `EventSink`.
 - Adapters: JSONL event sink, OpenAI-compatible inference client, git worktree
