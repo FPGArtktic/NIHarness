@@ -226,6 +226,15 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+name = "The tool server depends on the domain, not on the harness's own plumbing"
+type = "forbidden"
+source_modules = ["niharness.toolserver"]
+forbidden_modules = [
+  "niharness.adapters",
+  "niharness.application",
+]
+
+[[tool.importlinter.contracts]]
 name = "Adapters do not import each other"
 type = "independence"
 modules = [

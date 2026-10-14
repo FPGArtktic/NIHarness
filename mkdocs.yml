@@ -120,6 +120,7 @@ nav:
           - reference/api/ports.md
           - reference/api/application.md
           - reference/api/adapters.md
+          - reference/api/toolserver.md
   - Operations:
       - operations/profiles.md
       - operations/models.md
@@ -141,3 +142,4 @@ nav:
       - adr/0010-an-application-layer.md
       - adr/0011-message-assembly-is-an-application-concern.md
       - adr/0012-mcp-is-the-tool-protocol.md
+      - adr/0013-tools-answer-with-an-outcome-envelope.md

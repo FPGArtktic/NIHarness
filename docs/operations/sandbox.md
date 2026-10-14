@@ -57,6 +57,42 @@ errors live at the end of the output - and the elision is marked. The full
 result never enters the window; its digest does, which is also what the
 progress-stall detector compares.
 
+## The tool server
+
+The harness is an MCP client; the server is this project's own package, started
+inside the image and bound to the worktree:
+
+```bash
+podman run -i --network=none --read-only --read-only-tmpfs \
+  --volume "$PWD/.nih/worktrees/$RUN:/work:rw,Z" --workdir /work \
+  --userns=keep-id --cap-drop=ALL --security-opt=no-new-privileges \
+  localhost/niharness-sandbox:latest \
+  python -m niharness.toolserver --root /work
+```
+
+It offers exactly the tools in `niharness.domain.tools` - `read_file`,
+`list_tree`, `grep`, `apply_patch`, `run_lint`, `run_build`, `run_tests`,
+`git_commit` - with the same argument names, because the harness validates a
+call against that schema before dispatching it. A server that renamed an
+argument would simply never be called.
+
+Three things are worth knowing about it:
+
+- **It confines paths again.** The domain rejects absolute paths and lexical
+  escapes before dispatch; the server resolves every path and refuses anything
+  that lands outside the root, which is what catches a symlink. The container is
+  the third layer, and the one that holds if the first two are ever wrong.
+- **It holds the gate.** `git_commit` runs format, lint, build and the quick
+  tests, and commits only on green. A red gate comes back as a refusal carrying
+  the failing command's output - the thing the implementer needs to fix the
+  cause. There is no flag that skips it.
+- **It answers with an outcome envelope** (`{"ok", "text"}`), because MCP's own
+  error channel masks the detail and the detail is the point. See
+  [ADR 0013](../adr/0013-tools-answer-with-an-outcome-envelope.md).
+
+This is the one long-lived container: a stdio session has state, unlike the
+per-command containers the gate's own commands run in.
+
 ## Images
 
 | Image | Contents |

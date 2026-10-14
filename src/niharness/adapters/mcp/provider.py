@@ -39,6 +39,15 @@ from niharness.domain.tools import (
 TARGET_FIELDS: tuple[str, ...] = ("path", "selector", "target", "pattern", "query", "name")
 """Argument names that identify what a call acted on, in order of preference."""
 
+ENVELOPE_KEYS: frozenset[str] = frozenset({"ok", "text"})
+"""The harness's own tool servers answer with this envelope as structured content.
+
+MCP's error channel masks an exception's detail, and the detail is what the model
+has to read - which path escaped, what the gate printed. A server of this
+project's own therefore says plainly whether the call worked. Any other server
+is read the ordinary way, through `isError` and the content blocks.
+"""
+
 SUMMARY_LENGTH = 96
 """How much of a result's first line goes into the one-line window digest."""
 
@@ -114,16 +123,28 @@ class McpToolProvider:
                 content=f"the tool server failed to run {accepted.tool.value}: {error}",
                 summary=f"{accepted.tool.value}: transport error",
             )
-        text = self._render(raw)
+        envelope = self._envelope(raw)
+        ok, text = envelope if envelope is not None else (not raw.is_error, self._render(raw))
         content, truncated = truncate_result(text, self._limits)
         return ToolResult(
             call_id=accepted.call_id,
             tool=accepted.tool,
-            ok=not raw.is_error,
+            ok=ok,
             content=content,
             truncated=truncated,
             summary=self._summary(accepted, text, arguments),
         )
+
+    @staticmethod
+    def _envelope(raw: types.CallToolResult) -> tuple[bool, str] | None:
+        """Return this project's `(ok, text)` envelope, or None for a foreign server."""
+        structured = raw.structured_content
+        if not isinstance(structured, dict) or not set(structured) >= ENVELOPE_KEYS:
+            return None
+        ok, text = structured["ok"], structured["text"]
+        if isinstance(ok, bool) and isinstance(text, str):
+            return ok, text
+        return None
 
     @staticmethod
     def _render(raw: types.CallToolResult) -> str:

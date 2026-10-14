@@ -48,6 +48,9 @@ suggestion. See [Architecture](concepts/architecture.md) and
 - The step executor: it runs a step to completion against the ports, measures
   and compacts its window before every model call, and is tested with fakes
   rather than with a model and a container.
+- The tool server (`niharness.toolserver`): the sandbox end of the protocol,
+  holding the gate. The harness talks to it through the MCP adapter, and the two
+  are tested end to end in one process.
 - CLI commands that need no model: `nih init`, `nih config`, `nih gate`,
   `nih status`, `nih plan check`, `nih plan import` (for conforming plans), and
   `nih docs generate`.

@@ -33,6 +33,11 @@ sequenceDiagram
   D->>D: run detectors, check stop conditions
 ```
 
+The sandbox side of that picture is this project's own MCP server
+(`niharness.toolserver`): it offers exactly the tools above, resolves every path
+against the worktree root, and holds the gate, so `git_commit` is an attempt
+rather than a write. See [Sandbox](../operations/sandbox.md).
+
 ## Stop conditions
 
 - a final answer with the Definition of Done checklist filled,

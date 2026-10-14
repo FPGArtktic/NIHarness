@@ -238,3 +238,31 @@ async def test_a_role_without_tools_is_offered_nothing(allowlist: frozenset[Tool
     server, _ = toolbox()
     async with provider_for(server) as provider:
         assert await provider.descriptors(allowlist) == ()
+
+
+async def test_this_projects_own_envelope_is_honoured() -> None:
+    """A server of this project says plainly whether the call worked."""
+    session = StubSession(
+        types.CallToolResult(
+            content=[types.TextContent(type="text", text='{"ok": false, "text": "gate RED"}')],
+            structured_content={"ok": False, "text": "gate RED\nmypy: 1 error"},
+        ),
+    )
+    provider = McpToolProvider(session)  # type: ignore[arg-type]
+    result = await provider.call(read_call())
+    assert not result.ok, "the envelope decides, not the protocol's error flag"
+    assert result.content == "gate RED\nmypy: 1 error", "the text, not the JSON wrapper"
+
+
+async def test_a_foreign_servers_result_is_read_the_ordinary_way() -> None:
+    session = StubSession(
+        types.CallToolResult(
+            content=[types.TextContent(type="text", text="plain output")],
+            structured_content={"rows": 3},
+            is_error=True,
+        ),
+    )
+    provider = McpToolProvider(session)  # type: ignore[arg-type]
+    result = await provider.call(read_call())
+    assert not result.ok
+    assert result.content == "plain output"

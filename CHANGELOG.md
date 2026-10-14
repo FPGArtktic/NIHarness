@@ -27,6 +27,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - Tool loop as a pure state machine: it decides the next action and folds what
   comes back into state plus the events to append, so a bounded ReAct loop is
   unit-testable without a model or a container.
+- Tool server (`niharness.toolserver`): an MCP server for one worktree, offering
+  the harness's own tools, resolving every path against the root, and holding the
+  gate - `git_commit` runs the quick tier and refuses with the failing output
+  rather than committing on red. Tools answer with an `{ok, text}` envelope,
+  because MCP's error channel masks the detail the model needs.
 - Application layer with `StepRunner`: runs one step to completion against the
   ports, performing what the loop decides and appending the events it returns.
 - `Window`: measures the model's window through the `Tokenizer` port, applies the

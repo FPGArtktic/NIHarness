@@ -132,11 +132,15 @@ flag on the sandbox adapter:
       itself through the `Tokenizer` port before every model call, applies the
       policy's plan, and emits `context.compacted`. The utility model produces
       the `ContextSummary` when the deterministic passes are not enough.
-- [ ] The tool **server** itself: the harness is the client, and nothing in
-      this repository answers yet. It needs the sandbox image, a server that
-      implements `read_file`, `list_tree`, `grep`, `apply_patch`, `run_*` and
-      `git_commit` inside the worktree, and `nih implement` wiring the two
-      together.
+- [x] The tool **server**: `niharness.toolserver`, an MCP server that runs
+      inside the sandbox, resolves every path against the worktree root (which
+      is what catches a symlink), and holds the gate - `git_commit` runs the
+      quick tier and refuses with the failing output on red.
+- [ ] Building the sandbox **image** with that server installed. The
+      Containerfile does it from a local wheelhouse; nobody has run it yet.
+- [ ] `nih implement`: seed the window from the plan, create the worktree, start
+      the server in the sandbox, and run the executor over the plan's tasks.
+      Every part of that exists; the command is the wiring.
 - [ ] Structured output: JSON Schema for every artifact, GBNF where the backend
       supports it.
 - [ ] Forced finalisation two calls before the budget ends.

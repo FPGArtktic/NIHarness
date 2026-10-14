@@ -1,0 +1,256 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""The harness talking to its own tool server, end to end, in one process.
+
+A real MCP server over the SDK's memory streams, the real client adapter, and
+the real domain validation in between. What is faked is the toolchain: gate
+commands come from an injected runner, so these tests need no compiler and no
+container - but git is real, because a commit that does not happen is the thing
+being tested.
+"""
+
+import shutil
+import subprocess
+from collections.abc import AsyncIterator, Sequence
+from contextlib import AsyncExitStack, asynccontextmanager
+from pathlib import Path
+
+import anyio
+import pytest
+from mcp import ClientSession
+from mcp.shared.memory import create_client_server_memory_streams
+
+from niharness.adapters.mcp import McpToolProvider
+from niharness.domain.identity import CallId
+from niharness.domain.roles import DEFAULT_ROLES, Role
+from niharness.domain.tools import (
+    AcceptedCall,
+    ApplyPatchArgs,
+    GitCommitArgs,
+    GrepArgs,
+    ListTreeArgs,
+    ReadFileArgs,
+    RunTestsArgs,
+    ToolName,
+    ToolResult,
+)
+from niharness.ports.sandbox import ProcessResult
+from niharness.toolserver.server import build_server
+from niharness.toolserver.workspace import Workspace, subprocess_runner
+
+pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+IMPLEMENTER = DEFAULT_ROLES[Role.IMPLEMENTER].allowlist
+
+
+def git(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+
+@pytest.fixture
+def worktree(tmp_path: Path) -> Path:
+    root = tmp_path / "worktree"
+    (root / "src").mkdir(parents=True)
+    (root / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+    (root / "src" / "a.py").write_text(
+        "def add(x, y):\n    return x + y  # TODO: types\n", encoding="utf-8"
+    )
+    git(root, "init", "--initial-branch=main")
+    git(root, "config", "user.email", "test@example.invalid")
+    git(root, "config", "user.name", "Test")
+    git(root, "config", "commit.gpgsign", "false")
+    git(root, "add", "-A")
+    git(root, "commit", "-m", "chore: initial commit\n\nSeed the worktree.")
+    return root
+
+
+def gate_runner(*, green: bool) -> object:
+    """A runner that lets git through and answers gate commands green or red."""
+
+    async def run(argv: Sequence[str], cwd: Path, timeout: int) -> ProcessResult:
+        if argv[0] == "git":
+            return await subprocess_runner(argv, cwd, timeout)
+        if green:
+            return ProcessResult(
+                argv=tuple(argv), exit_code=0, stdout="ok", duration_seconds=0.1
+            )
+        return ProcessResult(
+            argv=tuple(argv),
+            exit_code=1,
+            stdout="src/a.py:2: error: missing type annotation",
+            duration_seconds=0.2,
+        )
+
+    return run
+
+
+@asynccontextmanager
+async def connected(worktree: Path, *, green: bool = True) -> AsyncIterator[McpToolProvider]:
+    """Run the project's own tool server and yield the harness's client for it."""
+    workspace = Workspace(worktree, runner=gate_runner(green=green))  # type: ignore[arg-type]
+    server = build_server(workspace)
+    inner = server._lowlevel_server  # noqa: SLF001 - the SDK's own in-process pattern
+    async with AsyncExitStack() as stack:
+        client, server_side = await stack.enter_async_context(
+            create_client_server_memory_streams(),
+        )
+        read, write = client
+        server_read, server_write = server_side
+        group = await stack.enter_async_context(anyio.create_task_group())
+
+        async def serve() -> None:
+            await inner.run(server_read, server_write, inner.create_initialization_options())
+
+        group.start_soon(serve)
+        session = await stack.enter_async_context(ClientSession(read, write))
+        await session.initialize()
+        yield McpToolProvider(session)
+        group.cancel_scope.cancel()
+
+
+async def call(provider: McpToolProvider, tool: ToolName, args: object) -> ToolResult:
+    return await provider.call(
+        AcceptedCall(call_id=CallId("c1"), tool=tool, args=args),  # type: ignore[arg-type]
+    )
+
+
+async def test_the_server_offers_exactly_the_tools_the_role_may_use(worktree: Path) -> None:
+    async with connected(worktree) as provider:
+        names = {schema.name for schema in await provider.descriptors(IMPLEMENTER)}
+    assert names == {
+        "read_file",
+        "list_tree",
+        "grep",
+        "apply_patch",
+        "run_lint",
+        "run_build",
+        "run_tests",
+        "git_commit",
+    }
+
+
+async def test_reading_a_file_returns_numbered_lines(worktree: Path) -> None:
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.READ_FILE, ReadFileArgs(path="src/a.py"))
+    assert result.ok
+    assert "1  def add(x, y):" in result.content
+
+
+async def test_a_path_that_escapes_is_refused_by_the_server_too(worktree: Path) -> None:
+    async with connected(worktree) as provider:
+        result = await call(
+            provider, ToolName.READ_FILE, ReadFileArgs(path="src/../../secrets")
+        )
+    assert not result.ok
+    assert "path_escape" in result.content
+
+
+async def test_a_symlink_out_of_the_worktree_is_refused(worktree: Path, tmp_path: Path) -> None:
+    secret = tmp_path / "secret.txt"
+    secret.write_text("not for the model\n", encoding="utf-8")
+    (worktree / "escape.txt").symlink_to(secret)
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.READ_FILE, ReadFileArgs(path="escape.txt"))
+    assert not result.ok
+    assert "outside the worktree" in result.content
+
+
+async def test_grep_finds_the_line_and_names_the_file(worktree: Path) -> None:
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.GREP, GrepArgs(pattern="TODO"))
+    assert result.ok
+    assert "src/a.py:2:" in result.content
+
+
+async def test_listing_shows_the_tree_without_the_git_directory(worktree: Path) -> None:
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.LIST_TREE, ListTreeArgs(path="."))
+    assert result.ok
+    assert "src/a.py" in result.content
+    assert ".git" not in result.content
+
+
+async def test_a_patch_is_applied_to_the_worktree(worktree: Path) -> None:
+    diff = (
+        "--- a/src/a.py\n"
+        "+++ b/src/a.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        "-def add(x, y):\n"
+        "+def add(x: int, y: int) -> int:\n"
+        "     return x + y  # TODO: types\n"
+    )
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=diff))
+    assert result.ok, result.content
+    assert "def add(x: int" in (worktree / "src" / "a.py").read_text(encoding="utf-8")
+
+
+async def test_a_patch_that_does_not_apply_is_a_refusal_with_the_reason(worktree: Path) -> None:
+    diff = "--- a/src/missing.py\n+++ b/src/missing.py\n@@ -1 +1 @@\n-old\n+new\n"
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=diff))
+    assert not result.ok
+    assert "does not apply" in result.content
+
+
+async def test_a_red_gate_means_no_commit(worktree: Path) -> None:
+    (worktree / "src" / "b.py").write_text("x = 1\n", encoding="utf-8")
+    before = git(worktree, "rev-parse", "HEAD").strip()
+    async with connected(worktree, green=False) as provider:
+        result = await call(
+            provider,
+            ToolName.GIT_COMMIT,
+            GitCommitArgs(message="feat: add b\n\nBecause the task asked for it."),
+        )
+    assert not result.ok
+    assert "the gate is red" in result.content
+    assert "missing type annotation" in result.content, "the failing output comes back"
+    assert git(worktree, "rev-parse", "HEAD").strip() == before, "nothing was committed"
+
+
+async def test_a_green_gate_commits(worktree: Path) -> None:
+    (worktree / "src" / "b.py").write_text("x = 1\n", encoding="utf-8")
+    before = git(worktree, "rev-parse", "HEAD").strip()
+    async with connected(worktree, green=True) as provider:
+        result = await call(
+            provider,
+            ToolName.GIT_COMMIT,
+            GitCommitArgs(message="feat: add b\n\nBecause the task asked for it."),
+        )
+    assert result.ok, result.content
+    assert "committed" in result.content
+    assert git(worktree, "rev-parse", "HEAD").strip() != before
+    assert "feat: add b" in git(worktree, "log", "-1", "--pretty=%s")
+
+
+async def test_a_commit_message_without_a_body_is_refused(worktree: Path) -> None:
+    (worktree / "src" / "b.py").write_text("x = 1\n", encoding="utf-8")
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.GIT_COMMIT, GitCommitArgs(message="feat: add b"))
+    assert not result.ok
+    assert "body" in result.content
+
+
+async def test_committing_a_clean_worktree_is_refused(worktree: Path) -> None:
+    async with connected(worktree) as provider:
+        result = await call(
+            provider,
+            ToolName.GIT_COMMIT,
+            GitCommitArgs(message="feat: nothing\n\nThere is nothing to do."),
+        )
+    assert not result.ok
+    assert "nothing to commit" in result.content
+
+
+async def test_running_tests_reports_the_gate(worktree: Path) -> None:
+    async with connected(worktree, green=False) as provider:
+        result = await call(provider, ToolName.RUN_TESTS, RunTestsArgs(selector="test_add"))
+    assert not result.ok
+    assert "does not narrow the gate yet" in result.content
+    assert "RED" in result.content

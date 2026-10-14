@@ -39,7 +39,22 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
       verilator ghdl iverilog \
     && rm -rf /var/lib/apt/lists/*
 
+# ------------------------------------------------------------- the tool server
 FROM hdl AS final
+
+# The server is this project's own package, installed from a local wheelhouse so
+# the build needs no index. Prepare the context on a networked machine first:
+#
+#   uv build --wheel --out-dir wheelhouse
+#   uv export --frozen --no-emit-project -o requirements.lock
+#   uv pip download -r requirements.lock -d wheelhouse
+#
+# then build the image, save it, and load it on the air-gapped host.
+COPY wheelhouse/ /tmp/wheelhouse/
+RUN python3 -m venv /opt/nih \
+    && /opt/nih/bin/pip install --no-index --find-links=/tmp/wheelhouse niharness \
+    && rm -rf /tmp/wheelhouse /root/.cache
+ENV PATH=/opt/nih/bin:$PATH
 
 # The sandbox runs as a non-root user with the worktree bind-mounted at /work.
 RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin agent
@@ -47,5 +62,10 @@ WORKDIR /work
 USER agent
 
 # No ENTRYPOINT on purpose: the harness passes a fixed argument vector, never a
-# shell string, and `shell` is in no default tool allowlist.
+# shell string, and `shell` is in no default tool allowlist. The tool server is
+# started explicitly:
+#
+#   podman run -i --network=none --volume <worktree>:/work:rw,Z ... \
+#       localhost/niharness-sandbox:latest \
+#       python -m niharness.toolserver --root /work
 CMD ["/bin/false"]
