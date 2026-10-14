@@ -32,6 +32,7 @@ from niharness.domain.loop import LoopThresholds, Pathology, evaluate
 from niharness.domain.pipeline import PIPELINE, Outcome, Stage, advance
 from niharness.domain.roles import DEFAULT_ROLES, Role, RoleSpec
 from niharness.domain.state import RunSnapshot, fold
+from niharness.domain.tool_loop import LoopConfig, LoopState, next_action, start
 from niharness.domain.tools import ToolName, validate_call
 
 __all__ = [
@@ -51,6 +52,8 @@ __all__ = [
     "GateTier",
     "InterventionLevel",
     "Language",
+    "LoopConfig",
+    "LoopState",
     "LoopThresholds",
     "Outcome",
     "Pathology",
@@ -74,7 +77,9 @@ __all__ = [
     "advance",
     "evaluate",
     "fold",
+    "next_action",
     "plan_compaction",
     "plan_gate",
+    "start",
     "validate_call",
 ]

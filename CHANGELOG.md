@@ -21,6 +21,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   budgets with forced finalisation, the two-tier quality gate with failure
   signatures, tool-loop detectors with the intervention ladder, compaction policy,
   and the event fold that derives run state.
+- Tool loop as a pure state machine: it decides the next action and folds what
+  comes back into state plus the events to append, so a bounded ReAct loop is
+  unit-testable without a model or a container.
 - Ports: `ModelBackend`, `Tokenizer`, `ToolProvider`, `VectorStore`, `Vcs`,
   `Sandbox`, `EventSink`.
 - Adapters: JSONL event sink, OpenAI-compatible inference client, git worktree

@@ -118,8 +118,13 @@ flag on the sandbox adapter:
 
 ## Stage: the run loop
 
-- [ ] `ToolLoop` in the domain: build window, call model, validate call,
-      execute, append events, run detectors, check stop conditions.
+- [x] `ToolLoop` in the domain, as a pure state machine: `next_action` says
+      what should happen, each `observe_*` folds what came back and returns the
+      events to append. Validation, the detector window, the intervention
+      ladder, forced finalisation and every stop condition live here, with no
+      I/O; see [ADR 0009](adr/0009-the-tool-loop-is-a-pure-state-machine.md).
+- [ ] The executor that performs those actions, wiring `ModelBackend`,
+      `ToolProvider`, `Vcs` and `EventSink` together.
 - [ ] Structured output: JSON Schema for every artifact, GBNF where the backend
       supports it.
 - [ ] Forced finalisation two calls before the budget ends.

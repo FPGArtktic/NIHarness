@@ -22,6 +22,7 @@ the pipeline. A change that does one of those without an ADR is incomplete.
 | [0006](0006-compaction-as-a-view-policy.md) | Compaction is a view policy, not a log edit | Accepted |
 | [0007](0007-gpl-3-0-or-later.md) | GPL-3.0-or-later for the whole repository | Accepted |
 | [0008](0008-sandbox-is-one-container-per-command.md) | One hardened container per command | Accepted |
+| [0009](0009-the-tool-loop-is-a-pure-state-machine.md) | The tool loop decides, the executor acts | Accepted |
 
 ## Template
 

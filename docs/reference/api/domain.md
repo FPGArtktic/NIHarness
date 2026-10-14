@@ -25,6 +25,10 @@ The pure core. Nothing here performs I/O or reads a clock.
 
 ## Tool loops
 
+::: niharness.domain.tool_loop
+
+## Loop detectors
+
 ::: niharness.domain.loop
 
 ## Context

@@ -136,3 +136,4 @@ nav:
       - adr/0006-compaction-as-a-view-policy.md
       - adr/0007-gpl-3-0-or-later.md
       - adr/0008-sandbox-is-one-container-per-command.md
+      - adr/0009-the-tool-loop-is-a-pure-state-machine.md
