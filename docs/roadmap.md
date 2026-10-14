@@ -31,8 +31,10 @@ The first thing a model needs is hands.
       a grace period. The argument vector is a pure function asserted by a
       contract test; see [ADR 0008](adr/0008-sandbox-is-one-container-per-command.md).
 - [ ] Quadlet units rendered from `quadlet/` by `nih init`.
-- [ ] `ToolProvider` adapter: MCP client, tool schemas from
-      `niharness.domain.tools`, results truncated and digested.
+- [x] `ToolProvider` adapter: an MCP client that forwards only the tools the
+      harness knows and the role is allowed to use, sends the arguments the
+      domain validated, truncates results, and turns a transport failure into a
+      red result ([ADR 0012](adr/0012-mcp-is-the-tool-protocol.md)).
 - [ ] Sandbox image: `containers/Containerfile.sandbox`, layered toolchains.
 - [x] Integration tests behind the `integration` marker: run them with
       `NIH_SANDBOX_IMAGE=<image> uv run pytest -m integration`. They assert the
@@ -130,8 +132,11 @@ flag on the sandbox adapter:
       itself through the `Tokenizer` port before every model call, applies the
       policy's plan, and emits `context.compacted`. The utility model produces
       the `ContextSummary` when the deterministic passes are not enough.
-- [ ] The MCP `ToolProvider` adapter, so the executor has real tools to run
-      (it is written against the port, not against MCP).
+- [ ] The tool **server** itself: the harness is the client, and nothing in
+      this repository answers yet. It needs the sandbox image, a server that
+      implements `read_file`, `list_tree`, `grep`, `apply_patch`, `run_*` and
+      `git_commit` inside the worktree, and `nih implement` wiring the two
+      together.
 - [ ] Structured output: JSON Schema for every artifact, GBNF where the backend
       supports it.
 - [ ] Forced finalisation two calls before the budget ends.

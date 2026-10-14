@@ -140,3 +140,4 @@ nav:
       - adr/0009-the-tool-loop-is-a-pure-state-machine.md
       - adr/0010-an-application-layer.md
       - adr/0011-message-assembly-is-an-application-concern.md
+      - adr/0012-mcp-is-the-tool-protocol.md

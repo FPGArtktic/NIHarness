@@ -16,6 +16,10 @@ against recorded responses, never a live backend.
 
 ::: niharness.adapters.openai_compat.client
 
+## Tools (MCP)
+
+::: niharness.adapters.mcp.provider
+
 ## Sandbox (rootless Podman)
 
 ::: niharness.adapters.podman.sandbox

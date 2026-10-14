@@ -202,7 +202,7 @@ async def test_measuring_the_same_text_twice_costs_one_call() -> None:
 async def test_an_unmeasured_string_is_an_error_not_a_guess() -> None:
     window = Window(FakeTokenizer(), POLICY)
     with pytest.raises(MeasurementMissingError, match="never measured"):
-        window._lookup("a string nobody measured")
+        window._lookup("a string nobody measured")  # noqa: SLF001 - the contract under test
 
 
 async def test_synthetic_results_enter_the_window_as_tool_messages() -> None:

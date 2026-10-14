@@ -11,7 +11,14 @@ Models are never distributed with this repository; their licenses are recorded i
 
 | Path | What | Upstream | License |
 |---|---|---|---|
-| _(none yet)_ | | | |
+| _(none vendored)_ | | | |
+
+Runtime dependencies whose license matters most to this project, stated in the
+ADR that introduced them:
+
+| Dependency | What it is for | License | ADR |
+|---|---|---|---|
+| `mcp` | the Model Context Protocol client; tools run in servers it talks to | MIT | [0012](docs/adr/0012-mcp-is-the-tool-protocol.md) |
 
 Planned, not yet vendored:
 

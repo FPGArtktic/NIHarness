@@ -1518,6 +1518,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
+    { name = "mcp" },
     { name = "platformdirs" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -1568,6 +1569,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
+    { name = "mcp", specifier = ">=2.3.0" },
     { name = "mcp", marker = "extra == 'tools'", specifier = ">=1.2" },
     { name = "nvidia-ml-py", marker = "extra == 'metrics'", specifier = ">=12.560" },
     { name = "opentelemetry-sdk", marker = "extra == 'tracing'", specifier = ">=1.27" },
