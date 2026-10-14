@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Allowlist for `pip-licenses --allow-only-file` (Python) and the cargo-deny
+# license allowlist (Rust, mirrored in tui/deny.toml). Every entry must be
+# GPL-3.0-or-later compatible; a new dependency states its license in its ADR.
+
+allow-only = [
+  "Apache Software License",
+  "Apache-2.0",
+  "BSD License",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "GNU General Public License v3 or later (GPLv3+)",
+  "GNU Lesser General Public License v2 or later (LGPLv2+)",
+  "GNU Lesser General Public License v3 or later (LGPLv3+)",
+  "ISC License (ISCL)",
+  "ISC",
+  "MIT License",
+  "MIT",
+  "MIT-0",
+  "Mozilla Public License 2.0 (MPL 2.0)",
+  "MPL-2.0",
+  "Python Software Foundation License",
+  "The Unlicense (Unlicense)",
+  "Unlicense",
+  "Zlib",
+]

@@ -1,0 +1,144 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""The gate decides what runs, in what order, and what a failure is called."""
+
+from niharness.domain.gate import (
+    GATE_MATRIX,
+    KIND_ORDER,
+    GateResult,
+    GateStepResult,
+    GateTier,
+    Language,
+    detect_languages,
+    normalize_output,
+    plan_gate,
+)
+
+
+def test_languages_are_detected_by_marker_file() -> None:
+    detected = detect_languages(["pyproject.toml", "src/a.py", "tui/Cargo.toml", "mkdocs.yml"])
+    assert detected == frozenset({Language.PYTHON, Language.RUST, Language.DOCS})
+
+
+def test_a_stray_source_file_does_not_pull_in_a_toolchain() -> None:
+    assert detect_languages(["main.go", "src/a.py"]) == frozenset()
+
+
+def test_commands_run_cheapest_first() -> None:
+    commands = plan_gate(GateTier.QUICK, [Language.PYTHON, Language.RUST])
+    kinds = [KIND_ORDER.index(command.kind) for command in commands]
+    assert kinds == sorted(kinds)
+
+
+def test_quick_tier_never_runs_yocto() -> None:
+    commands = plan_gate(GateTier.QUICK, [Language.YOCTO, Language.PYTHON])
+    assert all(command.language is not Language.YOCTO for command in commands)
+
+
+def test_full_tier_runs_yocto_and_sanitizers() -> None:
+    names = {
+        command.name for command in plan_gate(GateTier.FULL, [Language.YOCTO, Language.C_CPP])
+    }
+    assert {"bitbake", "ptest", "ctest-asan"} <= names
+
+
+def test_docs_build_runs_in_quick_only_when_docs_changed() -> None:
+    languages = [Language.PYTHON, Language.DOCS]
+    untouched = plan_gate(GateTier.QUICK, languages, ["src/a.py"])
+    touched = plan_gate(GateTier.QUICK, languages, ["docs/index.md"])
+    assert "mkdocs-strict" not in {command.name for command in untouched}
+    assert "mkdocs-strict" in {command.name for command in touched}
+
+
+def test_docs_build_runs_when_nothing_is_known_about_changes() -> None:
+    commands = plan_gate(GateTier.QUICK, [Language.DOCS])
+    assert "mkdocs-strict" in {command.name for command in commands}
+
+
+def test_planning_is_deterministic() -> None:
+    first = plan_gate(GateTier.FULL, [Language.RUST, Language.PYTHON, Language.DOCS])
+    second = plan_gate(GateTier.FULL, [Language.DOCS, Language.PYTHON, Language.RUST])
+    assert first == second
+
+
+def test_every_language_has_a_marker_and_a_command() -> None:
+    for language, gate in GATE_MATRIX.items():
+        assert gate.markers, language
+        assert gate.commands, language
+
+
+def test_empty_gate_does_not_pass() -> None:
+    assert not GateResult(tier=GateTier.QUICK, steps=()).passed
+
+
+def test_result_is_red_when_any_step_is_red() -> None:
+    result = GateResult(
+        tier=GateTier.QUICK,
+        steps=(
+            GateStepResult(command="ruff", exit_code=0, duration_seconds=0.2),
+            GateStepResult(
+                command="pytest", exit_code=1, duration_seconds=9.0, output="1 failed"
+            ),
+        ),
+    )
+    assert not result.passed
+    assert [step.command for step in result.failures] == ["pytest"]
+
+
+def test_failure_signature_ignores_paths_numbers_and_durations() -> None:
+    first = GateResult(
+        tier=GateTier.QUICK,
+        steps=(
+            GateStepResult(
+                command="pytest",
+                exit_code=1,
+                duration_seconds=9.0,
+                output="/home/a/repo/tests/test_x.py:41: error: bad thing in 9.1s",
+            ),
+        ),
+    )
+    second = GateResult(
+        tier=GateTier.QUICK,
+        steps=(
+            GateStepResult(
+                command="pytest",
+                exit_code=1,
+                duration_seconds=12.0,
+                output="/srv/build/other/tests/test_x.py:77: error: bad thing in 12.4s",
+            ),
+        ),
+    )
+    assert first.failure_signature() == second.failure_signature()
+
+
+def test_a_different_failure_gets_a_different_signature() -> None:
+    def result(output: str) -> GateResult:
+        return GateResult(
+            tier=GateTier.QUICK,
+            steps=(
+                GateStepResult(
+                    command="mypy", exit_code=1, duration_seconds=1.0, output=output
+                ),
+            ),
+        )
+
+    assert (
+        result("error: missing return").failure_signature()
+        != result(
+            "error: incompatible type",
+        ).failure_signature()
+    )
+
+
+def test_green_result_has_no_signature() -> None:
+    result = GateResult(
+        tier=GateTier.QUICK,
+        steps=(GateStepResult(command="ruff", exit_code=0, duration_seconds=0.1),),
+    )
+    assert result.passed
+    assert result.failure_signature() == ""
+
+
+def test_normalisation_keeps_only_diagnostic_lines() -> None:
+    output = "collecting ...\nall good so far\nerror: boom at 0x7ffd\n"
+    assert normalize_output(output) == "error: boom at <addr>"

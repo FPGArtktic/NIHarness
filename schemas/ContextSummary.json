@@ -1,0 +1,88 @@
+{
+  "$defs": {
+    "FailedAttempt": {
+      "additionalProperties": false,
+      "description": "What was tried and why it did not work; carried across a step restart.",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "what": {
+          "minLength": 1,
+          "title": "What",
+          "type": "string"
+        },
+        "why_it_failed": {
+          "minLength": 1,
+          "title": "Why It Failed",
+          "type": "string"
+        }
+      },
+      "required": [
+        "what",
+        "why_it_failed"
+      ],
+      "title": "FailedAttempt",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The utility model's replacement for turns compacted out of the window.",
+  "properties": {
+    "decisions": {
+      "default": [],
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Decisions",
+      "type": "array"
+    },
+    "failed_attempts": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/FailedAttempt"
+      },
+      "title": "Failed Attempts",
+      "type": "array"
+    },
+    "files_touched": {
+      "default": [],
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Files Touched",
+      "type": "array"
+    },
+    "open_questions": {
+      "default": [],
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Open Questions",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "text": {
+      "description": "The prose form injected into the window.",
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "text"
+  ],
+  "title": "ContextSummary",
+  "type": "object"
+}

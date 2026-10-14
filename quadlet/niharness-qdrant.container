@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Vector store for code chunks and for run context that compaction removed from
+# the window.
+
+[Unit]
+Description=NIHarness vector store (Qdrant, localhost only)
+After=network-online.target
+
+[Container]
+ContainerName=niharness-qdrant
+Image=docker.io/qdrant/qdrant:latest
+PublishPort=127.0.0.1:6333:6333
+Volume=%h/.local/share/niharness/qdrant:/qdrant/storage:Z
+Environment=QDRANT__SERVICE__HOST=0.0.0.0
+NoNewPrivileges=true
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

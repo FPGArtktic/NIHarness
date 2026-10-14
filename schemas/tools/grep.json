@@ -1,0 +1,35 @@
+{
+  "additionalProperties": false,
+  "description": "Search the worktree for a regular expression.",
+  "properties": {
+    "glob": {
+      "default": "",
+      "title": "Glob",
+      "type": "string"
+    },
+    "max_matches": {
+      "default": 50,
+      "minimum": 1,
+      "title": "Max Matches",
+      "type": "integer"
+    },
+    "path": {
+      "default": ".",
+      "maxLength": 1024,
+      "minLength": 1,
+      "title": "Path",
+      "type": "string"
+    },
+    "pattern": {
+      "maxLength": 512,
+      "minLength": 1,
+      "title": "Pattern",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pattern"
+  ],
+  "title": "GrepArgs",
+  "type": "object"
+}

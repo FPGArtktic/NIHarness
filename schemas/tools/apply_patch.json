@@ -1,0 +1,16 @@
+{
+  "additionalProperties": false,
+  "description": "Apply a unified diff. There is no write_file: every change is a reviewable diff.",
+  "properties": {
+    "diff": {
+      "minLength": 1,
+      "title": "Diff",
+      "type": "string"
+    }
+  },
+  "required": [
+    "diff"
+  ],
+  "title": "ApplyPatchArgs",
+  "type": "object"
+}

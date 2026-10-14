@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Yocto builds get their own image: bitbake wants a Debian/Ubuntu base, a
+# persistent DL_DIR and SSTATE_DIR, and never runs in the quick gate tier.
+#
+#   podman build -t localhost/niharness-yocto:latest -f containers/Containerfile.yocto .
+
+FROM docker.io/library/ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=en_US.UTF-8 \
+    BB_NO_NETWORK=1 \
+    DL_DIR=/var/cache/yocto/downloads \
+    SSTATE_DIR=/var/cache/yocto/sstate
+
+RUN apt-get update && apt-get install --no-install-recommends -y \
+      gawk wget git diffstat unzip texinfo gcc build-essential chrpath socat \
+      cpio python3 python3-pip python3-pexpect xz-utils debianutils iputils-ping \
+      python3-git python3-jinja2 python3-subunit zstd liblz4-tool file locales \
+      libacl1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && locale-gen en_US.UTF-8
+
+RUN useradd --create-home --uid 1000 --shell /bin/bash builder \
+    && mkdir -p "$DL_DIR" "$SSTATE_DIR" \
+    && chown -R builder:builder /var/cache/yocto
+
+VOLUME ["/var/cache/yocto"]
+WORKDIR /work
+USER builder
+CMD ["/bin/false"]

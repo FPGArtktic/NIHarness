@@ -1,0 +1,47 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# No usable GPU: weights and KV cache both live in system RAM.
+#
+# RAM is rarely what limits the window here. At q8_0 the KV cache of this model
+# costs about 48 MiB per 1024 tokens, so a 64k window is roughly 3 GiB on top of
+# about 18 GiB of Q4_K_M weights - comfortable on a 32 GiB machine and trivial on
+# 64 GiB. What hurts on CPU is prompt-processing *time*: refilling a 64k window
+# costs minutes, which is why this profile compacts earlier and keeps fewer
+# verbatim tool results rather than shrinking the window itself.
+#
+# `nih init` sizes the window from the host's actual RAM and writes it into
+# harness.toml; the value below is the shipped default for a 32 GiB machine.
+# Drop it to 32768 if you are on 16 GiB, and remember the floor is the
+# tested maximum, not a hard limit: see docs/operations/profiles.md.
+
+[models.main]
+name = "Qwen3-Coder-30B-A3B-Instruct"
+base_url = "http://127.0.0.1:8080"
+context_window = 65536
+supports_grammar = true
+quantization = "Q4_K_M"
+
+[models.utility]
+name = "BitNet-b1.58-2B-4T"
+base_url = "http://127.0.0.1:8081"
+context_window = 4096
+supports_grammar = false
+quantization = "i2_s"
+
+[models.embeddings]
+name = "BitNet-embedding"
+base_url = "http://127.0.0.1:8082"
+context_window = 8192
+supports_grammar = false
+quantization = "i2_s"
+
+[compact]
+context_window = 65536
+# Compact earlier and keep fewer verbatim results: on CPU, re-processing a full
+# window is the expensive operation, so the window should be refilled rarely.
+threshold = 0.7
+keep_last_tool_results = 4
+
+[vector]
+embedding_dimensions = 768

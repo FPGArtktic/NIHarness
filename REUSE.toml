@@ -1,0 +1,21 @@
+version = 1
+SPDX-PackageName = "niharness"
+SPDX-PackageSupplier = "Mateusz Okulanis <FPGArtktic@outlook.com>"
+SPDX-PackageDownloadLocation = "https://github.com/FPGArtktic/NIHarness"
+
+[[annotations]]
+path = [
+  "LICENSE",
+  ".gitignore",
+  ".python-version",
+  "uv.lock",
+  "schemas/**",
+  "benchmarks/results/**",
+  "docs/assets/**",
+  "tests/contract/cassettes/**",
+  "tests/golden/prompts/**",
+  "tui/Cargo.lock",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Mateusz Okulanis"
+SPDX-License-Identifier = "GPL-3.0-or-later"

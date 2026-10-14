@@ -1,0 +1,103 @@
+{
+  "$defs": {
+    "Question": {
+      "additionalProperties": false,
+      "description": "A clarifying question with suggested answers; free text is always allowed.",
+      "properties": {
+        "allow_free_text": {
+          "default": true,
+          "title": "Allow Free Text",
+          "type": "boolean"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "options": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/QuestionOption"
+          },
+          "maxItems": 4,
+          "title": "Options",
+          "type": "array"
+        },
+        "question": {
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "question"
+      ],
+      "title": "Question",
+      "type": "object"
+    },
+    "QuestionOption": {
+      "additionalProperties": false,
+      "description": "One suggested answer rendered as a choice in the TUI picker.",
+      "properties": {
+        "answer": {
+          "minLength": 1,
+          "title": "Answer",
+          "type": "string"
+        },
+        "consequence": {
+          "default": "",
+          "title": "Consequence",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "answer"
+      ],
+      "title": "QuestionOption",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A bounded batch of clarifying questions emitted by a step.",
+  "properties": {
+    "questions": {
+      "items": {
+        "$ref": "#/$defs/Question"
+      },
+      "maxItems": 3,
+      "minItems": 1,
+      "title": "Questions",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "questions"
+  ],
+  "title": "Questions",
+  "type": "object"
+}

@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# llama-server, CPU only. Models are bind-mounted, never baked into the image:
+# weights are not redistributed by this repository.
+#
+#   podman build -t localhost/niharness-llama-cpu:latest \
+#     -f containers/Containerfile.llama-server-cpu .
+
+FROM docker.io/library/debian:trixie-slim AS build
+
+ARG LLAMA_CPP_REF=master
+
+RUN apt-get update && apt-get install --no-install-recommends -y \
+      build-essential cmake git libcurl4-openssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 --branch "${LLAMA_CPP_REF}" \
+      https://github.com/ggml-org/llama.cpp /src
+RUN cmake -S /src -B /build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF \
+    && cmake --build /build --target llama-server -j
+
+FROM docker.io/library/debian:trixie-slim
+RUN apt-get update && apt-get install --no-install-recommends -y libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 1000 --shell /usr/sbin/nologin llama
+COPY --from=build /build/bin/llama-server /usr/local/bin/llama-server
+
+USER llama
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/llama-server", "--host", "127.0.0.1", "--port", "8080"]

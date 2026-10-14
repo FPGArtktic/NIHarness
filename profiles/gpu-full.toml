@@ -1,0 +1,46 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# 20 GiB of VRAM and up: the whole coder model is resident on the GPU. The
+# utility model stays on CPU so it never competes for VRAM.
+
+[models.main]
+name = "Qwen3-Coder-30B-A3B-Instruct"
+base_url = "http://127.0.0.1:8080"
+context_window = 65536
+supports_grammar = true
+quantization = "Q4_K_M"
+
+[models.thinking]
+name = "Qwen3-30B-A3B-Thinking"
+base_url = "http://127.0.0.1:8080"
+context_window = 65536
+supports_grammar = true
+supports_reasoning = true
+quantization = "Q4_K_M"
+
+[models.utility]
+name = "BitNet-b1.58-2B-4T"
+base_url = "http://127.0.0.1:8081"
+context_window = 4096
+supports_grammar = false
+quantization = "i2_s"
+
+[models.embeddings]
+name = "bge-m3"
+base_url = "http://127.0.0.1:8082"
+context_window = 8192
+supports_grammar = false
+quantization = "F16"
+
+[compact]
+context_window = 65536
+threshold = 0.8
+keep_last_tool_results = 8
+
+[sandbox]
+cpus = 12.0
+memory = "16g"
+
+[vector]
+embedding_dimensions = 1024

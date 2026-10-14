@@ -1,0 +1,22 @@
+{
+  "additionalProperties": false,
+  "description": "List a directory, bounded in depth.",
+  "properties": {
+    "depth": {
+      "default": 2,
+      "maximum": 8,
+      "minimum": 1,
+      "title": "Depth",
+      "type": "integer"
+    },
+    "path": {
+      "default": ".",
+      "maxLength": 1024,
+      "minLength": 1,
+      "title": "Path",
+      "type": "string"
+    }
+  },
+  "title": "ListTreeArgs",
+  "type": "object"
+}

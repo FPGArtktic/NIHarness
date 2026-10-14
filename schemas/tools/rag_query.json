@@ -1,0 +1,29 @@
+{
+  "additionalProperties": false,
+  "description": "Query the vector store, including context compacted out of the window.",
+  "properties": {
+    "collection": {
+      "default": "",
+      "title": "Collection",
+      "type": "string"
+    },
+    "query": {
+      "maxLength": 2048,
+      "minLength": 1,
+      "title": "Query",
+      "type": "string"
+    },
+    "top_k": {
+      "default": 8,
+      "maximum": 50,
+      "minimum": 1,
+      "title": "Top K",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "title": "RagQueryArgs",
+  "type": "object"
+}

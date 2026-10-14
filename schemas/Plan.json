@@ -1,0 +1,112 @@
+{
+  "$defs": {
+    "Task": {
+      "additionalProperties": false,
+      "description": "One unit of implementation work: one logical change, one commit.",
+      "properties": {
+        "commit_type": {
+          "default": "feat",
+          "description": "Conventional Commits type the gate will expect.",
+          "minLength": 1,
+          "title": "Commit Type",
+          "type": "string"
+        },
+        "depends_on": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+            "type": "string"
+          },
+          "title": "Depends On",
+          "type": "array"
+        },
+        "files": {
+          "default": [],
+          "description": "Paths the planner expects to touch; a hint, not a restriction.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Files",
+          "type": "array"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "intent": {
+          "description": "What changes and why, in the commit-message sense.",
+          "minLength": 1,
+          "title": "Intent",
+          "type": "string"
+        },
+        "satisfies": {
+          "default": [],
+          "description": "Ids of the acceptance criteria this task contributes to.",
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+            "type": "string"
+          },
+          "title": "Satisfies",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "intent"
+      ],
+      "title": "Task",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "An ordered, acyclic list of tasks derived from a spec.",
+  "properties": {
+    "open_questions": {
+      "default": [],
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Open Questions",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "spec_digest": {
+      "title": "Spec Digest",
+      "type": "string"
+    },
+    "tasks": {
+      "items": {
+        "$ref": "#/$defs/Task"
+      },
+      "minItems": 1,
+      "title": "Tasks",
+      "type": "array"
+    }
+  },
+  "required": [
+    "spec_digest",
+    "tasks"
+  ],
+  "title": "Plan",
+  "type": "object"
+}

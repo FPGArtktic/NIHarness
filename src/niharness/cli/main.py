@@ -1,0 +1,197 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""The `nih` command line.
+
+Commands that only need pure logic or the filesystem work today. Commands that
+need a model, a container or a vector store report what is missing and exit
+non-zero; see `docs/roadmap.md`.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Annotated
+
+import typer
+
+from niharness import __version__
+from niharness.cli import docs as docs_module
+from niharness.cli import gate as gate_module
+from niharness.cli import init as init_module
+from niharness.cli import logging as logging_module
+from niharness.cli import plan as plan_module
+from niharness.cli import status as status_module
+from niharness.cli.unavailable import unavailable
+from niharness.config import HarnessConfig
+from niharness.domain.gate import GateTier
+
+app = typer.Typer(
+    name="nih",
+    help="NIHarness: an air-gapped, gated, event-sourced multi-agent coding harness.",
+    no_args_is_help=True,
+    add_completion=False,
+)
+app.add_typer(plan_module.app, name="plan")
+
+docs_app = typer.Typer(help="Documentation and generated reference material.")
+app.add_typer(docs_app, name="docs")
+
+ProjectRoot = Annotated[
+    Path,
+    typer.Option("--project-root", "-C", help="The project to operate on.", show_default="."),
+]
+
+
+def _config(root: Path, profile: str | None) -> HarnessConfig:
+    """Load configuration for `root`."""
+    return HarnessConfig.load(root, profile=profile)
+
+
+@app.callback()
+def main_callback(
+    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Debug logging.")] = False,
+) -> None:
+    """Configure logging for every command."""
+    logging_module.configure(verbose=verbose)
+
+
+@app.command()
+def version() -> None:
+    """Print the harness version."""
+    typer.echo(__version__)
+
+
+@app.command()
+def init(
+    root: ProjectRoot = Path(),
+    force: Annotated[bool, typer.Option("--force", help="Overwrite harness.toml.")] = False,
+) -> None:
+    """Probe the hardware, pick a profile and write harness.toml."""
+    init_module.init(root.resolve(), force=force)
+
+
+@app.command()
+def config(
+    root: ProjectRoot = Path(),
+    profile: Annotated[
+        str | None, typer.Option("--profile", help="Override the profile.")
+    ] = None,
+) -> None:
+    """Print the merged configuration, as the harness sees it."""
+    typer.echo(_config(root.resolve(), profile).model_dump_json(indent=2))
+
+
+@app.command()
+def gate(
+    root: ProjectRoot = Path(),
+    tier: Annotated[
+        GateTier, typer.Option("--tier", help="Which tier to plan.")
+    ] = GateTier.QUICK,
+    changed: Annotated[
+        list[str] | None,
+        typer.Option("--changed", help="Paths changed since the last green commit."),
+    ] = None,
+) -> None:
+    """Show the commands the gate would run in this repository."""
+    gate_module.gate(root.resolve(), tier, tuple(changed or ()))
+
+
+@app.command()
+def status(
+    run_id: Annotated[str | None, typer.Argument(help="Run id; omit to list runs.")] = None,
+    root: ProjectRoot = Path(),
+) -> None:
+    """Fold a run's event log into a snapshot."""
+    status_module.status(_config(root.resolve(), None).runs_dir, run_id)
+
+
+@docs_app.command("generate")
+def docs_generate(root: ProjectRoot = Path()) -> None:
+    """Regenerate JSON Schemas and the generated reference pages."""
+    docs_module.generate(root.resolve(), app)
+
+
+@app.command()
+def brainstorm(root: ProjectRoot = Path()) -> None:
+    """Entry A: an interactive session that writes SPEC.md."""
+    del root
+    unavailable(
+        "brainstorm",
+        "the inference adapter, the MCP tool provider and the TUI socket",
+        "docs/roadmap.md, stage 'brainstorm'",
+    )
+
+
+@app.command()
+def implement(
+    root: ProjectRoot = Path(),
+    plan_file: Annotated[
+        Path | None,
+        typer.Option("--plan", help="Execute this plan instead of the approved one."),
+    ] = None,
+) -> None:
+    """Execute an approved plan, task by task, through the gate."""
+    del root, plan_file
+    unavailable(
+        "implement",
+        "the sandbox (Podman), the MCP tool provider and the inference adapter",
+        "docs/roadmap.md, stage 'implement'",
+    )
+
+
+@app.command()
+def run(spec: Annotated[Path, typer.Argument(help="Path to SPEC.md")]) -> None:
+    """Plan and implement without stopping for approval."""
+    del spec
+    unavailable(
+        "run",
+        "the full pipeline: inference, sandbox, tools, vector store",
+        "docs/roadmap.md, stage 'implement'",
+    )
+
+
+@app.command()
+def resume(run_id: Annotated[str, typer.Argument(help="Run id to resume")]) -> None:
+    """Resume a cancelled run from its last snapshot."""
+    del run_id
+    unavailable("resume", "the run loop, which needs the inference adapter", "docs/roadmap.md")
+
+
+@app.command()
+def compact(run_id: Annotated[str, typer.Argument(help="Run id to compact")]) -> None:
+    """Compact a run's window now, instead of waiting for the threshold."""
+    del run_id
+    unavailable(
+        "compact",
+        "the tokenizer and the utility model for the ContextSummary pass",
+        "docs/roadmap.md, 'context management'",
+    )
+
+
+@app.command()
+def research(topic: Annotated[str, typer.Argument(help="What to research")]) -> None:
+    """Run a read-only researcher sub-run over the index."""
+    del topic
+    unavailable(
+        "research",
+        "the vector store adapter (Qdrant) and the inference adapter",
+        "docs/roadmap.md, 'retrieval'",
+    )
+
+
+@app.command()
+def bench(
+    layer: Annotated[str, typer.Option("--layer", help="L0, L1, L2 or L3.")] = "L0",
+) -> None:
+    """Run a benchmark layer and append JSONL records."""
+    del layer
+    unavailable(
+        "bench",
+        "the benchmark runner and a served model",
+        "docs/benchmarks/methodology.md",
+    )
+
+
+def main() -> None:
+    """Entry point for the `nih` script."""
+    app()

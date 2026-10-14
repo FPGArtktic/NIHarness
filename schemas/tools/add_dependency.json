@@ -1,0 +1,32 @@
+{
+  "additionalProperties": false,
+  "description": "Request a dependency. Rejected unless it is already in the local mirror.",
+  "properties": {
+    "ecosystem": {
+      "default": "python",
+      "enum": [
+        "python",
+        "rust",
+        "system"
+      ],
+      "title": "Ecosystem",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "version": {
+      "default": "",
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "AddDependencyArgs",
+  "type": "object"
+}

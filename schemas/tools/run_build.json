@@ -1,0 +1,13 @@
+{
+  "additionalProperties": false,
+  "description": "Run the configured build. The reviewer runs this itself.",
+  "properties": {
+    "target": {
+      "default": "",
+      "title": "Target",
+      "type": "string"
+    }
+  },
+  "title": "RunBuildArgs",
+  "type": "object"
+}

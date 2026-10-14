@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The ternary utility model: summaries, compaction, NOTES.md, routing. Always
+# resident, CPU only, no tools.
+
+[Unit]
+Description=NIHarness utility model (bitnet.cpp, localhost only)
+After=network-online.target
+
+[Container]
+ContainerName=niharness-bitnet
+Image=localhost/niharness-bitnet:latest
+PublishPort=127.0.0.1:8081:8081
+Volume=%h/.local/share/niharness/models:/models:ro,Z
+Exec=-m /models/{{UTILITY_MODEL_FILE}} --ctx-size 4096
+NoNewPrivileges=true
+DropCapability=ALL
+ReadOnly=true
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

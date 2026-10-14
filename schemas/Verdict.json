@@ -1,0 +1,111 @@
+{
+  "$defs": {
+    "Decision": {
+      "description": "The reviewer's verdict.",
+      "enum": [
+        "ACK",
+        "NAK"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "ReviewNote": {
+      "additionalProperties": false,
+      "description": "A reviewer remark anchored to a file and, when possible, a line.",
+      "properties": {
+        "file": {
+          "minLength": 1,
+          "title": "File",
+          "type": "string"
+        },
+        "line": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Line"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        }
+      },
+      "required": [
+        "file",
+        "severity",
+        "message"
+      ],
+      "title": "ReviewNote",
+      "type": "object"
+    },
+    "Severity": {
+      "description": "How much a reviewer note weighs.",
+      "enum": [
+        "blocker",
+        "major",
+        "minor",
+        "note"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A structured review result. The reviewer re-runs build and tests itself.",
+  "properties": {
+    "build_passed": {
+      "title": "Build Passed",
+      "type": "boolean"
+    },
+    "decision": {
+      "$ref": "#/$defs/Decision"
+    },
+    "notes": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ReviewNote"
+      },
+      "title": "Notes",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "summary": {
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    },
+    "tests_passed": {
+      "title": "Tests Passed",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "decision",
+    "summary",
+    "build_passed",
+    "tests_passed"
+  ],
+  "title": "Verdict",
+  "type": "object"
+}

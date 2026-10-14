@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# L0: inference throughput. No model reasoning is measured here, only the
+# serving characteristics that step budgets are derived from.
+
+[matrix]
+context_sizes = [8192, 32768, 65536]
+repeats = 3
+prompt_tokens = 2048
+generate_tokens = 256
+
+[[case]]
+id = "main-q4km"
+model_role = "main"
+quantization = "Q4_K_M"
+
+[[case]]
+id = "utility-i2s"
+model_role = "utility"
+quantization = "i2_s"
+
+[metrics]
+record = [
+  "prompt_tokens_per_second",
+  "generation_tokens_per_second",
+  "load_seconds",
+  "ram_peak_mb",
+  "vram_peak_mb",
+]

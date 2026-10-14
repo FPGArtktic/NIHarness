@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# L2: steps. A golden set of diffs with human verdicts, used to measure the
+# reviewer against a human and the implementer against the gate.
+
+[metrics]
+record = [
+  "first_attempt_gate_pass_rate",
+  "revisions_per_task",
+  "reviewer_precision",
+  "reviewer_recall",
+  "median_diff_lines",
+  "highest_intervention_level",
+]
+
+[[case]]
+id = "drops-error-return"
+diff = "cases/drops-error-return.patch"
+human_verdict = "NAK"
+human_blockers = ["error from the inner call is discarded"]
+
+[[case]]
+id = "correct-small-fix"
+diff = "cases/correct-small-fix.patch"
+human_verdict = "ACK"
+human_blockers = []
+
+[[case]]
+id = "test-weakened-to-pass"
+diff = "cases/test-weakened-to-pass.patch"
+human_verdict = "NAK"
+human_blockers = ["assertion relaxed instead of fixing the cause"]

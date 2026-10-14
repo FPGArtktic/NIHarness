@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[package]
+name = "nih-tui"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "Terminal viewer for NIHarness run event streams"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/FPGArtktic/NIHarness"
+publish = false
+
+[dependencies]
+crossterm = "0.28.1"
+ratatui = "0.29.0"
+serde = { version = "1.0.210", features = ["derive"] }
+serde_json = "1.0.128"
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"

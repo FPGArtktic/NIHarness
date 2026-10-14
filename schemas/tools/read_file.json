@@ -1,0 +1,36 @@
+{
+  "additionalProperties": false,
+  "description": "Read a slice of one file inside the worktree.",
+  "properties": {
+    "end_line": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "End Line"
+    },
+    "path": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "title": "Path",
+      "type": "string"
+    },
+    "start_line": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Start Line",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "ReadFileArgs",
+  "type": "object"
+}

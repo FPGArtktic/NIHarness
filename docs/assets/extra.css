@@ -1,0 +1,38 @@
+/*
+SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+SPDX-License-Identifier: GPL-3.0-or-later
+*/
+
+:root {
+  --md-code-font: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --md-text-font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* A tighter type scale: this is reference material, not a landing page. */
+.md-typeset h1 {
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.md-typeset h2 {
+  margin-top: 2.2rem;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+}
+
+.md-typeset table:not([class]) th {
+  font-weight: 620;
+}
+
+/* Pipeline and gate tables read better without the default cell padding. */
+.md-typeset table:not([class]) td,
+.md-typeset table:not([class]) th {
+  padding: 0.5rem 0.8rem;
+}
+
+/* Mark the parts of the harness that refuse to do something. */
+.md-typeset .refusal {
+  border-left: 3px solid var(--md-accent-fg-color);
+  padding-left: 0.8rem;
+  font-weight: 500;
+}

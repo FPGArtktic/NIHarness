@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# L3: end-to-end. Ten tasks per language, each with hidden tests the agent never
+# sees. Harness overhead is recorded separately from inference time.
+
+[metrics]
+record = [
+  "pass_at_1",
+  "wall_seconds",
+  "tokens_total",
+  "tool_calls_total",
+  "harness_overhead_seconds",
+]
+
+[sources]
+# Vendored offline; verify the version and license before adding files.
+swebench_subset = "vendor/swebench-lite-subset"   # MIT, see THIRD_PARTY.md
+languages = ["python", "c", "rust", "bash"]
+
+[[task]]
+id = "py-cli-flag"
+language = "python"
+repo = "fixtures/py-cli"
+spec = "tasks/py-cli-flag.md"
+hidden_tests = "tasks/py-cli-flag.tests.py"
+
+[[task]]
+id = "c-off-by-one"
+language = "c"
+repo = "fixtures/c-ring"
+spec = "tasks/c-off-by-one.md"
+hidden_tests = "tasks/c-off-by-one.test.c"

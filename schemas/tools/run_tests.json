@@ -1,0 +1,13 @@
+{
+  "additionalProperties": false,
+  "description": "Run tests, optionally narrowed by a selector.",
+  "properties": {
+    "selector": {
+      "default": "",
+      "title": "Selector",
+      "type": "string"
+    }
+  },
+  "title": "RunTestsArgs",
+  "type": "object"
+}

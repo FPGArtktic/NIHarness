@@ -1,0 +1,65 @@
+{
+  "$defs": {
+    "DodItem": {
+      "additionalProperties": false,
+      "description": "One line of the Definition of Done checklist, filled by the model.",
+      "properties": {
+        "done": {
+          "title": "Done",
+          "type": "boolean"
+        },
+        "evidence": {
+          "default": "",
+          "title": "Evidence",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "statement": {
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        }
+      },
+      "required": [
+        "statement",
+        "done"
+      ],
+      "title": "DodItem",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A tool-using step's terminal output: a summary plus the filled checklist.",
+  "properties": {
+    "dod": {
+      "items": {
+        "$ref": "#/$defs/DodItem"
+      },
+      "minItems": 1,
+      "title": "Dod",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "summary": {
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "summary",
+    "dod"
+  ],
+  "title": "FinalAnswer",
+  "type": "object"
+}

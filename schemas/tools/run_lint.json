@@ -1,0 +1,15 @@
+{
+  "additionalProperties": false,
+  "description": "Run the configured linters, optionally narrowed to a path.",
+  "properties": {
+    "path": {
+      "default": ".",
+      "maxLength": 1024,
+      "minLength": 1,
+      "title": "Path",
+      "type": "string"
+    }
+  },
+  "title": "RunLintArgs",
+  "type": "object"
+}

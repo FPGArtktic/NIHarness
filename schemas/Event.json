@@ -1,0 +1,1187 @@
+{
+  "$defs": {
+    "ContextCompacted": {
+      "additionalProperties": false,
+      "description": "The message window was compacted. The event log itself is untouched.",
+      "properties": {
+        "after_tokens": {
+          "minimum": 0,
+          "title": "After Tokens",
+          "type": "integer"
+        },
+        "before_tokens": {
+          "minimum": 0,
+          "title": "Before Tokens",
+          "type": "integer"
+        },
+        "deterministic_only": {
+          "title": "Deterministic Only",
+          "type": "boolean"
+        },
+        "indexed_chunks": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Indexed Chunks",
+          "type": "integer"
+        },
+        "summary_digest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Summary Digest"
+        },
+        "type": {
+          "const": "context.compacted",
+          "default": "context.compacted",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "before_tokens",
+        "after_tokens",
+        "deterministic_only"
+      ],
+      "title": "ContextCompacted",
+      "type": "object"
+    },
+    "GateCommandFinished": {
+      "additionalProperties": false,
+      "description": "One gate command finished.",
+      "properties": {
+        "command": {
+          "title": "Command",
+          "type": "string"
+        },
+        "duration_seconds": {
+          "minimum": 0,
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "exit_code": {
+          "title": "Exit Code",
+          "type": "integer"
+        },
+        "output_tail": {
+          "default": "",
+          "title": "Output Tail",
+          "type": "string"
+        },
+        "type": {
+          "const": "gate.command",
+          "default": "gate.command",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "exit_code",
+        "duration_seconds"
+      ],
+      "title": "GateCommandFinished",
+      "type": "object"
+    },
+    "GateFinished": {
+      "additionalProperties": false,
+      "description": "A gate tier finished. Red means no commit.",
+      "properties": {
+        "failure_signature": {
+          "default": "",
+          "title": "Failure Signature",
+          "type": "string"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "tier": {
+          "enum": [
+            "quick",
+            "full"
+          ],
+          "title": "Tier",
+          "type": "string"
+        },
+        "type": {
+          "const": "gate.finished",
+          "default": "gate.finished",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tier",
+        "passed"
+      ],
+      "title": "GateFinished",
+      "type": "object"
+    },
+    "GateStarted": {
+      "additionalProperties": false,
+      "description": "A gate tier began; its command list is fixed up front.",
+      "properties": {
+        "commands": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Commands",
+          "type": "array"
+        },
+        "tier": {
+          "enum": [
+            "quick",
+            "full"
+          ],
+          "title": "Tier",
+          "type": "string"
+        },
+        "type": {
+          "const": "gate.started",
+          "default": "gate.started",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tier",
+        "commands"
+      ],
+      "title": "GateStarted",
+      "type": "object"
+    },
+    "InterventionLevel": {
+      "description": "The intervention ladder applied to a looping step.",
+      "enum": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "title": "InterventionLevel",
+      "type": "integer"
+    },
+    "LoopDetected": {
+      "additionalProperties": false,
+      "description": "A detector fired over the step's event window.",
+      "properties": {
+        "evidence": {
+          "default": "",
+          "title": "Evidence",
+          "type": "string"
+        },
+        "observed": {
+          "minimum": 0,
+          "title": "Observed",
+          "type": "integer"
+        },
+        "pathology": {
+          "title": "Pathology",
+          "type": "string"
+        },
+        "threshold": {
+          "minimum": 0,
+          "title": "Threshold",
+          "type": "integer"
+        },
+        "type": {
+          "const": "loop.detected",
+          "default": "loop.detected",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pathology",
+        "observed",
+        "threshold"
+      ],
+      "title": "LoopDetected",
+      "type": "object"
+    },
+    "LoopIntervention": {
+      "additionalProperties": false,
+      "description": "The harness intervened in a looping step.",
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/InterventionLevel"
+        },
+        "pathology": {
+          "title": "Pathology",
+          "type": "string"
+        },
+        "type": {
+          "const": "loop.intervention",
+          "default": "loop.intervention",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "level",
+        "pathology"
+      ],
+      "title": "LoopIntervention",
+      "type": "object"
+    },
+    "MetricsSampled": {
+      "additionalProperties": false,
+      "description": "A metrics sample for the TUI gauges. The harness computes, the TUI renders.",
+      "properties": {
+        "context_fill": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Context Fill",
+          "type": "number"
+        },
+        "eta_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Eta Seconds"
+        },
+        "generation_tps": {
+          "minimum": 0,
+          "title": "Generation Tps",
+          "type": "number"
+        },
+        "prompt_tps": {
+          "minimum": 0,
+          "title": "Prompt Tps",
+          "type": "number"
+        },
+        "ram_used_mb": {
+          "minimum": 0,
+          "title": "Ram Used Mb",
+          "type": "integer"
+        },
+        "type": {
+          "const": "metrics.sampled",
+          "default": "metrics.sampled",
+          "title": "Type",
+          "type": "string"
+        },
+        "vram_used_mb": {
+          "minimum": 0,
+          "title": "Vram Used Mb",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "generation_tps",
+        "prompt_tps",
+        "context_fill",
+        "vram_used_mb",
+        "ram_used_mb"
+      ],
+      "title": "MetricsSampled",
+      "type": "object"
+    },
+    "ModelReasoning": {
+      "additionalProperties": false,
+      "description": "Reasoning content, logged for the human and stripped from the message history.",
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "const": "model.reasoning",
+          "default": "model.reasoning",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "ModelReasoning",
+      "type": "object"
+    },
+    "ModelRequest": {
+      "additionalProperties": false,
+      "description": "A request was sent to the inference backend.",
+      "properties": {
+        "messages_digest": {
+          "title": "Messages Digest",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "prompt_tokens": {
+          "minimum": 0,
+          "title": "Prompt Tokens",
+          "type": "integer"
+        },
+        "tool_choice": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "none",
+            "required"
+          ],
+          "title": "Tool Choice",
+          "type": "string"
+        },
+        "type": {
+          "const": "model.request",
+          "default": "model.request",
+          "title": "Type",
+          "type": "string"
+        },
+        "window_fill": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Window Fill",
+          "type": "number"
+        }
+      },
+      "required": [
+        "model",
+        "messages_digest",
+        "prompt_tokens",
+        "window_fill"
+      ],
+      "title": "ModelRequest",
+      "type": "object"
+    },
+    "ModelResponse": {
+      "additionalProperties": false,
+      "description": "A response arrived. Token counts come from the backend, never from characters.",
+      "properties": {
+        "completion_tokens": {
+          "minimum": 0,
+          "title": "Completion Tokens",
+          "type": "integer"
+        },
+        "content_digest": {
+          "title": "Content Digest",
+          "type": "string"
+        },
+        "finish_reason": {
+          "title": "Finish Reason",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "prompt_tokens": {
+          "minimum": 0,
+          "title": "Prompt Tokens",
+          "type": "integer"
+        },
+        "type": {
+          "const": "model.response",
+          "default": "model.response",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "prompt_tokens",
+        "completion_tokens",
+        "finish_reason",
+        "content_digest"
+      ],
+      "title": "ModelResponse",
+      "type": "object"
+    },
+    "NotesAppended": {
+      "additionalProperties": false,
+      "description": "Something was written to NOTES.md: an uncertainty, a blocked dependency, a diagnosis.",
+      "properties": {
+        "section": {
+          "title": "Section",
+          "type": "string"
+        },
+        "text_digest": {
+          "title": "Text Digest",
+          "type": "string"
+        },
+        "type": {
+          "const": "notes.appended",
+          "default": "notes.appended",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "section",
+        "text_digest"
+      ],
+      "title": "NotesAppended",
+      "type": "object"
+    },
+    "PlanApproved": {
+      "additionalProperties": false,
+      "description": "The human approved the plan; implementation starts as a fresh run.",
+      "properties": {
+        "plan_digest": {
+          "title": "Plan Digest",
+          "type": "string"
+        },
+        "type": {
+          "const": "plan.approved",
+          "default": "plan.approved",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_digest"
+      ],
+      "title": "PlanApproved",
+      "type": "object"
+    },
+    "PlanCreated": {
+      "additionalProperties": false,
+      "description": "A plan was produced or imported and passed the plan gate.",
+      "properties": {
+        "imported": {
+          "default": false,
+          "title": "Imported",
+          "type": "boolean"
+        },
+        "plan_digest": {
+          "title": "Plan Digest",
+          "type": "string"
+        },
+        "task_count": {
+          "minimum": 1,
+          "title": "Task Count",
+          "type": "integer"
+        },
+        "type": {
+          "const": "plan.created",
+          "default": "plan.created",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_digest",
+        "task_count"
+      ],
+      "title": "PlanCreated",
+      "type": "object"
+    },
+    "QuestionsAnswered": {
+      "additionalProperties": false,
+      "description": "The human answered; answers are events, so a replay sees them.",
+      "properties": {
+        "answers_digest": {
+          "title": "Answers Digest",
+          "type": "string"
+        },
+        "count": {
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "type": {
+          "const": "questions.answered",
+          "default": "questions.answered",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "answers_digest",
+        "count"
+      ],
+      "title": "QuestionsAnswered",
+      "type": "object"
+    },
+    "QuestionsAsked": {
+      "additionalProperties": false,
+      "description": "A step emitted clarifying questions and is waiting for the human.",
+      "properties": {
+        "count": {
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "questions_digest": {
+          "title": "Questions Digest",
+          "type": "string"
+        },
+        "type": {
+          "const": "questions.asked",
+          "default": "questions.asked",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "questions_digest",
+        "count"
+      ],
+      "title": "QuestionsAsked",
+      "type": "object"
+    },
+    "RunCancelled": {
+      "additionalProperties": false,
+      "description": "The human cancelled the run; the last snapshot allows a resume.",
+      "properties": {
+        "source": {
+          "enum": [
+            "tui",
+            "cli",
+            "signal"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "type": {
+          "const": "run.cancelled",
+          "default": "run.cancelled",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "RunCancelled",
+      "type": "object"
+    },
+    "RunFinished": {
+      "additionalProperties": false,
+      "description": "A run reached a terminal state.",
+      "properties": {
+        "outcome": {
+          "$ref": "#/$defs/RunOutcome"
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
+          "type": "string"
+        },
+        "type": {
+          "const": "run.finished",
+          "default": "run.finished",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome"
+      ],
+      "title": "RunFinished",
+      "type": "object"
+    },
+    "RunOutcome": {
+      "description": "How a run ended.",
+      "enum": [
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "title": "RunOutcome",
+      "type": "string"
+    },
+    "RunResumed": {
+      "additionalProperties": false,
+      "description": "A run continued from a snapshot.",
+      "properties": {
+        "from_seq": {
+          "minimum": 1,
+          "title": "From Seq",
+          "type": "integer"
+        },
+        "type": {
+          "const": "run.resumed",
+          "default": "run.resumed",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_seq"
+      ],
+      "title": "RunResumed",
+      "type": "object"
+    },
+    "RunStarted": {
+      "additionalProperties": false,
+      "description": "A run began on a fresh worktree, seeded only by its input artifact.",
+      "properties": {
+        "branch": {
+          "title": "Branch",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "parent_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Run Id"
+        },
+        "plan_digest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Digest"
+        },
+        "profile": {
+          "title": "Profile",
+          "type": "string"
+        },
+        "spec_digest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Spec Digest"
+        },
+        "type": {
+          "const": "run.started",
+          "default": "run.started",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "branch",
+        "profile",
+        "model"
+      ],
+      "title": "RunStarted",
+      "type": "object"
+    },
+    "SpecAccepted": {
+      "additionalProperties": false,
+      "description": "The spec passed the schema check and the reviewer pass.",
+      "properties": {
+        "spec_digest": {
+          "title": "Spec Digest",
+          "type": "string"
+        },
+        "type": {
+          "const": "spec.accepted",
+          "default": "spec.accepted",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "spec_digest"
+      ],
+      "title": "SpecAccepted",
+      "type": "object"
+    },
+    "StepFailed": {
+      "additionalProperties": false,
+      "description": "A step failed and the task goes back to the human.",
+      "properties": {
+        "diagnostics": {
+          "default": "",
+          "title": "Diagnostics",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "type": {
+          "const": "step.failed",
+          "default": "step.failed",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "title": "StepFailed",
+      "type": "object"
+    },
+    "StepFinished": {
+      "additionalProperties": false,
+      "description": "A step stopped; counters are what the harness measured, not what the model claimed.",
+      "properties": {
+        "stop_reason": {
+          "$ref": "#/$defs/StopReason"
+        },
+        "tokens_used": {
+          "minimum": 0,
+          "title": "Tokens Used",
+          "type": "integer"
+        },
+        "tool_calls_used": {
+          "minimum": 0,
+          "title": "Tool Calls Used",
+          "type": "integer"
+        },
+        "type": {
+          "const": "step.finished",
+          "default": "step.finished",
+          "title": "Type",
+          "type": "string"
+        },
+        "wall_seconds": {
+          "minimum": 0,
+          "title": "Wall Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "stop_reason",
+        "tool_calls_used",
+        "tokens_used",
+        "wall_seconds"
+      ],
+      "title": "StepFinished",
+      "type": "object"
+    },
+    "StepStarted": {
+      "additionalProperties": false,
+      "description": "A pipeline step began with a budget the harness enforces.",
+      "properties": {
+        "max_tokens": {
+          "minimum": 0,
+          "title": "Max Tokens",
+          "type": "integer"
+        },
+        "max_tool_calls": {
+          "minimum": 0,
+          "title": "Max Tool Calls",
+          "type": "integer"
+        },
+        "max_wall_seconds": {
+          "minimum": 0,
+          "title": "Max Wall Seconds",
+          "type": "integer"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Id"
+        },
+        "type": {
+          "const": "step.started",
+          "default": "step.started",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage",
+        "role",
+        "max_tool_calls",
+        "max_tokens",
+        "max_wall_seconds"
+      ],
+      "title": "StepStarted",
+      "type": "object"
+    },
+    "StopReason": {
+      "description": "Why a step stopped. Mirrors the stop conditions of the tool loop.",
+      "enum": [
+        "final_answer",
+        "budget_tool_calls",
+        "budget_tokens",
+        "budget_wall_time",
+        "detector_escalation",
+        "cancelled",
+        "error"
+      ],
+      "title": "StopReason",
+      "type": "string"
+    },
+    "ToolCalled": {
+      "additionalProperties": false,
+      "description": "A validated tool call was dispatched to the sandbox.",
+      "properties": {
+        "arguments": {
+          "additionalProperties": true,
+          "title": "Arguments",
+          "type": "object"
+        },
+        "arguments_digest": {
+          "title": "Arguments Digest",
+          "type": "string"
+        },
+        "call_id": {
+          "title": "Call Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "const": "tool.called",
+          "default": "tool.called",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "call_id",
+        "name",
+        "arguments",
+        "arguments_digest"
+      ],
+      "title": "ToolCalled",
+      "type": "object"
+    },
+    "ToolRejected": {
+      "additionalProperties": false,
+      "description": "A tool call was refused before execution: schema, allowlist or path confinement.",
+      "properties": {
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "const": "tool.rejected",
+          "default": "tool.rejected",
+          "title": "Type",
+          "type": "string"
+        },
+        "violation": {
+          "title": "Violation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "violation",
+        "detail"
+      ],
+      "title": "ToolRejected",
+      "type": "object"
+    },
+    "ToolReturned": {
+      "additionalProperties": false,
+      "description": "A tool call produced a structured, truncated result.",
+      "properties": {
+        "call_id": {
+          "title": "Call Id",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "result_digest": {
+          "title": "Result Digest",
+          "type": "string"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "truncated": {
+          "title": "Truncated",
+          "type": "boolean"
+        },
+        "type": {
+          "const": "tool.returned",
+          "default": "tool.returned",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "call_id",
+        "ok",
+        "result_digest",
+        "truncated",
+        "summary"
+      ],
+      "title": "ToolReturned",
+      "type": "object"
+    },
+    "VcsCommitted": {
+      "additionalProperties": false,
+      "description": "The gate passed and a commit landed on the run branch.",
+      "properties": {
+        "deletions": {
+          "minimum": 0,
+          "title": "Deletions",
+          "type": "integer"
+        },
+        "files_changed": {
+          "minimum": 0,
+          "title": "Files Changed",
+          "type": "integer"
+        },
+        "insertions": {
+          "minimum": 0,
+          "title": "Insertions",
+          "type": "integer"
+        },
+        "sha": {
+          "title": "Sha",
+          "type": "string"
+        },
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        },
+        "type": {
+          "const": "vcs.committed",
+          "default": "vcs.committed",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha",
+        "subject",
+        "files_changed",
+        "insertions",
+        "deletions"
+      ],
+      "title": "VcsCommitted",
+      "type": "object"
+    },
+    "VcsRolledBack": {
+      "additionalProperties": false,
+      "description": "The worktree was reset to the last green commit.",
+      "properties": {
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "to_sha": {
+          "title": "To Sha",
+          "type": "string"
+        },
+        "type": {
+          "const": "vcs.rolled_back",
+          "default": "vcs.rolled_back",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "to_sha",
+        "reason"
+      ],
+      "title": "VcsRolledBack",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One line of `events.jsonl`: an envelope around a payload.",
+  "properties": {
+    "body": {
+      "discriminator": {
+        "mapping": {
+          "context.compacted": "#/$defs/ContextCompacted",
+          "gate.command": "#/$defs/GateCommandFinished",
+          "gate.finished": "#/$defs/GateFinished",
+          "gate.started": "#/$defs/GateStarted",
+          "loop.detected": "#/$defs/LoopDetected",
+          "loop.intervention": "#/$defs/LoopIntervention",
+          "metrics.sampled": "#/$defs/MetricsSampled",
+          "model.reasoning": "#/$defs/ModelReasoning",
+          "model.request": "#/$defs/ModelRequest",
+          "model.response": "#/$defs/ModelResponse",
+          "notes.appended": "#/$defs/NotesAppended",
+          "plan.approved": "#/$defs/PlanApproved",
+          "plan.created": "#/$defs/PlanCreated",
+          "questions.answered": "#/$defs/QuestionsAnswered",
+          "questions.asked": "#/$defs/QuestionsAsked",
+          "run.cancelled": "#/$defs/RunCancelled",
+          "run.finished": "#/$defs/RunFinished",
+          "run.resumed": "#/$defs/RunResumed",
+          "run.started": "#/$defs/RunStarted",
+          "spec.accepted": "#/$defs/SpecAccepted",
+          "step.failed": "#/$defs/StepFailed",
+          "step.finished": "#/$defs/StepFinished",
+          "step.started": "#/$defs/StepStarted",
+          "tool.called": "#/$defs/ToolCalled",
+          "tool.rejected": "#/$defs/ToolRejected",
+          "tool.returned": "#/$defs/ToolReturned",
+          "vcs.committed": "#/$defs/VcsCommitted",
+          "vcs.rolled_back": "#/$defs/VcsRolledBack"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/RunStarted"
+        },
+        {
+          "$ref": "#/$defs/RunFinished"
+        },
+        {
+          "$ref": "#/$defs/RunCancelled"
+        },
+        {
+          "$ref": "#/$defs/RunResumed"
+        },
+        {
+          "$ref": "#/$defs/StepStarted"
+        },
+        {
+          "$ref": "#/$defs/StepFinished"
+        },
+        {
+          "$ref": "#/$defs/StepFailed"
+        },
+        {
+          "$ref": "#/$defs/ModelRequest"
+        },
+        {
+          "$ref": "#/$defs/ModelResponse"
+        },
+        {
+          "$ref": "#/$defs/ModelReasoning"
+        },
+        {
+          "$ref": "#/$defs/ToolCalled"
+        },
+        {
+          "$ref": "#/$defs/ToolReturned"
+        },
+        {
+          "$ref": "#/$defs/ToolRejected"
+        },
+        {
+          "$ref": "#/$defs/GateStarted"
+        },
+        {
+          "$ref": "#/$defs/GateCommandFinished"
+        },
+        {
+          "$ref": "#/$defs/GateFinished"
+        },
+        {
+          "$ref": "#/$defs/ContextCompacted"
+        },
+        {
+          "$ref": "#/$defs/LoopDetected"
+        },
+        {
+          "$ref": "#/$defs/LoopIntervention"
+        },
+        {
+          "$ref": "#/$defs/SpecAccepted"
+        },
+        {
+          "$ref": "#/$defs/PlanCreated"
+        },
+        {
+          "$ref": "#/$defs/PlanApproved"
+        },
+        {
+          "$ref": "#/$defs/QuestionsAsked"
+        },
+        {
+          "$ref": "#/$defs/QuestionsAnswered"
+        },
+        {
+          "$ref": "#/$defs/NotesAppended"
+        },
+        {
+          "$ref": "#/$defs/VcsCommitted"
+        },
+        {
+          "$ref": "#/$defs/VcsRolledBack"
+        },
+        {
+          "$ref": "#/$defs/MetricsSampled"
+        }
+      ],
+      "title": "Body"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "seq": {
+      "description": "Position in the run's stream, starting at 1.",
+      "minimum": 1,
+      "title": "Seq",
+      "type": "integer"
+    },
+    "step_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Step Id"
+    },
+    "ts": {
+      "description": "When the sink accepted the payload (UTC).",
+      "format": "date-time",
+      "title": "Ts",
+      "type": "string"
+    }
+  },
+  "required": [
+    "seq",
+    "ts",
+    "run_id",
+    "body"
+  ],
+  "title": "Event",
+  "type": "object"
+}

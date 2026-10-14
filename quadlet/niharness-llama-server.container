@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Rendered by `nih init` into ~/.config/containers/systemd/ with the chosen
+# profile's values substituted. Start with:
+#   systemctl --user daemon-reload && systemctl --user start niharness-llama-server
+
+[Unit]
+Description=NIHarness main model (llama-server, OpenAI-compatible, localhost only)
+After=network-online.target
+
+[Container]
+ContainerName=niharness-llama-server
+Image=localhost/niharness-llama-cpu:latest
+# Bound to loopback: the harness refuses any non-localhost backend URL.
+PublishPort=127.0.0.1:8080:8080
+Volume=%h/.local/share/niharness/models:/models:ro,Z
+Exec=-m /models/{{MODEL_FILE}} --ctx-size {{CONTEXT_WINDOW}} --n-cpu-moe 999 \
+     --cache-type-k q8_0 --cache-type-v q8_0 --metrics
+NoNewPrivileges=true
+DropCapability=ALL
+ReadOnly=true
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target

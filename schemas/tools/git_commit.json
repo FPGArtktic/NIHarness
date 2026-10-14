@@ -1,0 +1,17 @@
+{
+  "additionalProperties": false,
+  "description": "Attempt a commit. This is the gate: format, lint, build, quick tests.",
+  "properties": {
+    "message": {
+      "maxLength": 4096,
+      "minLength": 10,
+      "title": "Message",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "title": "GitCommitArgs",
+  "type": "object"
+}

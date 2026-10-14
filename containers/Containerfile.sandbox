@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The tool sandbox: everything the gate drives, and nothing that can reach a
+# network. Build this on a machine with network, then `podman save` / `podman
+# load` it onto the air-gapped host. The harness never pulls an image.
+#
+#   podman build -t localhost/niharness-sandbox:latest -f containers/Containerfile.sandbox .
+#
+# Layers are ordered coldest first, so adding a language does not rebuild the base.
+
+FROM docker.io/library/debian:trixie-slim AS base
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    PIP_NO_INDEX=1 \
+    CARGO_NET_OFFLINE=true
+
+RUN apt-get update && apt-get install --no-install-recommends -y \
+      ca-certificates git make pkg-config file jq ripgrep \
+    && rm -rf /var/lib/apt/lists/*
+
+# ----------------------------------------------------------------- C / C++
+FROM base AS cxx
+RUN apt-get update && apt-get install --no-install-recommends -y \
+      build-essential cmake ninja-build ccache \
+      clang clang-format clang-tidy cppcheck gdb valgrind \
+    && rm -rf /var/lib/apt/lists/*
+
+# ----------------------------------------------------------------- scripting
+FROM cxx AS scripting
+RUN apt-get update && apt-get install --no-install-recommends -y \
+      python3 python3-venv shellcheck shfmt bats tcl tcllib \
+    && rm -rf /var/lib/apt/lists/*
+
+# ----------------------------------------------------------------- HDL
+FROM scripting AS hdl
+RUN apt-get update && apt-get install --no-install-recommends -y \
+      verilator ghdl iverilog \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM hdl AS final
+
+# The sandbox runs as a non-root user with the worktree bind-mounted at /work.
+RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin agent
+WORKDIR /work
+USER agent
+
+# No ENTRYPOINT on purpose: the harness passes a fixed argument vector, never a
+# shell string, and `shell` is in no default tool allowlist.
+CMD ["/bin/false"]

@@ -1,0 +1,25 @@
+{
+  "additionalProperties": false,
+  "description": "A call as proposed by the model, before validation.",
+  "properties": {
+    "arguments": {
+      "additionalProperties": true,
+      "title": "Arguments",
+      "type": "object"
+    },
+    "call_id": {
+      "title": "Call Id",
+      "type": "string"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call_id",
+    "name"
+  ],
+  "title": "ToolCall",
+  "type": "object"
+}

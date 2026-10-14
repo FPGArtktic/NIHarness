@@ -1,0 +1,38 @@
+# Local agent instructions (not part of the project)
+CLAUDE.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# Rust
+tui/target/
+
+# Docs
+site/
+
+# Runtime state (event logs, snapshots, worktrees, approvals)
+.nih/
+NOTES.md
+
+# Machine-specific: written by `nih init` from the probed hardware
+harness.toml
+
+# Air-gap bundle
+wheelhouse/
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

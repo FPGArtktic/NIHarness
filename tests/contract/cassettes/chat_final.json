@@ -1,0 +1,16 @@
+{
+  "id": "chatcmpl-2",
+  "object": "chat.completion",
+  "model": "Qwen3-Coder-30B-A3B-Instruct",
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "{\"summary\": \"added the parser\", \"dod\": [{\"statement\": \"tests pass\", \"done\": true, \"evidence\": \"pytest: 131 passed\"}]}"
+      }
+    }
+  ],
+  "usage": { "prompt_tokens": 2048, "completion_tokens": 44, "total_tokens": 2092 }
+}

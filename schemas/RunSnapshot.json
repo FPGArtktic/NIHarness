@@ -1,0 +1,164 @@
+{
+  "$defs": {
+    "RunOutcome": {
+      "description": "How a run ended.",
+      "enum": [
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "title": "RunOutcome",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Everything the harness needs to resume a run or render its status.",
+  "properties": {
+    "cancelled": {
+      "default": false,
+      "title": "Cancelled",
+      "type": "boolean"
+    },
+    "commits": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Commits",
+      "type": "array"
+    },
+    "compactions": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Compactions",
+      "type": "integer"
+    },
+    "context_fill": {
+      "default": 0.0,
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Context Fill",
+      "type": "number"
+    },
+    "gate_failures": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Gate Failures",
+      "type": "integer"
+    },
+    "gate_runs": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Gate Runs",
+      "type": "integer"
+    },
+    "highest_intervention": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Highest Intervention",
+      "type": "integer"
+    },
+    "last_failure_signature": {
+      "default": "",
+      "title": "Last Failure Signature",
+      "type": "string"
+    },
+    "open_questions": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Open Questions",
+      "type": "integer"
+    },
+    "outcome": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RunOutcome"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "plan_approved": {
+      "default": false,
+      "title": "Plan Approved",
+      "type": "boolean"
+    },
+    "plan_digest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Plan Digest"
+    },
+    "rejected_calls": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Rejected Calls",
+      "type": "integer"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "seq": {
+      "default": 0,
+      "description": "Sequence of the last folded event.",
+      "minimum": 0,
+      "title": "Seq",
+      "type": "integer"
+    },
+    "spec_digest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Spec Digest"
+    },
+    "stage": {
+      "default": "",
+      "title": "Stage",
+      "type": "string"
+    },
+    "step_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Step Id"
+    },
+    "tokens_used": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Tokens Used",
+      "type": "integer"
+    },
+    "tool_calls": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Tool Calls",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "run_id"
+  ],
+  "title": "RunSnapshot",
+  "type": "object"
+}
