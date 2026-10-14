@@ -73,6 +73,19 @@ Each firing climbs exactly one rung, and the rung is an event
 4. **Step failure**: the task goes back to the human with the diagnostics in
    `NOTES.md`.
 
+## Who performs the actions
+
+The loop is a pure state machine: `next_action(state)` returns what should
+happen, and each `observe_*` folds the outcome back into a new state **plus the
+events to append**. The executor - `niharness.application.StepRunner` - does
+exactly what it is told and nothing else: it calls the model, runs the tool in
+the sandbox, rolls the worktree back, and appends the events it is handed.
+
+That split is why the ladder above is testable without a model or a container,
+and why the event stream cannot drift from the state that produced it. See
+[ADR 0009](../adr/0009-the-tool-loop-is-a-pure-state-machine.md) and
+[ADR 0010](../adr/0010-an-application-layer.md).
+
 ## Why it is tested this way
 
 Detectors are unit-tested on synthetic windows and property-tested for

@@ -39,7 +39,7 @@ from niharness.domain.loop import (
     next_level,
     synthetic_result,
 )
-from niharness.domain.messages import ChatResponse, ToolChoice
+from niharness.domain.messages import ChatResponse, ResponseFormat, ToolChoice
 from niharness.domain.roles import Role
 from niharness.domain.tools import (
     AcceptedCall,
@@ -76,6 +76,13 @@ class LoopConfig(BaseModel):
     limits: ToolLimits = ToolLimits()
     expects_final_answer: bool = True
     task_id: str | None = None
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=4_096, ge=1)
+    response_format: ResponseFormat | None = Field(
+        default=None,
+        description="Structured output constraint for the role's artifact, when it has one.",
+    )
+    seed: int | None = Field(default=None, description="Determinism knob, passed through.")
 
 
 class LoopState(BaseModel):

@@ -123,8 +123,16 @@ flag on the sandbox adapter:
       events to append. Validation, the detector window, the intervention
       ladder, forced finalisation and every stop condition live here, with no
       I/O; see [ADR 0009](adr/0009-the-tool-loop-is-a-pure-state-machine.md).
-- [ ] The executor that performs those actions, wiring `ModelBackend`,
-      `ToolProvider`, `Vcs` and `EventSink` together.
+- [x] The executor that performs those actions, wiring `ModelBackend`,
+      `ToolProvider`, `Vcs` and `EventSink` together, in the new
+      `niharness.application` layer ([ADR 0010](adr/0010-an-application-layer.md)).
+- [ ] Window building and compaction inside the executor: today it appends to a
+      message list, so a long step grows its window until a budget stops it.
+      The policy and its invariants already exist in the domain; what is missing
+      is measuring the window with the `Tokenizer` port and applying the plan
+      before each model call.
+- [ ] The MCP `ToolProvider` adapter, so the executor has real tools to run
+      (it is written against the port, not against MCP).
 - [ ] Structured output: JSON Schema for every artifact, GBNF where the backend
       supports it.
 - [ ] Forced finalisation two calls before the budget ends.

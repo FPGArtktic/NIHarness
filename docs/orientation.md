@@ -29,6 +29,7 @@ pipeline with gates, driven from a terminal, with a Rust TUI as a thin viewer.
 |---|---|---|
 | Domain | `niharness.domain` | Pure. No I/O, no clock, no adapter imports. All the interesting decisions live here. |
 | Ports | `niharness.ports` | Protocols only. Depends on the domain, nothing else. |
+| Application | `niharness.application` | Drives the domain through the ports. No rules, no protocols, no adapter imports. |
 | Adapters | `niharness.adapters` | One adapter per port. Adapters never import each other. |
 | CLI | `niharness.cli` | The only place that wires adapters into the domain. |
 
@@ -42,8 +43,10 @@ suggestion. See [Architecture](concepts/architecture.md) and
   validation with path confinement, role allowlists, budgets, the two-tier gate
   with failure signatures, loop detectors with the intervention ladder,
   compaction policy, and the fold that derives run state from events.
-- Three adapters: the JSONL event sink, the OpenAI-compatible inference client,
-  and the git worktree adapter.
+- Four adapters: the JSONL event sink, the OpenAI-compatible inference client,
+  the git worktree adapter, and the rootless Podman sandbox.
+- The step executor: it runs a step to completion against the ports, and it is
+  tested with fakes rather than with a model and a container.
 - CLI commands that need no model: `nih init`, `nih config`, `nih gate`,
   `nih status`, `nih plan check`, `nih plan import` (for conforming plans), and
   `nih docs generate`.

@@ -118,6 +118,7 @@ nav:
       - API:
           - reference/api/domain.md
           - reference/api/ports.md
+          - reference/api/application.md
           - reference/api/adapters.md
   - Operations:
       - operations/profiles.md
@@ -137,3 +138,4 @@ nav:
       - adr/0007-gpl-3-0-or-later.md
       - adr/0008-sandbox-is-one-container-per-command.md
       - adr/0009-the-tool-loop-is-a-pure-state-machine.md
+      - adr/0010-an-application-layer.md

@@ -13,6 +13,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Logging resolves `sys.stderr` at write time, so a captured or replaced stream
+  does not make every later record raise on a closed file.
+
 - Repository bootstrap: PEP 621 packaging with `uv`, GPL-3.0-or-later licensing,
   REUSE compliance, ruff/mypy/pytest/import-linter configuration.
 - Domain core: artifact contracts (`Spec`, `Plan`, `Questions`, `Verdict`,
@@ -24,6 +27,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - Tool loop as a pure state machine: it decides the next action and folds what
   comes back into state plus the events to append, so a bounded ReAct loop is
   unit-testable without a model or a container.
+- Application layer with `StepRunner`: runs one step to completion against the
+  ports, performing what the loop decides and appending the events it returns.
 - Ports: `ModelBackend`, `Tokenizer`, `ToolProvider`, `VectorStore`, `Vcs`,
   `Sandbox`, `EventSink`.
 - Adapters: JSONL event sink, OpenAI-compatible inference client, git worktree

@@ -202,6 +202,29 @@ layers = [
 exhaustive = false
 
 [[tool.importlinter.contracts]]
+name = "Layered: cli over application over ports over domain"
+type = "layers"
+layers = [
+  "niharness.cli",
+  "niharness.application",
+  "niharness.ports",
+  "niharness.domain",
+]
+exhaustive = false
+
+[[tool.importlinter.contracts]]
+name = "The application layer drives ports, never adapters"
+type = "forbidden"
+source_modules = ["niharness.application"]
+forbidden_modules = [
+  "niharness.adapters",
+  "niharness.cli",
+  "httpx",
+  "subprocess",
+  "qdrant_client",
+]
+
+[[tool.importlinter.contracts]]
 name = "Adapters do not import each other"
 type = "independence"
 modules = [
