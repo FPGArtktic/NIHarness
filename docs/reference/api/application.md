@@ -10,3 +10,11 @@ protocol details: they perform the action the domain asked for, feed the
 outcome back, and append the events they are handed.
 
 ::: niharness.application.step_runner
+
+## Window
+
+::: niharness.application.window
+
+## Summarizer
+
+::: niharness.application.summarizer

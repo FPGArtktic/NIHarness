@@ -1,15 +1,21 @@
 # SPDX-FileCopyrightText: 2026 Mateusz Okulanis
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Window assembly: ordering, system merging, and no reasoning in the history."""
+"""Message types.
+
+Assembling a window into an ordered message list lives in the application
+layer and is tested in `test_window.py`; what is tested here is what the types
+themselves guarantee.
+"""
 
 from niharness.domain.context import ContextItem, ItemKind, Priority
-from niharness.domain.identity import digest_text
+from niharness.domain.identity import CallId, digest_text
 from niharness.domain.messages import (
     ChatResponse,
     Message,
     MessageRole,
+    ToolCallRequest,
     Usage,
-    build_messages,
+    strip_reasoning,
     window_items_by_priority,
 )
 
@@ -25,41 +31,7 @@ def item(
         tokens=len(content),
         digest=digest_text(content),
         origin_seq=seq,
-        tool="read_file" if kind is ItemKind.TOOL_RESULT else None,
     )
-
-
-def test_system_layers_are_merged_and_lead() -> None:
-    messages = build_messages(
-        [
-            item("turn", Priority.CURRENT_TURNS, ItemKind.TURN, "assistant said", seq=5),
-            item("policy", Priority.PROMPT, ItemKind.PROMPT_LAYER, "policy", seq=0),
-            item("role", Priority.PROMPT, ItemKind.PROMPT_LAYER, "role", seq=1),
-        ],
-    )
-    assert messages[0].role is MessageRole.SYSTEM
-    assert messages[0].content == "policy\n\nrole"
-    assert len([m for m in messages if m.role is MessageRole.SYSTEM]) == 1
-
-
-def test_priority_then_event_order_decides_position() -> None:
-    messages = build_messages(
-        [
-            item("r2", Priority.RECENT_TOOL_RESULTS, ItemKind.TOOL_RESULT, "second", seq=9),
-            item("r1", Priority.RECENT_TOOL_RESULTS, ItemKind.TOOL_RESULT, "first", seq=4),
-            item("task", Priority.PROMPT, ItemKind.TASK, "the task", seq=0),
-        ],
-    )
-    assert [message.content for message in messages] == ["the task", "first", "second"]
-
-
-def test_tool_results_carry_their_call_id() -> None:
-    messages = build_messages(
-        [item("call-7", Priority.RECENT_TOOL_RESULTS, ItemKind.TOOL_RESULT, "output")],
-    )
-    assert messages[0].role is MessageRole.TOOL
-    assert messages[0].tool_call_id == "call-7"
-    assert messages[0].name == "read_file"
 
 
 def test_a_message_has_no_place_for_reasoning() -> None:
@@ -71,6 +43,35 @@ def test_a_message_has_no_place_for_reasoning() -> None:
     )
     rebuilt = Message(role=MessageRole.ASSISTANT, content=response.content)
     assert "deliberation" not in rebuilt.model_dump_json()
+
+
+def test_stripping_reasoning_from_a_foreign_history_changes_nothing_visible() -> None:
+    history = (
+        Message(role=MessageRole.SYSTEM, content="policy"),
+        Message(role=MessageRole.ASSISTANT, content="answer"),
+    )
+    assert strip_reasoning(history) == history
+
+
+def test_an_assistant_message_carries_the_calls_it_proposed() -> None:
+    message = Message(
+        role=MessageRole.ASSISTANT,
+        content="",
+        tool_calls=(
+            ToolCallRequest(call_id=CallId("c1"), name="read_file", arguments_json="{}"),
+        ),
+    )
+    assert message.tool_calls[0].call_id == "c1"
+
+
+def test_a_tool_message_is_paired_with_its_call() -> None:
+    message = Message(
+        role=MessageRole.TOOL,
+        content="file body",
+        tool_call_id=CallId("c1"),
+        name="read_file",
+    )
+    assert (message.tool_call_id, message.name) == ("c1", "read_file")
 
 
 def test_token_totals_are_reported_per_priority() -> None:

@@ -60,8 +60,12 @@ class ItemKind(StrEnum):
     REVIEW_NOTE = "review_note"
     TOOL_RESULT = "tool_result"
     TURN = "turn"
+    INSTRUCTION = "instruction"
     SUMMARY = "summary"
 
+
+TURN_KINDS: frozenset[ItemKind] = frozenset({ItemKind.TURN, ItemKind.INSTRUCTION})
+"""Kinds that a ContextSummary may replace: the conversation, not the artefacts."""
 
 LATEST_ONLY_TOOLS: frozenset[str] = frozenset(
     {"run_build", "run_tests", "run_lint", "list_tree", "git_commit"},
@@ -327,7 +331,7 @@ def plan_compaction(  # noqa: C901 - one readable pass per layout rule
     summarized: list[str] = []
     if not fits():
         # Pass 4: older turns become one ContextSummary, produced by the utility model.
-        turns = [item for item in current() if item.kind is ItemKind.TURN and item.compactable]
+        turns = [item for item in current() if item.kind in TURN_KINDS and item.compactable]
         stale = [item for item in turns if item.priority >= Priority.OLD_TURNS] or turns[:-2]
         for item in stale:
             remove(item, Action.SUMMARIZE, "folded into a ContextSummary")

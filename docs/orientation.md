@@ -45,8 +45,9 @@ suggestion. See [Architecture](concepts/architecture.md) and
   compaction policy, and the fold that derives run state from events.
 - Four adapters: the JSONL event sink, the OpenAI-compatible inference client,
   the git worktree adapter, and the rootless Podman sandbox.
-- The step executor: it runs a step to completion against the ports, and it is
-  tested with fakes rather than with a model and a container.
+- The step executor: it runs a step to completion against the ports, measures
+  and compacts its window before every model call, and is tested with fakes
+  rather than with a model and a container.
 - CLI commands that need no model: `nih init`, `nih config`, `nih gate`,
   `nih status`, `nih plan check`, `nih plan import` (for conforming plans), and
   `nih docs generate`.

@@ -17,20 +17,13 @@ no branches a test would want to pin beyond "it did what it was told".
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 import structlog
 
+from niharness.application.window import Window
 from niharness.domain import events as ev
 from niharness.domain.gate import output_digest
 from niharness.domain.identity import StepId, digest_json
-from niharness.domain.messages import (
-    ChatRequest,
-    Message,
-    MessageRole,
-    ToolChoice,
-    ToolSchema,
-)
+from niharness.domain.messages import ChatRequest, ToolChoice, ToolSchema
 from niharness.domain.tool_loop import (
     CallModel,
     ExecuteTool,
@@ -107,7 +100,7 @@ class StepRunner:
     async def run(
         self,
         config: LoopConfig,
-        seed: Sequence[Message],
+        window: Window,
         *,
         step_id: StepId | None = None,
     ) -> LoopState:
@@ -115,7 +108,9 @@ class StepRunner:
 
         Args:
             config: the step's role, budgets, allowlist and thresholds.
-            seed: the initial window - prompt layers, the task, retrieved context.
+            window: the window, already seeded with the prompt layers, the task
+                and any open notes. The executor appends to it and lets it
+                compact itself before every model call.
             step_id: identifier stamped on this step's events.
 
         Returns:
@@ -125,7 +120,6 @@ class StepRunner:
         Raises:
             RunnerLimitError: if the loop somehow fails to terminate.
         """
-        history: list[Message] = list(seed)
         descriptors = await self._tools.descriptors(config.allowlist)
         step = start(config)
         await self._append(step, step_id)
@@ -145,17 +139,11 @@ class StepRunner:
                 )
                 return state
             if isinstance(action, CallModel):
-                state = await self._call_model(state, action, history, descriptors, step_id)
+                state = await self._call_model(state, action, window, descriptors, step_id)
             elif isinstance(action, ExecuteTool):
-                state = await self._execute_tool(state, action, history, step_id)
+                state = await self._execute_tool(state, action, window, step_id)
             elif isinstance(action, InjectResult):
-                history.append(
-                    Message(
-                        role=MessageRole.TOOL,
-                        content=action.text,
-                        tool_call_id=action.call_id,
-                    ),
-                )
+                await window.add_synthetic_result(action.call_id, action.text)
                 state = injected(state).state
             elif isinstance(action, Rollback):
                 state = await self._rollback(state, action, step_id)
@@ -171,18 +159,30 @@ class StepRunner:
         self,
         state: LoopState,
         action: CallModel,
-        history: list[Message],
+        window: Window,
         descriptors: tuple[ToolSchema, ...],
         step_id: StepId | None,
     ) -> LoopState:
         """Ask the model, record the exchange, and fold the answer back."""
         config = state.config
         if action.instruction:
-            history.append(Message(role=MessageRole.USER, content=action.instruction))
+            await window.add_instruction(action.instruction)
+        snapshot = await window.prepare()
+        if snapshot.plan is not None:
+            plan = snapshot.plan
+            await self._events.append(
+                ev.ContextCompacted(
+                    before_tokens=plan.before_tokens,
+                    after_tokens=plan.after_tokens,
+                    deterministic_only=plan.deterministic_only,
+                    summary_digest=window.summary_digest(snapshot.summary),
+                ),
+                step_id=step_id,
+            )
         offers_tools = action.tool_choice is not ToolChoice.NONE
         request = ChatRequest(
             model=config.model,
-            messages=tuple(history),
+            messages=snapshot.messages,
             tools=descriptors if offers_tools else (),
             tool_choice=action.tool_choice,
             temperature=config.temperature,
@@ -193,23 +193,19 @@ class StepRunner:
         await self._events.append(
             ev.ModelRequest(
                 model=config.model,
-                messages_digest=digest_json([m.model_dump(mode="json") for m in history]),
-                prompt_tokens=state.budget.tokens_used,
-                window_fill=0.0,
+                messages_digest=digest_json(
+                    [message.model_dump(mode="json") for message in snapshot.messages],
+                ),
+                prompt_tokens=snapshot.tokens,
+                window_fill=snapshot.fill,
                 tool_choice=action.tool_choice.value,
             ),
             step_id=step_id,
         )
         response = await self._backend.chat(request)
         # Reasoning is logged as an event by the loop and deliberately left out
-        # of the history: there is no field on a Message that could carry it.
-        history.append(
-            Message(
-                role=MessageRole.ASSISTANT,
-                content=response.content,
-                tool_calls=response.tool_calls,
-            ),
-        )
+        # of the window: there is no field on a Message that could carry it.
+        await window.add_assistant(response.content, response.tool_calls)
         step = observe_model(state, response)
         await self._append(step, step_id)
         return step.state
@@ -218,19 +214,12 @@ class StepRunner:
         self,
         state: LoopState,
         action: ExecuteTool,
-        history: list[Message],
+        window: Window,
         step_id: StepId | None,
     ) -> LoopState:
         """Run a validated call in the sandbox and fold the result back."""
         result = await self._tools.call(action.call)
-        history.append(
-            Message(
-                role=MessageRole.TOOL,
-                content=result.content,
-                tool_call_id=result.call_id,
-                name=result.tool.value,
-            ),
-        )
+        await window.add_tool_result(result)
         signature = ""
         if not result.ok and result.tool in GATE_TOOLS:
             signature = str(output_digest(result.content))

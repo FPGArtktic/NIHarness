@@ -6,8 +6,13 @@ These are the harness's own types, not a backend's wire format. The adapter
 translates them into the OpenAI-compatible payload, which is the only protocol
 the harness speaks.
 
-Reasoning is logged, never fed back: :func:`build_messages` has no way to put
-`reasoning_content` into a history, which is deliberate.
+Reasoning is logged, never fed back: there is no field on :class:`Message` that
+could carry it, which is deliberate.
+
+Assembling a window into an ordered message list is *not* here. That ordering
+obeys protocol rules - a tool message must follow the assistant message that
+requested it, and conversation order is chronological, not by priority - and
+protocol rules belong to the application layer, not to the domain.
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from niharness.domain.context import ContextItem, ItemKind, Priority
+from niharness.domain.context import ContextItem, Priority
 from niharness.domain.identity import CallId
 
 
@@ -124,54 +129,6 @@ class ChatResponse(BaseModel):
     tool_calls: tuple[ToolCallRequest, ...] = ()
     finish_reason: str = "stop"
     usage: Usage
-
-
-_ROLE_BY_KIND: dict[ItemKind, MessageRole] = {
-    ItemKind.PROMPT_LAYER: MessageRole.SYSTEM,
-    ItemKind.TASK: MessageRole.USER,
-    ItemKind.NOTES: MessageRole.USER,
-    ItemKind.REVIEW_NOTE: MessageRole.USER,
-    ItemKind.SUMMARY: MessageRole.USER,
-    ItemKind.TOOL_RESULT: MessageRole.TOOL,
-    ItemKind.TURN: MessageRole.ASSISTANT,
-}
-
-
-def build_messages(items: Iterable[ContextItem]) -> tuple[Message, ...]:
-    """Assemble a compacted window into a message list.
-
-    Items are emitted in priority order and, within a priority, in event order,
-    so the system prompt leads and the freshest tool results sit closest to the
-    model's turn.
-
-    Args:
-        items: the window produced by :func:`niharness.domain.context.plan_compaction`.
-
-    Returns:
-        The messages to send. System layers are merged into one message,
-        because backends treat several system messages inconsistently.
-    """
-    ordered = sorted(items, key=lambda item: (int(item.priority), item.origin_seq, item.id))
-    system_parts: list[str] = []
-    rest: list[Message] = []
-    for item in ordered:
-        role = _ROLE_BY_KIND[item.kind]
-        if role is MessageRole.SYSTEM:
-            system_parts.append(item.content)
-            continue
-        rest.append(
-            Message(
-                role=role,
-                content=item.content,
-                tool_call_id=CallId(item.id) if role is MessageRole.TOOL else None,
-                name=item.tool or "",
-            ),
-        )
-    messages: list[Message] = []
-    if system_parts:
-        messages.append(Message(role=MessageRole.SYSTEM, content="\n\n".join(system_parts)))
-    messages.extend(rest)
-    return tuple(messages)
 
 
 def strip_reasoning(history: Sequence[Message]) -> tuple[Message, ...]:

@@ -29,6 +29,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   unit-testable without a model or a container.
 - Application layer with `StepRunner`: runs one step to completion against the
   ports, performing what the loop decides and appending the events it returns.
+- `Window`: measures the model's window through the `Tokenizer` port, applies the
+  compaction policy before every model call, emits `context.compacted`, and keeps
+  the message list in the order the protocol requires.
+- `ModelSummarizer`: produces a `ContextSummary` with the utility model when the
+  deterministic compaction passes are not enough.
 - Ports: `ModelBackend`, `Tokenizer`, `ToolProvider`, `VectorStore`, `Vcs`,
   `Sandbox`, `EventSink`.
 - Adapters: JSONL event sink, OpenAI-compatible inference client, git worktree

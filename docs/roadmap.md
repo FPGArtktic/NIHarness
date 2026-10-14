@@ -126,11 +126,10 @@ flag on the sandbox adapter:
 - [x] The executor that performs those actions, wiring `ModelBackend`,
       `ToolProvider`, `Vcs` and `EventSink` together, in the new
       `niharness.application` layer ([ADR 0010](adr/0010-an-application-layer.md)).
-- [ ] Window building and compaction inside the executor: today it appends to a
-      message list, so a long step grows its window until a budget stops it.
-      The policy and its invariants already exist in the domain; what is missing
-      is measuring the window with the `Tokenizer` port and applying the plan
-      before each model call.
+- [x] Window building and compaction inside the executor: the window measures
+      itself through the `Tokenizer` port before every model call, applies the
+      policy's plan, and emits `context.compacted`. The utility model produces
+      the `ContextSummary` when the deterministic passes are not enough.
 - [ ] The MCP `ToolProvider` adapter, so the executor has real tools to run
       (it is written against the port, not against MCP).
 - [ ] Structured output: JSON Schema for every artifact, GBNF where the backend
@@ -143,7 +142,9 @@ flag on the sandbox adapter:
 - [ ] `VectorStore` adapter (Qdrant) and the embedding backends.
 - [ ] tree-sitter chunking, re-index by file hash.
 - [ ] Compacted run context indexed under the run's collection, recoverable
-      with `rag_query`.
+      with `rag_query`. Until this lands, folded-away turns live only in the
+      event log, and the window says so in place of the summary it could not
+      index.
 - [ ] `nih research`.
 
 ## Stage: context management end to end

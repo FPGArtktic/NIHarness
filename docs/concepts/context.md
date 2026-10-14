@@ -61,6 +61,26 @@ sequenceDiagram
 Only the fourth step needs a model. Everything before it is deterministic, which
 means most compactions cost nothing but a tokenizer call.
 
+## Who applies it
+
+The policy is pure, so something has to run it: `niharness.application.Window`.
+It pairs every window item with the message that carries it, which is what keeps
+the two in step - a digested item rewrites its message, a dropped item takes its
+message with it - and it keeps insertion order, because a tool message has to
+follow the assistant message that requested it
+([ADR 0011](../adr/0011-message-assembly-is-an-application-concern.md)).
+
+Before every model call the window measures itself through the `Tokenizer`
+port, and compacts only when the measured fill reaches the threshold. Since the
+policy is synchronous and the tokenizer is not, everything the policy could ask
+to measure - each item's content and the digest line that might replace it - is
+measured first, and the policy is handed a lookup. A miss is an error, never an
+estimate.
+
+The compactor model is optional. Without one, turns that the policy folded away
+are replaced by a sentence saying how many there were and that they are still in
+the event log. A stated gap beats a silent one.
+
 ## Invariants
 
 These are property-tested with hypothesis, not merely asserted here:

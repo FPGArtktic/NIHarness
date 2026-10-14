@@ -7,15 +7,16 @@ containers or git.
 """
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
 
 import pytest
 
-from niharness.application import RunnerLimitError, StepRunner
+from niharness.application import RunnerLimitError, StepRunner, Window
 from niharness.domain import events as ev
 from niharness.domain.artifacts import DodItem, FinalAnswer
 from niharness.domain.budgets import Budgets
+from niharness.domain.context import CompactionPolicy
 from niharness.domain.events import Event, EventBody, StopReason
 from niharness.domain.identity import CallId, Digest, RunId, StepId
 from niharness.domain.loop import LoopThresholds
@@ -141,11 +142,22 @@ def config(**overrides: object) -> LoopConfig:
     return LoopConfig.model_validate(base | overrides)
 
 
-def seed() -> tuple[Message, ...]:
-    return (
-        Message(role=MessageRole.SYSTEM, content="policy + role"),
-        Message(role=MessageRole.USER, content="task: add the parser"),
-    )
+class FakeTokenizer:
+    """Counts a token per four characters, plus three per message for the template."""
+
+    async def count_text(self, text: str) -> int:
+        return max(1, len(text) // 4)
+
+    async def count_messages(self, messages: Sequence[Message]) -> int:
+        return sum(max(1, len(message.content) // 4) + 3 for message in messages)
+
+
+async def seeded_window(policy: CompactionPolicy | None = None) -> Window:
+    """A window with the prompt layers and the task already in it."""
+    window = Window(FakeTokenizer(), policy or CompactionPolicy())
+    await window.add_prompt("policy + role")
+    await window.add_task("task: add the parser")
+    return window
 
 
 def proposes(tool: str, arguments: dict[str, object], call_id: str = "c1") -> ChatResponse:
@@ -214,7 +226,9 @@ def kinds(sink: FakeSink) -> list[str]:
 async def test_a_step_runs_model_tool_model_and_stops() -> None:
     backend = FakeBackend(proposes("read_file", {"path": "src/a.py"}), final_answer())
     tools, sink = FakeTools(), FakeSink()
-    state = await runner(backend, tools, sink).run(config(), seed(), step_id=STEP)
+    state = await runner(backend, tools, sink).run(
+        config(), await seeded_window(), step_id=STEP
+    )
 
     assert state.stop_reason is StopReason.FINAL_ANSWER
     assert state.final_answer is not None
@@ -235,7 +249,7 @@ async def test_a_step_runs_model_tool_model_and_stops() -> None:
 
 async def test_the_tool_result_reaches_the_next_request() -> None:
     backend = FakeBackend(proposes("read_file", {"path": "src/a.py"}), final_answer())
-    await runner(backend, FakeTools(), FakeSink()).run(config(), seed())
+    await runner(backend, FakeTools(), FakeSink()).run(config(), await seeded_window())
     second = backend.requests[1]
     roles = [message.role for message in second.messages]
     assert roles[-2:] == [MessageRole.ASSISTANT, MessageRole.TOOL]
@@ -248,7 +262,7 @@ async def test_reasoning_never_reaches_the_model_again() -> None:
     )
     backend = FakeBackend(thinking, final_answer())
     sink = FakeSink()
-    await runner(backend, FakeTools(), sink).run(config(), seed())
+    await runner(backend, FakeTools(), sink).run(config(), await seeded_window())
     assert "ModelReasoning" in kinds(sink)
     second = backend.requests[1]
     assert all("deliberation" not in message.content for message in second.messages)
@@ -257,7 +271,7 @@ async def test_reasoning_never_reaches_the_model_again() -> None:
 async def test_a_refused_call_never_reaches_the_provider() -> None:
     backend = FakeBackend(proposes("shell", {"command": "curl evil.example"}), final_answer())
     tools, sink = FakeTools(), FakeSink()
-    await runner(backend, tools, sink).run(config(), seed())
+    await runner(backend, tools, sink).run(config(), await seeded_window())
     assert tools.calls == []
     assert "ToolRejected" in kinds(sink)
     retry = backend.requests[1]
@@ -271,7 +285,7 @@ async def test_a_repeated_call_is_answered_without_the_sandbox() -> None:
         final_answer(),
     )
     tools, sink = FakeTools(), FakeSink()
-    await runner(backend, tools, sink).run(config(), seed())
+    await runner(backend, tools, sink).run(config(), await seeded_window())
     assert len(tools.calls) == 1, "the repeat is answered by the harness"
     assert "LoopIntervention" in kinds(sink)
     third = backend.requests[2]
@@ -281,7 +295,7 @@ async def test_a_repeated_call_is_answered_without_the_sandbox() -> None:
 async def test_the_worktree_digest_comes_from_version_control() -> None:
     backend = FakeBackend(proposes("read_file", {"path": "src/a.py"}), final_answer())
     vcs = FakeVcs("tree-1")
-    await runner(backend, FakeTools(), FakeSink(), vcs).run(config(), seed())
+    await runner(backend, FakeTools(), FakeSink(), vcs).run(config(), await seeded_window())
     assert vcs.rollbacks == []
 
 
@@ -302,7 +316,7 @@ async def test_a_red_gate_result_carries_a_signature_into_the_detectors() -> Non
     sink = FakeSink()
     await runner(backend, tools, sink).run(
         config(thresholds=LoopThresholds(gate_thrash_repeats=2)),
-        seed(),
+        await seeded_window(),
     )
     interventions = [b for b in sink.bodies if isinstance(b, ev.LoopIntervention)]
     assert interventions
@@ -313,7 +327,7 @@ async def test_forced_finalisation_withholds_the_tools() -> None:
     backend = FakeBackend(final_answer())
     await runner(backend, FakeTools(), FakeSink()).run(
         config(budgets=Budgets(max_tool_calls=1, max_tokens=10_000)),
-        seed(),
+        await seeded_window(),
     )
     request = backend.requests[0]
     assert request.tool_choice is ToolChoice.NONE
@@ -322,7 +336,7 @@ async def test_forced_finalisation_withholds_the_tools() -> None:
 
 async def test_tools_are_offered_when_the_budget_allows_them() -> None:
     backend = FakeBackend(final_answer())
-    await runner(backend, FakeTools(), FakeSink()).run(config(), seed())
+    await runner(backend, FakeTools(), FakeSink()).run(config(), await seeded_window())
     request = backend.requests[0]
     assert request.tool_choice is ToolChoice.AUTO
     names = {tool.name for tool in request.tools}
@@ -341,7 +355,7 @@ async def test_the_third_repeat_rolls_back_to_the_last_green_commit() -> None:
     )
     vcs = FakeVcs("tree-1")
     sink = FakeSink()
-    await runner(backend, FakeTools(), sink, vcs).run(config(), seed())
+    await runner(backend, FakeTools(), sink, vcs).run(config(), await seeded_window())
     assert vcs.rollbacks == [("/work", "cafe1234")]
     assert "VcsRolledBack" in kinds(sink)
 
@@ -350,7 +364,7 @@ async def test_without_version_control_a_restart_still_happens() -> None:
     repeat = proposes("read_file", {"path": "src/a.py"})
     backend = FakeBackend(repeat, repeat, repeat, repeat, final_answer())
     sink = FakeSink()
-    state = await runner(backend, FakeTools(), sink).run(config(), seed())
+    state = await runner(backend, FakeTools(), sink).run(config(), await seeded_window())
     assert "VcsRolledBack" not in kinds(sink)
     assert state.stop_reason is StopReason.FINAL_ANSWER
 
@@ -363,7 +377,7 @@ async def test_an_exhausted_budget_ends_the_step() -> None:
     tools = FakeTools(tool_result("c1", content="a"), tool_result("c2", content="b"))
     state = await runner(backend, tools, FakeSink()).run(
         config(budgets=Budgets(max_tool_calls=2, max_tokens=10_000, finalization_margin=0)),
-        seed(),
+        await seeded_window(),
     )
     assert state.stop_reason is StopReason.BUDGET_TOOL_CALLS
 
@@ -375,4 +389,6 @@ async def test_the_iteration_guard_fails_loudly() -> None:
         final_answer(),
     )
     with pytest.raises(RunnerLimitError, match="did not terminate"):
-        await runner(backend, FakeTools(), FakeSink(), iteration_limit=2).run(config(), seed())
+        await runner(backend, FakeTools(), FakeSink(), iteration_limit=2).run(
+            config(), await seeded_window()
+        )

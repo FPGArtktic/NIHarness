@@ -24,6 +24,7 @@ the pipeline. A change that does one of those without an ADR is incomplete.
 | [0008](0008-sandbox-is-one-container-per-command.md) | One hardened container per command | Accepted |
 | [0009](0009-the-tool-loop-is-a-pure-state-machine.md) | The tool loop decides, the executor acts | Accepted |
 | [0010](0010-an-application-layer.md) | An application layer between the CLI and the ports | Accepted |
+| [0011](0011-message-assembly-is-an-application-concern.md) | Message assembly is an application concern | Accepted |
 
 ## Template
 
