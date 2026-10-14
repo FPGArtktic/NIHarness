@@ -672,6 +672,16 @@
           "default": null,
           "title": "Spec Digest"
         },
+        "tools": {
+          "default": "sandbox",
+          "description": "Where the tool server ran. 'local' means outside the container.",
+          "enum": [
+            "sandbox",
+            "local"
+          ],
+          "title": "Tools",
+          "type": "string"
+        },
         "type": {
           "const": "run.started",
           "default": "run.started",

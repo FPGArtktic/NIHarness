@@ -200,3 +200,20 @@ async def test_the_default_runner_executes_a_local_command() -> None:
 async def test_the_default_runner_reports_a_missing_binary() -> None:
     with pytest.raises(SandboxUnavailableError, match="cannot execute"):
         await subprocess_runner(["/nonexistent/podman", "version"], 10.0)
+
+
+def test_the_tool_server_keeps_standard_input_open(worktree: Path) -> None:
+    argv = sandbox(worktree).tool_server_argv()
+    assert "--interactive" in argv
+    assert argv[-5:] == ("python", "-m", "niharness.toolserver", "--root", "/work")
+    assert "--network=none" in argv, "the server is hardened like any other call"
+    assert "--cap-drop=ALL" in argv
+    assert not [item for item in argv if item.startswith("--timeout=")], (
+        "a stdio session is long-lived; a container timeout would kill it mid-run"
+    )
+
+
+def test_an_ordinary_call_does_not_keep_standard_input_open(worktree: Path) -> None:
+    argv = sandbox(worktree).container_argv(["pytest"])
+    assert "--interactive" not in argv
+    assert "--timeout=120" in argv

@@ -138,13 +138,19 @@ flag on the sandbox adapter:
       quick tier and refuses with the failing output on red.
 - [ ] Building the sandbox **image** with that server installed. The
       Containerfile does it from a local wheelhouse; nobody has run it yet.
-- [ ] `nih implement`: seed the window from the plan, create the worktree, start
-      the server in the sandbox, and run the executor over the plan's tasks.
-      Every part of that exists; the command is the wiring.
+- [x] `nih implement`: loads the approved plan, creates the run worktree, opens
+      the event log, starts the tool server in the sandbox (or on this host with
+      `--unsafe-local-tools`, which the event stream records), and runs one
+      implementing step per task, stopping at the first task that does not
+      finish.
+- [ ] The review and fix stages. The loop validates a `FinalAnswer` today; the
+      reviewer's artifact is a `Verdict`, so `LoopConfig` needs to say which
+      artifact ends a step before those stages can be wired. The transitions
+      themselves already exist and are tested.
 - [ ] Structured output: JSON Schema for every artifact, GBNF where the backend
       supports it.
 - [ ] Forced finalisation two calls before the budget ends.
-- [ ] `nih implement`, `nih run`, `nih resume`.
+- [ ] `nih run` and `nih resume`.
 
 ## Stage: retrieval
 

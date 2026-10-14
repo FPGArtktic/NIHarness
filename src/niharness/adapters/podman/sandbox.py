@@ -173,6 +173,7 @@ class PodmanSandbox:
         cwd: str = ".",
         timeout_seconds: int = 120,
         env: Mapping[str, str] | None = None,
+        interactive: bool = False,
     ) -> tuple[str, ...]:
         """Return the full Podman command for `argv`.
 
@@ -182,6 +183,9 @@ class PodmanSandbox:
             timeout_seconds: container-level timeout handed to Podman.
             env: environment variables to set inside the container. The host
                 environment is not inherited: only these reach the command.
+            interactive: keep standard input open. The tool server speaks the
+                protocol over stdio, so it needs this; a gate command does not,
+                and leaving it closed is one less thing a command can wait on.
 
         Returns:
             The complete argument vector, hardening flags included.
@@ -200,6 +204,7 @@ class PodmanSandbox:
             self._binary,
             "run",
             "--rm",
+            *(["--interactive"] if interactive else []),
             # The air gap, enforced by the kernel rather than by convention.
             "--network=none",
             # Only the worktree is writable; everything else is read-only.
@@ -214,7 +219,7 @@ class PodmanSandbox:
             f"--cpus={self._cpus}",
             f"--memory={self._memory}",
             f"--pids-limit={self._pids_limit}",
-            f"--timeout={timeout_seconds}",
+            *([] if interactive else [f"--timeout={timeout_seconds}"]),
             "--label=nih.sandbox=1",
         ]
         for name in sorted(env or {}):
@@ -248,6 +253,22 @@ class PodmanSandbox:
             image=self._image,
             podman=version.stdout.strip(),
             worktree=str(self._worktree),
+        )
+
+    def tool_server_argv(self, root: str = "/work") -> tuple[str, ...]:
+        """Return the command that starts this project's tool server in the sandbox.
+
+        Args:
+            root: where the worktree is mounted inside the container.
+
+        Returns:
+            A Podman command with standard input open and every hardening flag
+            of an ordinary call. This is the one long-lived container: a stdio
+            session has state.
+        """
+        return self.container_argv(
+            ("python", "-m", "niharness.toolserver", "--root", root),
+            interactive=True,
         )
 
     async def run(

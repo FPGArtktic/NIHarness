@@ -66,6 +66,10 @@ class RunStarted(Payload):
     branch: str
     profile: str
     model: str
+    tools: Literal["sandbox", "local"] = Field(
+        default="sandbox",
+        description="Where the tool server ran. 'local' means outside the container.",
+    )
     spec_digest: Digest | None = None
     plan_digest: Digest | None = None
     parent_run_id: RunId | None = None

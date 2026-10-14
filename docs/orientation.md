@@ -54,6 +54,8 @@ suggestion. See [Architecture](concepts/architecture.md) and
 - CLI commands that need no model: `nih init`, `nih config`, `nih gate`,
   `nih status`, `nih plan check`, `nih plan import` (for conforming plans), and
   `nih docs generate`.
+- `nih implement`: with a model served and the sandbox image built, it executes
+  an approved plan task by task, each commit going through the gate.
 
 ## What does not work yet
 

@@ -46,7 +46,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   adapter, the rootless Podman sandbox (one hardened container per command, with
   the argument vector asserted by a contract test), and the MCP tool client
   (only known and allowed tools are forwarded to the model).
-- CLI skeleton (`nih`) with `init`, `plan`, `implement`, `status`, `docs generate`.
+- CLI (`nih`) with `init`, `config`, `gate`, `plan check`, `plan import`,
+  `status`, `docs generate`, and `implement` - which runs an approved plan in a
+  dedicated worktree, one step per task, with the tool server in the sandbox.
 - Prompt layers for every role, plus the Definition of Done checklist.
 - Documentation site (MkDocs Material) with concept pages, a generated event
   catalogue and the first architecture decision records.

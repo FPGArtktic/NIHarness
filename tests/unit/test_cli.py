@@ -101,7 +101,6 @@ def test_plan_import_needs_a_model_for_free_form_prose(tmp_path: Path) -> None:
     ("command", "needs"),
     [
         (["brainstorm"], "inference"),
-        (["implement"], "sandbox"),
         (["run", "SPEC.md"], "pipeline"),
         (["resume", "abc"], "run loop"),
         (["compact", "abc"], "tokenizer"),

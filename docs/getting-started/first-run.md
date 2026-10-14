@@ -88,8 +88,49 @@ uv run nih status 8f21c0       # fold that run's event log
 `status` is a fold over `events.jsonl` - the same fold the TUI uses, so the two
 can never disagree.
 
+## 6. Execute the plan
+
+```bash
+uv run nih implement                      # the approved plan
+uv run nih implement --plan PLAN.md       # a specific one
+```
+
+It creates a worktree on `harness/run-<id>`, opens that run's event log, starts
+the tool server in the sandbox, and runs one implementing step per task:
+
+```text
+run 20261014-213005-ab12cd
+  worktree: /project/.nih/worktrees/20261014-213005-ab12cd (harness/run-...)
+  model: Qwen3-Coder-30B-A3B-Instruct at http://127.0.0.1:8080
+  tools: sandbox
+  tasks: 3
+
+  [ok  ] t1: final_answer, 11 tool call(s), 48213 tokens
+  [FAIL] t2: budget_tool_calls, 40 tool call(s), 141002 tokens
+
+run 20261014-213005-ab12cd: stopped at t2
+```
+
+A task that does not finish stops the run: the next task would build on work
+that is not there. The event log has everything that happened, and
+`nih status <run-id>` folds it.
+
+Two things have to be running first: the model (`llama-server` on the configured
+port) and the sandbox image. Without the image the command says so and exits 69.
+On a machine without Podman you can run the tools on the host instead:
+
+```bash
+uv run nih implement --unsafe-local-tools
+```
+
+The name is the warning: the tool server then runs outside the container, where
+it can reach the network and whatever your user can read. The worktree is still
+the only path it writes to, and the gate still runs - and the run's
+`run.started` event records that the tools were local, so a run made that way
+cannot be mistaken for a sandboxed one later.
+
 ## What comes next
 
-Implementation needs the sandbox and the inference adapter. Until those land,
-`nih implement` exits 69 and tells you so; [the roadmap](../roadmap.md) is the
+Review and fix are not wired up yet: the loop ends a step on a `FinalAnswer`,
+and the reviewer's artifact is a `Verdict`. [The roadmap](../roadmap.md) has the
 order of work.

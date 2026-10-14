@@ -17,6 +17,7 @@ import typer
 from niharness import __version__
 from niharness.cli import docs as docs_module
 from niharness.cli import gate as gate_module
+from niharness.cli import implement as implement_module
 from niharness.cli import init as init_module
 from niharness.cli import logging as logging_module
 from niharness.cli import plan as plan_module
@@ -129,13 +130,22 @@ def implement(
         Path | None,
         typer.Option("--plan", help="Execute this plan instead of the approved one."),
     ] = None,
+    profile: Annotated[
+        str | None, typer.Option("--profile", help="Override the profile.")
+    ] = None,
+    local_tools: Annotated[
+        bool,
+        typer.Option(
+            "--unsafe-local-tools",
+            help="Run the tool server on this host instead of in the sandbox.",
+        ),
+    ] = False,
 ) -> None:
     """Execute an approved plan, task by task, through the gate."""
-    del root, plan_file
-    unavailable(
-        "implement",
-        "the sandbox (Podman), the MCP tool provider and the inference adapter",
-        "docs/roadmap.md, stage 'implement'",
+    implement_module.implement(
+        _config(root.resolve(), profile),
+        plan_file,
+        local_tools=local_tools,
     )
 
 

@@ -8,16 +8,20 @@ adapters do. It performs actions, feeds the outcome back, and appends the
 events it is handed.
 """
 
+from niharness.application.implement import ImplementationRun, RunResult, TaskResult
 from niharness.application.step_runner import RunnerLimitError, StepRunner
 from niharness.application.summarizer import ModelSummarizer, Summarizer
 from niharness.application.window import MeasurementMissingError, Window, WindowSnapshot
 
 __all__ = [
+    "ImplementationRun",
     "MeasurementMissingError",
     "ModelSummarizer",
+    "RunResult",
     "RunnerLimitError",
     "StepRunner",
     "Summarizer",
+    "TaskResult",
     "Window",
     "WindowSnapshot",
 ]

@@ -313,7 +313,7 @@ class Window:
             return ContextSummary(text=text)
         try:
             return await self._summarizer.summarize(transcript)
-        except (ValueError, RuntimeError) as error:
+        except Exception as error:  # noqa: BLE001 - a failed summary must not end a step
             _log.warning("context.summary_failed", error=str(error))
             text = (
                 f"{folded} earlier turn(s) were compacted out of this window and could "

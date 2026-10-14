@@ -33,6 +33,7 @@ A run began on a fresh worktree, seeded only by its input artifact.
 | `branch` | `str` | required |  |
 | `profile` | `str` | required |  |
 | `model` | `str` | required |  |
+| `tools` | `Literal['sandbox', 'local']` | `'sandbox'` | Where the tool server ran. 'local' means outside the container. |
 | `spec_digest` | `Optional[identity.Digest]` | `None` |  |
 | `plan_digest` | `Optional[identity.Digest]` | `None` |  |
 | `parent_run_id` | `Optional[identity.RunId]` | `None` |  |

@@ -85,6 +85,7 @@ select = [
   "ANN",  # missing annotations
   "ARG",  # unused arguments
   "B",    # bugbear
+  "BLE",  # blind except
   "C4",   # comprehensions
   "C90",  # cyclomatic complexity
   "D",    # docstrings

@@ -145,10 +145,14 @@ Usage: nih implement [OPTIONS]
  Execute an approved plan, task by task, through the gate.                      
                                                                                 
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --project-root  -C      <path>  The project to operate on. [default: (.)]    │
-│ --plan                  <path>  Execute this plan instead of the approved    │
-│                                 one.                                         │
-│ --help                          Show this message and exit.                  │
+│ --project-root        -C      <path>  The project to operate on.             │
+│                                       [default: (.)]                         │
+│ --plan                        <path>  Execute this plan instead of the       │
+│                                       approved one.                          │
+│ --profile                     <str>   Override the profile.                  │
+│ --unsafe-local-tools                  Run the tool server on this host       │
+│                                       instead of in the sandbox.             │
+│ --help                                Show this message and exit.            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
