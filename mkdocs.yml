@@ -135,3 +135,4 @@ nav:
       - adr/0005-commit-is-the-gate.md
       - adr/0006-compaction-as-a-view-policy.md
       - adr/0007-gpl-3-0-or-later.md
+      - adr/0008-sandbox-is-one-container-per-command.md

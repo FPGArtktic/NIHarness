@@ -22,7 +22,7 @@ The whole configuration of one harness instance.
 | `profile` | `str` | `'hybrid-small-vram'` |  |
 | `max_revisions` | `int` | `3` |  |
 | `models` | `niharness.config.ModelsConfig` | `ModelsConfig(main=ModelConfig(name='Qwen3-Coder-30B-A3B-Instruct', base_url='http://127.0.0.1:8080', context_window=65536, supports_grammar=True, supports_reasoning=False, quantization='Q4_K_M', measured_generation_tps=0.0, measured_prompt_tps=0.0), thinking=None, utility=ModelConfig(name='BitNet-b1.58-2B-4T', base_url='http://127.0.0.1:8081', context_window=4096, supports_grammar=False, supports_reasoning=False, quantization='i2_s', measured_generation_tps=0.0, measured_prompt_tps=0.0), embeddings=None)` |  |
-| `sandbox` | `niharness.config.SandboxConfig` | `SandboxConfig(image='localhost/niharness-sandbox:latest', network='none', cpus=4.0, memory='8g', quick_timeout_seconds=900, full_timeout_seconds=10800)` |  |
+| `sandbox` | `niharness.config.SandboxConfig` | `SandboxConfig(image='localhost/niharness-sandbox:latest', network='none', binary='podman', cpus=4.0, memory='8g', pids_limit=512, quick_timeout_seconds=900, full_timeout_seconds=10800)` |  |
 | `vector` | `niharness.config.VectorConfig` | `VectorConfig(url='http://127.0.0.1:6333', code_collection='code', run_collection_prefix='run-', embedding_dimensions=1024)` |  |
 | `gate` | `niharness.config.GateConfig` | `GateConfig(disabled_languages=(), fail_fast=True)` |  |
 | `loop` | `loop.LoopThresholds` | `LoopThresholds(exact_repeat_window=5, exact_repeat_count=2, state_cycle_revisits=1, progress_stall_calls=8, gate_thrash_repeats=3, invalid_calls_in_a_row=3, degenerate_ngram_size=8, degenerate_ngram_repeats=4)` |  |
@@ -48,8 +48,10 @@ How the tool sandbox is started. `--network=none` is not negotiable.
 |---|---|---|---|
 | `image` | `str` | `'localhost/niharness-sandbox:latest'` |  |
 | `network` | `Literal['none']` | `'none'` |  |
+| `binary` | `str` | `'podman'` | The container runtime executable. |
 | `cpus` | `float` | `4.0` |  |
 | `memory` | `str` | `'8g'` |  |
+| `pids_limit` | `int` | `512` | Process cap inside the container, against a fork bomb in a build script. |
 | `quick_timeout_seconds` | `int` | `900` |  |
 | `full_timeout_seconds` | `int` | `10800` |  |
 

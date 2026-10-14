@@ -75,8 +75,14 @@ class SandboxConfig(BaseModel):
 
     image: str = "localhost/niharness-sandbox:latest"
     network: Literal["none"] = "none"
+    binary: str = Field(default="podman", description="The container runtime executable.")
     cpus: float = Field(default=4.0, gt=0)
     memory: str = "8g"
+    pids_limit: int = Field(
+        default=512,
+        ge=16,
+        description="Process cap inside the container, against a fork bomb in a build script.",
+    )
     quick_timeout_seconds: int = Field(default=900, ge=1)
     full_timeout_seconds: int = Field(default=10_800, ge=1)
 

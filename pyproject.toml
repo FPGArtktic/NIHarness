@@ -208,4 +208,5 @@ modules = [
   "niharness.adapters.jsonl_events",
   "niharness.adapters.openai_compat",
   "niharness.adapters.git",
+  "niharness.adapters.podman",
 ]

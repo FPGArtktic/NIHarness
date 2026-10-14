@@ -4,7 +4,6 @@
 
 import asyncio
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -12,6 +11,7 @@ from typer.testing import CliRunner
 
 from niharness import __version__
 from niharness.adapters.jsonl_events import JsonlEventSink
+from niharness.cli import docs as docs_module
 from niharness.cli.main import app
 from niharness.cli.unavailable import EX_UNAVAILABLE
 from niharness.domain import events as ev
@@ -149,20 +149,22 @@ def test_status_reports_an_unknown_run(tmp_path: Path) -> None:
     assert "no event log" in result.output
 
 
-def test_docs_generate_is_reproducible() -> None:
-    """The generated files are committed; regenerating must not change them."""
-    before = subprocess.run(
-        ["git", "status", "--porcelain", "schemas", "docs/reference"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    result = runner.invoke(app, ["docs", "generate"])
-    assert result.exit_code == 0
-    after = subprocess.run(
-        ["git", "status", "--porcelain", "schemas", "docs/reference"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    assert before == after, "nih docs generate is not deterministic"
+def test_the_generated_files_in_the_tree_are_up_to_date(tmp_path: Path) -> None:
+    """Generated pages and schemas are committed; the gate fails when they are stale.
+
+    The comparison runs against a scratch directory, so the test observes the
+    tree without changing it - a test that regenerated the files would pass by
+    repairing what it was supposed to catch.
+    """
+    docs_module.generate(tmp_path, app)
+    repo = Path(__file__).resolve().parents[2]
+    generated = [
+        path.relative_to(tmp_path) for path in sorted(tmp_path.rglob("*")) if path.is_file()
+    ]
+    assert generated, "nothing was generated"
+    stale = [
+        str(relative)
+        for relative in generated
+        if (repo / relative).read_bytes() != (tmp_path / relative).read_bytes()
+    ]
+    assert not stale, f"run `nih docs generate`: {', '.join(stale)}"

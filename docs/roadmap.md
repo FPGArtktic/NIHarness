@@ -25,12 +25,20 @@ page is the "tracked in" they point at.
 
 The first thing a model needs is hands.
 
-- [ ] `Sandbox` adapter: rootless Podman, `--network=none`, project bind-mount,
-      Quadlet units generated from `quadlet/`.
+- [x] `Sandbox` adapter: rootless Podman, one short-lived container per
+      command, `--network=none`, read-only root, all capabilities dropped,
+      `--userns=keep-id`, CPU, memory and pid caps, and a container timeout with
+      a grace period. The argument vector is a pure function asserted by a
+      contract test; see [ADR 0008](adr/0008-sandbox-is-one-container-per-command.md).
+- [ ] Quadlet units rendered from `quadlet/` by `nih init`.
 - [ ] `ToolProvider` adapter: MCP client, tool schemas from
       `niharness.domain.tools`, results truncated and digested.
 - [ ] Sandbox image: `containers/Containerfile.sandbox`, layered toolchains.
-- [ ] Integration tests behind the `integration` marker.
+- [x] Integration tests behind the `integration` marker: run them with
+      `NIH_SANDBOX_IMAGE=<image> uv run pytest -m integration`. They assert the
+      properties that only a real container can show - the worktree is
+      writable, the root filesystem is not, there are no network routes, a red
+      command stays red, a hanging command is stopped.
 
 ## Stage: output reduction (optional, host-dependent)
 

@@ -24,7 +24,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - Ports: `ModelBackend`, `Tokenizer`, `ToolProvider`, `VectorStore`, `Vcs`,
   `Sandbox`, `EventSink`.
 - Adapters: JSONL event sink, OpenAI-compatible inference client, git worktree
-  adapter.
+  adapter, and the rootless Podman sandbox (one hardened container per command,
+  with the argument vector asserted by a contract test).
 - CLI skeleton (`nih`) with `init`, `plan`, `implement`, `status`, `docs generate`.
 - Prompt layers for every role, plus the Definition of Done checklist.
 - Documentation site (MkDocs Material) with concept pages, a generated event

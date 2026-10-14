@@ -21,6 +21,7 @@ the pipeline. A change that does one of those without an ADR is incomplete.
 | [0005](0005-commit-is-the-gate.md) | `git_commit` is the quality gate | Accepted |
 | [0006](0006-compaction-as-a-view-policy.md) | Compaction is a view policy, not a log edit | Accepted |
 | [0007](0007-gpl-3-0-or-later.md) | GPL-3.0-or-later for the whole repository | Accepted |
+| [0008](0008-sandbox-is-one-container-per-command.md) | One hardened container per command | Accepted |
 
 ## Template
 
