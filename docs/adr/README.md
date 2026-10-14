@@ -27,6 +27,7 @@ the pipeline. A change that does one of those without an ADR is incomplete.
 | [0011](0011-message-assembly-is-an-application-concern.md) | Message assembly is an application concern | Accepted |
 | [0012](0012-mcp-is-the-tool-protocol.md) | MCP is the tool protocol, and the first runtime dependency | Accepted |
 | [0013](0013-tools-answer-with-an-outcome-envelope.md) | This project's tools answer with an outcome envelope | Accepted |
+| [0014](0014-review-starts-from-the-diff.md) | A step declares its artifact; review starts from the diff | Accepted |
 
 ## Template
 

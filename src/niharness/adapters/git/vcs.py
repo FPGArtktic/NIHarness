@@ -158,6 +158,16 @@ class GitVcs:
                 paths.add(entry.strip().strip('"'))
         return tuple(sorted(paths))
 
+    async def diff(self, worktree: Worktree, revision: str = "HEAD") -> str:
+        """Return the diff `revision` introduced, with its message."""
+        return await self._git(
+            "show",
+            "--format=%H%n%s%n%n%b",
+            "--patch",
+            revision,
+            cwd=Path(worktree.path),
+        )
+
     async def tree_digest(self, worktree: Worktree) -> Digest:
         """Return a digest of the working tree, including untracked files.
 

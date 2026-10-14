@@ -65,6 +65,15 @@ claims. A `NAK` or a red gate sends the task to `fix`, bounded by
 `max_revisions` (three by default); exceeding the bound hands the task back to
 the human with the loop diagnostics in `NOTES.md`.
 
+## The commit gate is observed, not re-run
+
+`git_commit` is a tool, and the tool server runs the quick tier before it
+commits. So the harness does not run the gate stage itself: it records HEAD
+before a step and asks afterwards whether it moved. A commit exists if and only
+if the gate passed. When one landed, the harness emits `vcs.committed` derived
+from the diff, so the event log records it even though the harness did not make
+it. See [ADR 0014](../adr/0014-review-starts-from-the-diff.md).
+
 ## Budgets
 
 Every step carries a tool-call, token and wall-time budget, enforced by the

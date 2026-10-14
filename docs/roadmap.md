@@ -143,10 +143,12 @@ flag on the sandbox adapter:
       `--unsafe-local-tools`, which the event stream records), and runs one
       implementing step per task, stopping at the first task that does not
       finish.
-- [ ] The review and fix stages. The loop validates a `FinalAnswer` today; the
-      reviewer's artifact is a `Verdict`, so `LoopConfig` needs to say which
-      artifact ends a step before those stages can be wired. The transitions
-      themselves already exist and are tested.
+- [x] The review and fix stages: a task runs implement, then the commit gate
+      (observed - a commit exists if and only if the gate passed), then review,
+      with fixes bounded by `max_revisions`. A step now declares which artifact
+      ends it ([ADR 0014](adr/0014-review-starts-from-the-diff.md)).
+- [ ] The full gate tier in a run. A task the reviewer acknowledges ends with
+      `full_gate_pending`; `nih gate --tier full` has to be run by hand.
 - [ ] Structured output: JSON Schema for every artifact, GBNF where the backend
       supports it.
 - [ ] Forced finalisation two calls before the budget ends.

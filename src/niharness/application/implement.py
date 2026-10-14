@@ -12,8 +12,8 @@ comes back unfinished rather than marching on to the next one.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Literal
+from collections.abc import Callable, Sequence
+from typing import Any, Literal
 
 import structlog
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,18 +22,19 @@ from niharness.application.step_runner import StepRunner
 from niharness.application.summarizer import Summarizer
 from niharness.application.window import Window
 from niharness.domain import events as ev
-from niharness.domain.artifacts import FinalAnswer, Plan, Task
+from niharness.domain.artifacts import Decision, FinalAnswer, Plan, Task, Verdict
 from niharness.domain.context import CompactionPolicy
 from niharness.domain.events import RunOutcome, StopReason
 from niharness.domain.identity import RunId, StepId, derive_id
 from niharness.domain.loop import LoopThresholds
 from niharness.domain.messages import ResponseFormat
-from niharness.domain.pipeline import Stage, step_for
+from niharness.domain.pipeline import DEFAULT_MAX_REVISIONS, Outcome, Stage, advance, step_for
 from niharness.domain.roles import DEFAULT_ROLES, Role
-from niharness.domain.tool_loop import LoopConfig
+from niharness.domain.tool_loop import ArtifactKind, LoopConfig
 from niharness.domain.tools import ToolLimits
 from niharness.ports.event_sink import EventSink
 from niharness.ports.tokenizer import Tokenizer
+from niharness.ports.vcs import Vcs, Worktree
 from niharness.prompts import assemble
 
 NOTES_POINTER = (
@@ -45,17 +46,18 @@ NOTES_POINTER = (
 _log = structlog.get_logger(__name__)
 
 
-class TaskResult(BaseModel):
-    """What happened to one task."""
+class StepResult(BaseModel):
+    """What one step of one task did."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    task_id: str
+    stage: str
     step_id: StepId
     stop_reason: StopReason
     tool_calls: int = Field(ge=0)
     tokens: int = Field(ge=0)
     answer: FinalAnswer | None = None
+    verdict: Verdict | None = None
 
     @property
     def finished(self) -> bool:
@@ -65,6 +67,38 @@ class TaskResult(BaseModel):
             and self.answer is not None
             and self.answer.complete
         )
+
+
+class TaskResult(BaseModel):
+    """What happened to one task, across however many steps it took."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    task_id: str
+    stage: Stage = Field(description="Where the task ended: completed, or handed back.")
+    reason: str = ""
+    revisions: int = Field(default=0, ge=0)
+    steps: tuple[StepResult, ...] = ()
+    commits: tuple[str, ...] = ()
+    full_gate_pending: bool = Field(
+        default=False,
+        description="The reviewer acknowledged it; the full tier has not run.",
+    )
+
+    @property
+    def finished(self) -> bool:
+        """True when the task got through review."""
+        return self.stage is Stage.COMPLETED
+
+    @property
+    def tool_calls(self) -> int:
+        """Tool calls across every step of this task."""
+        return sum(step.tool_calls for step in self.steps)
+
+    @property
+    def tokens(self) -> int:
+        """Tokens across every step of this task."""
+        return sum(step.tokens for step in self.steps)
 
 
 class RunResult(BaseModel):
@@ -119,7 +153,10 @@ class ImplementationRun:
         policy: CompactionPolicy | None = None,
         thresholds: LoopThresholds | None = None,
         limits: ToolLimits | None = None,
+        vcs: Vcs,
+        worktree: Worktree,
         summarizer: Summarizer | None = None,
+        max_revisions: int = DEFAULT_MAX_REVISIONS,
     ) -> None:
         """Wire what a run needs beyond the step executor.
 
@@ -132,6 +169,11 @@ class ImplementationRun:
             thresholds: loop detector thresholds.
             limits: tool argument and result caps.
             summarizer: the utility model, for compaction summaries.
+            vcs: version control. A run needs it: the commit gate is "did a
+                commit land", and the reviewer starts from the diff.
+            worktree: the run's worktree.
+            max_revisions: how many fix rounds a task gets before it goes back
+                to the human.
         """
         self._runner = runner
         self._events = events
@@ -141,6 +183,9 @@ class ImplementationRun:
         self._thresholds = thresholds or LoopThresholds()
         self._limits = limits or ToolLimits()
         self._summarizer = summarizer
+        self._vcs = vcs
+        self._worktree = worktree
+        self._max_revisions = max_revisions
 
     async def run(
         self,
@@ -195,66 +240,229 @@ class ImplementationRun:
         position: int,
         run_id: RunId,
     ) -> TaskResult:
-        """Run one implementing step for `task`."""
-        spec = DEFAULT_ROLES[Role.IMPLEMENTER]
-        step = step_for(Stage.IMPLEMENT)
-        step_id = StepId(derive_id(run_id, Stage.IMPLEMENT.value, task.id))
+        """Run one task through implement, the commit gate, review and any fixes."""
+        stage = Stage.IMPLEMENT
+        revision = 0
+        steps: list[StepResult] = []
+        commits: list[str] = []
+        verdict: Verdict | None = None
+        head = await self._head()
+        _log.info("task.started", task=task.id, position=position, of=len(plan.tasks))
+
+        while True:
+            if stage in {Stage.IMPLEMENT, Stage.FIX}:
+                step = await self._run_step(
+                    stage, task, plan, position, run_id, revision, verdict
+                )
+                steps.append(step)
+                outcome = Outcome.DONE if step.finished else Outcome.FAILED
+            elif stage is Stage.COMMIT_GATE:
+                landed = await self._landed(head, run_id, task)
+                head = landed or head
+                outcome = Outcome.GREEN if landed else Outcome.RED
+                if landed:
+                    commits.append(landed)
+            elif stage is Stage.REVIEW:
+                step = await self._run_step(
+                    stage, task, plan, position, run_id, revision, verdict
+                )
+                steps.append(step)
+                verdict = step.verdict
+                outcome = _review_outcome(verdict)
+            else:  # Stage.FULL_GATE - the task is done as far as this run goes
+                return TaskResult(
+                    task_id=task.id,
+                    stage=Stage.COMPLETED,
+                    reason="reviewer ACK; the full gate tier has not run",
+                    revisions=revision,
+                    steps=tuple(steps),
+                    commits=tuple(commits),
+                    full_gate_pending=True,
+                )
+
+            transition = advance(stage, outcome, revision, self._max_revisions)
+            _log.info(
+                "task.stage",
+                task=task.id,
+                stage=stage.value,
+                outcome=outcome.value,
+                next=transition.stage.value,
+                revision=transition.revision,
+            )
+            if transition.terminal and transition.stage is not Stage.COMPLETED:
+                await self._events.append(
+                    ev.StepFailed(
+                        reason=f"task {task.id}: {transition.reason}",
+                        diagnostics=_diagnostics(steps[-1] if steps else None, verdict),
+                    ),
+                )
+                return TaskResult(
+                    task_id=task.id,
+                    stage=transition.stage,
+                    reason=transition.reason,
+                    revisions=transition.revision,
+                    steps=tuple(steps),
+                    commits=tuple(commits),
+                )
+            stage, revision = transition.stage, transition.revision
+
+    async def _head(self) -> str:
+        """Return the worktree's current commit."""
+        return await self._vcs.head(self._worktree)
+
+    async def _landed(self, before: str, run_id: RunId, task: Task) -> str:
+        """Return the new commit if one landed, recording it in the event stream.
+
+        The commit itself happens inside the tool server, where the gate runs.
+        The harness notices it here, so the run's log says what was committed
+        even though it did not do the committing.
+        """
+        del run_id
+        head = await self._vcs.head(self._worktree)
+        if head == before:
+            return ""
+        diff = await self._vcs.diff(self._worktree)
+        await self._events.append(_commit_event(head, diff))
+        _log.info("task.committed", task=task.id, sha=head[:12])
+        return head
+
+    async def _run_step(
+        self,
+        stage: Stage,
+        task: Task,
+        plan: Plan,
+        position: int,
+        run_id: RunId,
+        revision: int,
+        verdict: Verdict | None,
+    ) -> StepResult:
+        """Run one model step for `stage`."""
+        role = STAGE_ROLES[stage]
+        spec = DEFAULT_ROLES[role]
+        definition = step_for(stage)
+        kind = STAGE_ARTIFACTS[stage]
+        step_id = StepId(derive_id(run_id, stage.value, task.id, str(revision)))
         window = Window(self._tokenizer, self._policy, summarizer=self._summarizer)
         await window.add_prompt(assemble(spec.prompt_layers))
         await window.add_task(render_task(task, plan, position))
         await window.add_notes(NOTES_POINTER)
+        for extra in await self._context_for(stage, verdict):
+            await window.add_notes(extra)
 
         config = LoopConfig(
-            stage=Stage.IMPLEMENT.value,
-            role=Role.IMPLEMENTER,
+            stage=stage.value,
+            role=role,
             model=self._model,
             allowlist=spec.allowlist,
-            budgets=step.budgets,
+            budgets=definition.budgets,
             thresholds=self._thresholds,
             limits=self._limits,
             task_id=task.id,
             temperature=spec.temperature,
+            final_artifact=kind,
             response_format=ResponseFormat(
-                name="FinalAnswer",
-                json_schema=FinalAnswer.model_json_schema(),
+                name=kind.value,
+                json_schema=ARTIFACT_SCHEMAS[kind](),
             ),
         )
-        _log.info("task.started", task=task.id, position=position, of=len(plan.tasks))
         state = await self._runner.run(config, window, step_id=step_id)
-        result = TaskResult(
-            task_id=task.id,
+        return StepResult(
+            stage=stage.value,
             step_id=step_id,
             stop_reason=state.stop_reason or StopReason.ERROR,
             tool_calls=state.budget.tool_calls_used,
             tokens=state.budget.tokens_used,
             answer=state.final_answer,
+            verdict=state.verdict,
         )
-        if not result.finished:
-            await self._events.append(
-                ev.StepFailed(
-                    reason=f"task {task.id}: {result.stop_reason.value}",
-                    diagnostics=_diagnostics(state.final_answer),
-                ),
-                step_id=step_id,
-            )
-        _log.info(
-            "task.finished",
-            task=task.id,
-            finished=result.finished,
-            stop_reason=result.stop_reason.value,
-            tool_calls=result.tool_calls,
-        )
-        return result
+
+    async def _context_for(self, stage: Stage, verdict: Verdict | None) -> tuple[str, ...]:
+        """Return what this stage needs beyond the task: the diff, the notes."""
+        extra: list[str] = []
+        if stage in {Stage.REVIEW, Stage.FIX}:
+            diff = await self._vcs.diff(self._worktree)
+            extra.append(f"The commit under review:\n\n```diff\n{diff.strip()}\n```")
+        if stage is Stage.FIX and verdict is not None:
+            extra.append(render_verdict(verdict))
+        return tuple(extra)
 
 
-def _diagnostics(answer: FinalAnswer | None) -> str:
-    """Return what the human needs to pick the task up, from an unfinished answer."""
-    if answer is None:
+STAGE_ROLES: dict[Stage, Role] = {
+    Stage.IMPLEMENT: Role.IMPLEMENTER,
+    Stage.FIX: Role.FIXER,
+    Stage.REVIEW: Role.REVIEWER,
+}
+"""Which role runs which stage."""
+
+STAGE_ARTIFACTS: dict[Stage, ArtifactKind] = {
+    Stage.IMPLEMENT: ArtifactKind.FINAL_ANSWER,
+    Stage.FIX: ArtifactKind.FINAL_ANSWER,
+    Stage.REVIEW: ArtifactKind.VERDICT,
+}
+"""Which artifact ends which stage."""
+
+ARTIFACT_SCHEMAS: dict[ArtifactKind, Callable[[], dict[str, Any]]] = {
+    ArtifactKind.FINAL_ANSWER: FinalAnswer.model_json_schema,
+    ArtifactKind.VERDICT: Verdict.model_json_schema,
+}
+"""How each artifact's schema is produced for structured output."""
+
+
+def render_verdict(verdict: Verdict) -> str:
+    """Render a reviewer's verdict as the fixer's instructions."""
+    lines = [f"# Review: {verdict.decision.value}", "", verdict.summary, ""]
+    if verdict.notes:
+        lines.append("Address every blocker. If you disagree with one, change nothing for it")
+        lines.append("and say why in NOTES.md.")
+        lines.append("")
+        lines += [
+            f"- `{note.file}`"
+            + (f":{note.line}" if note.line else "")
+            + f" [{note.severity.value}] {note.message}"
+            for note in verdict.notes
+        ]
+    lines += [
+        "",
+        f"The reviewer ran the build ({'green' if verdict.build_passed else 'RED'}) "
+        f"and the tests ({'green' if verdict.tests_passed else 'RED'}) itself.",
+    ]
+    return "\n".join(lines)
+
+
+def _review_outcome(verdict: Verdict | None) -> Outcome:
+    """Map a verdict onto the pipeline's outcome, treating a missing one as failure."""
+    if verdict is None:
+        return Outcome.FAILED
+    return Outcome.ACK if verdict.decision is Decision.ACK else Outcome.NAK
+
+
+def _commit_event(sha: str, diff: str) -> ev.VcsCommitted:
+    """Derive the commit event from the diff the adapter returned."""
+    lines = diff.splitlines()
+    subject = lines[1].strip() if len(lines) > 1 else ""
+    files = sum(1 for line in lines if line.startswith("diff --git "))
+    insertions = sum(1 for line in lines if line.startswith("+") and not line.startswith("+++"))
+    deletions = sum(1 for line in lines if line.startswith("-") and not line.startswith("---"))
+    return ev.VcsCommitted(
+        sha=sha,
+        subject=subject,
+        files_changed=files,
+        insertions=insertions,
+        deletions=deletions,
+    )
+
+
+def _diagnostics(step: StepResult | None, verdict: Verdict | None) -> str:
+    """Return what the human needs to pick the task up."""
+    if verdict is not None and verdict.decision is Decision.NAK:
+        blockers = "; ".join(note.message for note in verdict.notes)
+        return f"reviewer: {verdict.summary}" + (f" | blockers: {blockers}" if blockers else "")
+    if step is None or step.answer is None:
         return "the step produced no final answer"
-    unmet = [item.statement for item in answer.dod if not item.done]
+    unmet = [item.statement for item in step.answer.dod if not item.done]
     if not unmet:
-        return answer.summary
-    return f"{answer.summary}\nnot done: " + "; ".join(unmet)
+        return step.answer.summary
+    return f"{step.answer.summary}\nnot done: " + "; ".join(unmet)
 
 
 def task_order(plan: Plan) -> Sequence[str]:

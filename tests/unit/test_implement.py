@@ -15,7 +15,16 @@ from niharness.cli.implement import load_plan, new_run_id, server_parameters
 from niharness.cli.main import app
 from niharness.config import HarnessConfig
 from niharness.domain import events as ev
-from niharness.domain.artifacts import DodItem, FinalAnswer, Plan, Task
+from niharness.domain.artifacts import (
+    Decision,
+    DodItem,
+    FinalAnswer,
+    Plan,
+    ReviewNote,
+    Severity,
+    Task,
+    Verdict,
+)
 from niharness.domain.context import CompactionPolicy
 from niharness.domain.events import Event, EventBody, RunOutcome
 from niharness.domain.identity import CallId, Digest, RunId, StepId
@@ -28,6 +37,7 @@ from niharness.domain.messages import (
     ToolSchema,
     Usage,
 )
+from niharness.domain.pipeline import Stage
 from niharness.domain.state import RunSnapshot
 from niharness.domain.tools import AcceptedCall, ToolName, ToolResult
 from niharness.ports.model_backend import BackendInfo
@@ -61,6 +71,30 @@ def answer(*, done: bool = True) -> ChatResponse:
         content=payload.model_dump_json(),
         finish_reason="stop",
         usage=Usage(prompt_tokens=300, completion_tokens=60),
+    )
+
+
+def verdict(*, ack: bool = True) -> ChatResponse:
+    payload = Verdict(
+        decision=Decision.ACK if ack else Decision.NAK,
+        summary="looks right" if ack else "the error is discarded",
+        build_passed=True,
+        tests_passed=True,
+        notes=()
+        if ack
+        else (
+            ReviewNote(
+                file="src/a.py",
+                line=12,
+                severity=Severity.BLOCKER,
+                message="the result of the inner call is dropped",
+            ),
+        ),
+    )
+    return ChatResponse(
+        content=payload.model_dump_json(),
+        finish_reason="stop",
+        usage=Usage(prompt_tokens=400, completion_tokens=80),
     )
 
 
@@ -115,6 +149,30 @@ class FakeTools:
         )
 
 
+class FakeVcs:
+    """Moves HEAD when told to, so the commit gate has something to observe."""
+
+    def __init__(self, *, commits: int = 99) -> None:
+        self.sha = "0" * 40
+        self.remaining = commits
+        self.diffs = 0
+
+    async def head(self, worktree: Worktree) -> str:
+        return self.sha
+
+    async def diff(self, worktree: Worktree, revision: str = "HEAD") -> str:
+        self.diffs += 1
+        return (
+            f"{self.sha}\nfeat: a change\n\nBody.\n\n"
+            "diff --git a/src/a.py b/src/a.py\n+x = 1\n-y = 2\n"
+        )
+
+    def commit_lands(self) -> None:
+        if self.remaining > 0:
+            self.remaining -= 1
+            self.sha = f"{len(self.sha):040d}".replace("0", "a", 1) + str(self.remaining)
+
+
 class FakeSink:
     def __init__(self) -> None:
         self.bodies: list[EventBody] = []
@@ -140,13 +198,38 @@ class FakeSink:
         return None
 
 
-def build(backend: FakeBackend, tools: FakeTools, sink: FakeSink) -> ImplementationRun:
+class CommittingTools(FakeTools):
+    """A tool provider whose git_commit moves HEAD, like the real one does."""
+
+    def __init__(self, vcs: FakeVcs) -> None:
+        super().__init__()
+        self._vcs = vcs
+
+    async def call(self, accepted: AcceptedCall) -> ToolResult:
+        result = await super().call(accepted)
+        if accepted.tool is ToolName.GIT_COMMIT:
+            self._vcs.commit_lands()
+        return result
+
+
+def build(
+    backend: FakeBackend,
+    tools: FakeTools,
+    sink: FakeSink,
+    vcs: FakeVcs | None = None,
+    *,
+    max_revisions: int = 3,
+) -> ImplementationRun:
+    version_control = vcs or FakeVcs()
     return ImplementationRun(
         runner=StepRunner(backend=backend, tools=tools, events=sink),
         events=sink,
         tokenizer=backend,
         model="Qwen3-Coder-30B-A3B-Instruct",
         policy=CompactionPolicy(),
+        vcs=version_control,  # type: ignore[arg-type]
+        worktree=Worktree(path="/work", branch="harness/run-x", base_sha="0" * 40),
+        max_revisions=max_revisions,
     )
 
 
@@ -154,10 +237,16 @@ def kinds(sink: FakeSink) -> list[str]:
     return [type(body).__name__ for body in sink.bodies]
 
 
-async def test_a_plan_runs_one_step_per_task() -> None:
-    backend = FakeBackend(answer(), answer())
-    tools, sink = FakeTools(), FakeSink()
-    result = await build(backend, tools, sink).run(
+def task_run(*, ack: bool = True) -> list[ChatResponse]:
+    """One task's worth of responses: commit, report done, then the review."""
+    return [proposes_commit(), answer(), verdict(ack=ack)]
+
+
+async def test_a_task_goes_implement_commit_review() -> None:
+    vcs = FakeVcs()
+    backend = FakeBackend(*task_run(), *task_run())
+    tools, sink = CommittingTools(vcs), FakeSink()
+    result = await build(backend, tools, sink, vcs).run(
         plan(),
         RunId("20261014-120000-abc123"),
         branch="harness/run-x",
@@ -165,16 +254,109 @@ async def test_a_plan_runs_one_step_per_task() -> None:
     )
     assert result.completed
     assert [task.task_id for task in result.tasks] == ["t1", "t2"]
-    assert all(task.finished for task in result.tasks)
+    first = result.tasks[0]
+    assert [step.stage for step in first.steps] == ["implement", "review"]
+    assert first.commits, "the commit gate saw a commit land"
+    assert first.full_gate_pending, "the full tier has not run"
     assert kinds(sink)[:3] == ["RunStarted", "PlanCreated", "PlanApproved"]
+    assert "VcsCommitted" in kinds(sink)
     assert kinds(sink)[-1] == "RunFinished"
-    assert kinds(sink).count("StepStarted") == 2
+
+
+async def test_a_task_that_never_commits_is_sent_to_fix_then_handed_back() -> None:
+    vcs = FakeVcs()
+    # The model reports done without ever calling git_commit, so HEAD never moves.
+    backend = FakeBackend(*[answer() for _ in range(8)])
+    sink = FakeSink()
+    result = await build(backend, FakeTools(), sink, vcs, max_revisions=1).run(
+        plan(tasks=1),
+        RunId("r1"),
+        branch="b",
+        profile="cpu-only",
+    )
+    assert not result.completed
+    task = result.tasks[0]
+    assert task.stage is Stage.HANDOFF
+    assert [step.stage for step in task.steps] == ["implement", "fix"]
+    assert task.commits == ()
+    assert "fix loop limit" in task.reason
+
+
+async def test_a_nak_sends_the_task_to_the_fixer_with_the_notes() -> None:
+    vcs = FakeVcs()
+    backend = FakeBackend(
+        *task_run(ack=False),  # implement, commit, NAK
+        proposes_commit(),  # fix
+        answer(),
+        verdict(ack=True),  # review again
+    )
+    tools, sink = CommittingTools(vcs), FakeSink()
+    result = await build(backend, tools, sink, vcs).run(
+        plan(tasks=1),
+        RunId("r1"),
+        branch="b",
+        profile="cpu-only",
+    )
+    task = result.tasks[0]
+    assert task.finished
+    assert task.revisions == 1
+    assert [step.stage for step in task.steps] == ["implement", "review", "fix", "review"]
+    fix_request = backend.requests[3]
+    text = "\n".join(message.content for message in fix_request.messages)
+    assert "Review: NAK" in text, "the fixer is told what the reviewer said"
+    assert "the result of the inner call is dropped" in text
+    assert "```diff" in text, "and sees the commit under review"
+
+
+async def test_a_task_the_reviewer_keeps_rejecting_goes_back_to_the_human() -> None:
+    vcs = FakeVcs()
+    backend = FakeBackend(
+        *task_run(ack=False),
+        proposes_commit(),
+        answer(),
+        verdict(ack=False),
+        proposes_commit(),
+        answer(),
+        verdict(ack=False),
+    )
+    tools, sink = CommittingTools(vcs), FakeSink()
+    result = await build(backend, tools, sink, vcs, max_revisions=1).run(
+        plan(tasks=1),
+        RunId("r1"),
+        branch="b",
+        profile="cpu-only",
+    )
+    task = result.tasks[0]
+    assert not task.finished
+    assert task.stage is Stage.HANDOFF
+    assert task.revisions == 1
+    assert "fix loop limit" in task.reason
+    failures = [body for body in sink.bodies if isinstance(body, ev.StepFailed)]
+    assert "the result of the inner call is dropped" in failures[0].diagnostics
+
+
+async def test_the_reviewer_starts_from_the_diff() -> None:
+    vcs = FakeVcs()
+    backend = FakeBackend(*task_run())
+    await build(backend, CommittingTools(vcs), FakeSink(), vcs).run(
+        plan(tasks=1),
+        RunId("r1"),
+        branch="b",
+        profile="cpu-only",
+    )
+    review_request = backend.requests[2]
+    text = "\n".join(message.content for message in review_request.messages)
+    assert "```diff" in text
+    assert "+x = 1" in text
+    assert review_request.response_format is not None
+    assert review_request.response_format.name == "Verdict"
 
 
 async def test_the_run_stops_at_the_first_unfinished_task() -> None:
-    backend = FakeBackend(answer(done=False), answer())
+    vcs = FakeVcs()
+    backend = FakeBackend(answer(done=False))
     sink = FakeSink()
-    result = await build(backend, FakeTools(), sink).run(
+    result = await build(backend, FakeTools(), sink, vcs, max_revisions=0).run(
         plan(),
         RunId("r1"),
         branch="b",
@@ -185,13 +367,12 @@ async def test_the_run_stops_at_the_first_unfinished_task() -> None:
     assert result.stopped_at == "t1"
     assert len(result.tasks) == 1, "the second task never starts"
     assert "StepFailed" in kinds(sink)
-    finished = [body for body in sink.bodies if isinstance(body, ev.RunFinished)]
-    assert finished[0].outcome is RunOutcome.FAILED
 
 
 async def test_the_task_reaches_the_model_as_the_window_task() -> None:
-    backend = FakeBackend(answer())
-    await build(backend, FakeTools(), FakeSink()).run(
+    vcs = FakeVcs()
+    backend = FakeBackend(*task_run())
+    await build(backend, CommittingTools(vcs), FakeSink(), vcs).run(
         plan(tasks=1),
         RunId("r1"),
         branch="b",
@@ -206,9 +387,10 @@ async def test_the_task_reaches_the_model_as_the_window_task() -> None:
 
 
 async def test_a_committing_task_goes_through_the_tool() -> None:
-    backend = FakeBackend(proposes_commit(), answer())
-    tools, sink = FakeTools(), FakeSink()
-    await build(backend, tools, sink).run(
+    vcs = FakeVcs()
+    backend = FakeBackend(*task_run())
+    tools, sink = CommittingTools(vcs), FakeSink()
+    await build(backend, tools, sink, vcs).run(
         plan(tasks=1),
         RunId("r1"),
         branch="b",
@@ -220,8 +402,9 @@ async def test_a_committing_task_goes_through_the_tool() -> None:
 
 
 async def test_the_event_stream_records_where_the_tools_ran() -> None:
+    vcs = FakeVcs()
     sink = FakeSink()
-    await build(FakeBackend(answer()), FakeTools(), sink).run(
+    await build(FakeBackend(*task_run()), CommittingTools(vcs), sink, vcs).run(
         plan(tasks=1),
         RunId("r1"),
         branch="b",

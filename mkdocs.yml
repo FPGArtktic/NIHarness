@@ -143,3 +143,4 @@ nav:
       - adr/0011-message-assembly-is-an-application-concern.md
       - adr/0012-mcp-is-the-tool-protocol.md
       - adr/0013-tools-answer-with-an-outcome-envelope.md
+      - adr/0014-review-starts-from-the-diff.md

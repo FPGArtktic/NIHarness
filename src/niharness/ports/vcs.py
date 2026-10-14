@@ -65,6 +65,15 @@ class Vcs(Protocol):
         """Return the paths changed since HEAD, worktree-relative and sorted."""
         ...
 
+    async def diff(self, worktree: Worktree, revision: str = "HEAD") -> str:
+        """Return the diff a commit introduced.
+
+        The reviewer starts from this. It still re-runs the build and the tests
+        itself; what the diff saves is the reviewer having to reconstruct what
+        changed from the task description.
+        """
+        ...
+
     async def tree_digest(self, worktree: Worktree) -> Digest:
         """Return a digest of the working tree, used by the state-cycle detector."""
         ...

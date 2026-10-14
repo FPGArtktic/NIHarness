@@ -102,6 +102,30 @@ Which one is better here is an `nih bench --layer L0` run plus a golden check on
 the compactor prompt, not a matter of taste - see
 [the benchmark methodology](../benchmarks/methodology.md).
 
+## What each configured model is for
+
+The profile names up to four models. They are separate processes on separate
+ports, and the harness picks between them by role, never by guessing:
+
+| Section | Who uses it | What it does | Where it runs |
+|---|---|---|---|
+| `[models.main]` | planner, implementer, reviewer, fixer, researcher | all the work on code: reading, patching, reviewing, running the gate through tools | GPU, CPU, or split, per profile |
+| `[models.thinking]` | brainstormer; optionally planner and reviewer | the reasoning variant, for open-ended exploration before anything is written | same server as the main model; a swap is allowed only at a stage boundary |
+| `[models.utility]` | compactor, NOTES.md, routing, classification | summarises what no longer fits in the window; never gets tools | CPU, always resident |
+| `[models.embeddings]` | the vector store | embeds code chunks and compacted run context for `rag_query` | GPU on the GPU profiles, CPU otherwise |
+
+One run uses **one** main model throughout: the roles differ by prompt,
+allowlist and temperature, not by weights, so there are no model swaps inside a
+tool loop.
+
+`[models.thinking]` is optional, and `cpu-only` leaves it out on purpose.
+Reasoning is generated tokens, and generation is what a CPU is slowest at: a
+thinking variant emits hundreds to thousands of tokens before it answers, which
+on that profile is minutes per turn, on top of a second set of roughly 18 GiB of
+weights. Where it is absent, the brainstormer runs on the main model with a
+higher temperature - a worse brainstorm, but one that answers this side of
+lunch.
+
 ## Rules
 
 - **Quantization floor: Q4_K_M.** Below that, tool-call syntax degrades before

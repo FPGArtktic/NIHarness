@@ -48,7 +48,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   (only known and allowed tools are forwarded to the model).
 - CLI (`nih`) with `init`, `config`, `gate`, `plan check`, `plan import`,
   `status`, `docs generate`, and `implement` - which runs an approved plan in a
-  dedicated worktree, one step per task, with the tool server in the sandbox.
+  dedicated worktree with the tool server in the sandbox, taking each task
+  through implement, the commit gate, review, and bounded fixes.
 - Prompt layers for every role, plus the Definition of Done checklist.
 - Documentation site (MkDocs Material) with concept pages, a generated event
   catalogue and the first architecture decision records.

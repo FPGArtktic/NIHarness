@@ -128,3 +128,24 @@ async def test_a_failing_git_command_reports_its_argv(tmp_path: Path) -> None:
         await vcs.create_worktree(RUN)
     assert error.value.argv[0] == "git"
     assert error.value.exit_code != 0
+
+
+async def test_the_diff_of_a_commit_carries_its_message_and_patch(vcs: GitVcs) -> None:
+    worktree = await vcs.create_worktree(RUN)
+    (Path(worktree.path) / "a.py").write_text("x = 1\n", encoding="utf-8")
+    await vcs.commit(worktree, "feat(core): add a module\n\nIt is needed by the task.")
+    diff = await vcs.diff(worktree)
+    assert "feat(core): add a module" in diff
+    assert "It is needed by the task." in diff
+    assert "+x = 1" in diff
+    assert "a.py" in diff
+
+
+async def test_an_older_revision_can_be_shown(vcs: GitVcs) -> None:
+    worktree = await vcs.create_worktree(RUN)
+    (Path(worktree.path) / "a.py").write_text("x = 1\n", encoding="utf-8")
+    first = await vcs.commit(worktree, "feat: first\n\nBody.")
+    (Path(worktree.path) / "b.py").write_text("y = 2\n", encoding="utf-8")
+    await vcs.commit(worktree, "feat: second\n\nBody.")
+    assert "+x = 1" in await vcs.diff(worktree, first.sha)
+    assert "+y = 2" in await vcs.diff(worktree)

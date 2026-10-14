@@ -22,6 +22,14 @@ context_window = 65536
 supports_grammar = true
 quantization = "Q4_K_M"
 
+# There is deliberately no [models.thinking] here. Reasoning is generated
+# tokens, and generation is exactly what a CPU is slow at: a thinking variant
+# emits hundreds to thousands of tokens before it answers, which on this profile
+# is minutes per turn. It would also be a second set of ~18 GiB weights, either
+# resident or swapped in at a stage boundary. On cpu-only the brainstormer runs
+# on the main model with a higher temperature instead; see
+# docs/operations/models.md.
+
 [models.utility]
 name = "BitNet-b1.58-2B-4T"
 base_url = "http://127.0.0.1:8081"

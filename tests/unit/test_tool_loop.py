@@ -160,8 +160,8 @@ def test_a_final_answer_ends_the_step() -> None:
     assert finished.stop_reason is StopReason.FINAL_ANSWER
     action = next_action(step.state)
     assert isinstance(action, Stop)
-    assert action.final_answer is not None
-    assert action.final_answer.complete
+    assert isinstance(action.final, FinalAnswer)
+    assert action.final.complete
 
 
 def test_an_unparsable_final_answer_is_asked_again_then_fails() -> None:
@@ -180,7 +180,7 @@ def test_an_unparsable_final_answer_is_asked_again_then_fails() -> None:
 
 
 def test_a_step_without_a_structured_answer_just_stops() -> None:
-    plain = start(config(expects_final_answer=False)).state
+    plain = start(config(final_artifact=None)).state
     step = observe_model(plain, answers(content="a prose report"))
     assert step.state.stop_reason is StopReason.FINAL_ANSWER
 
@@ -255,7 +255,7 @@ def test_the_last_rung_fails_the_step() -> None:
     assert step.state.stop_reason is StopReason.DETECTOR_ESCALATION
     action = next_action(step.state)
     assert isinstance(action, Stop)
-    assert action.final_answer is None
+    assert action.final is None
 
 
 def test_repeated_gate_failures_are_an_intervention() -> None:
@@ -358,3 +358,47 @@ def test_the_loop_is_deterministic() -> None:
     first = observe_model(state(), proposes("read_file", {"path": "src/a.py"}))
     second = observe_model(state(), proposes("read_file", {"path": "src/a.py"}))
     assert first == second
+
+
+def test_a_reviewing_step_ends_with_a_verdict() -> None:
+    from niharness.domain.artifacts import Decision, ReviewNote, Severity, Verdict
+    from niharness.domain.tool_loop import ArtifactKind
+
+    reviewing = start(
+        config(role=Role.REVIEWER, final_artifact=ArtifactKind.VERDICT),
+    ).state
+    verdict = Verdict(
+        decision=Decision.NAK,
+        summary="the error is discarded",
+        build_passed=True,
+        tests_passed=True,
+        notes=(
+            ReviewNote(
+                file="src/a.py",
+                line=12,
+                severity=Severity.BLOCKER,
+                message="the result of the inner call is dropped",
+            ),
+        ),
+    )
+    step = observe_model(
+        reviewing,
+        ChatResponse(
+            content=verdict.model_dump_json(),
+            finish_reason="stop",
+            usage=Usage(prompt_tokens=400, completion_tokens=90),
+        ),
+    )
+    assert step.state.stop_reason is StopReason.FINAL_ANSWER
+    assert step.state.verdict == verdict
+    assert step.state.final_answer is None, "a verdict is not a final answer"
+
+
+def test_a_reviewing_step_refuses_a_final_answer_shaped_reply() -> None:
+    from niharness.domain.tool_loop import ArtifactKind
+
+    reviewing = start(config(role=Role.REVIEWER, final_artifact=ArtifactKind.VERDICT)).state
+    step = observe_model(reviewing, answers())
+    action = next_action(step.state)
+    assert isinstance(action, CallModel)
+    assert "Verdict schema" in action.instruction

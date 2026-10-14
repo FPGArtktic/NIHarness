@@ -183,6 +183,9 @@ async def execute(
             thresholds=config.loop,
             limits=config.tools,
             summarizer=ModelSummarizer(utility, config.models.utility.name),
+            vcs=vcs,
+            worktree=worktree,
+            max_revisions=config.max_revisions,
         )
         return await run.run(
             plan,
@@ -197,13 +200,25 @@ async def execute(
 def report(result: RunResult, runs_dir: Path) -> None:
     """Print what the run did, and where to read the rest."""
     typer.echo("")
+    pending = False
     for task in result.tasks:
         mark = "ok  " if task.finished else "FAIL"
         typer.echo(
-            f"  [{mark}] {task.task_id}: {task.stop_reason.value}, "
-            f"{task.tool_calls} tool call(s), {task.tokens} tokens",
+            f"  [{mark}] {task.task_id}: {len(task.steps)} step(s), "
+            f"{task.revisions} revision(s), {task.tool_calls} tool call(s), "
+            f"{task.tokens} tokens",
         )
+        for sha in task.commits:
+            typer.echo(f"         commit {sha[:12]}")
+        if not task.finished:
+            typer.echo(f"         {task.reason}")
+        pending = pending or task.full_gate_pending
     typer.echo("")
+    if pending:
+        typer.secho(
+            "the full gate tier has not run: uv run nih gate --tier full",
+            fg=typer.colors.YELLOW,
+        )
     if result.completed:
         typer.secho(f"run {result.run_id}: all tasks done", fg=typer.colors.GREEN)
     else:

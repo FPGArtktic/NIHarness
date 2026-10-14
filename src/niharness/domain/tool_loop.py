@@ -21,12 +21,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from niharness.domain import events as ev
-from niharness.domain.artifacts import FinalAnswer
+from niharness.domain.artifacts import FinalAnswer, Verdict
 from niharness.domain.budgets import Budgets, BudgetState
 from niharness.domain.events import EventBody, InterventionLevel, StopReason
 from niharness.domain.identity import CallId, Digest, digest_text
@@ -61,6 +62,23 @@ FINALIZE_INSTRUCTION = (
 MAX_INVALID_RESPONSES = 3
 """How often a malformed final answer may be re-requested before the step fails."""
 
+FinalArtifact = FinalAnswer | Verdict
+"""What a step may end with: work reported done, or a review's verdict."""
+
+
+class ArtifactKind(StrEnum):
+    """Which artifact ends a step. The role decides; the loop enforces."""
+
+    FINAL_ANSWER = "FinalAnswer"
+    VERDICT = "Verdict"
+
+
+ARTIFACT_MODELS: dict[ArtifactKind, type[FinalAnswer] | type[Verdict]] = {
+    ArtifactKind.FINAL_ANSWER: FinalAnswer,
+    ArtifactKind.VERDICT: Verdict,
+}
+"""The model each kind validates against."""
+
 
 class LoopConfig(BaseModel):
     """Everything a step's loop needs to decide, and nothing it needs to act."""
@@ -74,7 +92,10 @@ class LoopConfig(BaseModel):
     budgets: Budgets = Budgets()
     thresholds: LoopThresholds = LoopThresholds()
     limits: ToolLimits = ToolLimits()
-    expects_final_answer: bool = True
+    final_artifact: ArtifactKind | None = Field(
+        default=ArtifactKind.FINAL_ANSWER,
+        description="The artifact that ends this step; None means any prose answer does.",
+    )
     task_id: str | None = None
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     max_tokens: int = Field(default=4_096, ge=1)
@@ -103,12 +124,22 @@ class LoopState(BaseModel):
     invalid_responses: int = Field(default=0, ge=0)
     results_by_arguments: dict[str, str] = Field(default_factory=dict)
     stop_reason: StopReason | None = None
-    final_answer: FinalAnswer | None = None
+    final: FinalArtifact | None = None
 
     @property
     def finished(self) -> bool:
         """True when the step has stopped."""
         return self.stop_reason is not None
+
+    @property
+    def final_answer(self) -> FinalAnswer | None:
+        """The step's FinalAnswer, when that is what ended it."""
+        return self.final if isinstance(self.final, FinalAnswer) else None
+
+    @property
+    def verdict(self) -> Verdict | None:
+        """The step's Verdict, when that is what ended it."""
+        return self.final if isinstance(self.final, Verdict) else None
 
     @property
     def next_seq(self) -> int:
@@ -167,7 +198,7 @@ class Stop(BaseModel):
 
     kind: Literal["stop"] = "stop"
     stop_reason: StopReason
-    final_answer: FinalAnswer | None = None
+    final: FinalArtifact | None = None
 
 
 Action = Annotated[
@@ -218,7 +249,7 @@ def next_action(state: LoopState) -> Action:
     spent tool budget forces a finalising turn rather than another call.
     """
     if state.stop_reason is not None:
-        return Stop(stop_reason=state.stop_reason, final_answer=state.final_answer)
+        return Stop(stop_reason=state.stop_reason, final=state.final)
     if state.rollback_reason:
         return Rollback(reason=state.rollback_reason)
     if state.synthetic_for is not None:
@@ -455,20 +486,21 @@ def _handle_final_answer(
     state: LoopState,
     response: ChatResponse,
 ) -> tuple[LoopState, tuple[EventBody, ...]]:
-    """Accept a final answer, or ask once more when it does not validate."""
-    if not state.config.expects_final_answer:
+    """Accept the step's artifact, or ask once more when it does not validate."""
+    kind = state.config.final_artifact
+    if kind is None:
         stopped = _finish(state, StopReason.FINAL_ANSWER)
         return stopped.state, stopped.events
     try:
-        answer = FinalAnswer.model_validate_json(response.content)
+        artifact = ARTIFACT_MODELS[kind].model_validate_json(response.content)
     except (ValidationError, ValueError) as error:
         attempts = state.invalid_responses + 1
         retrying = state.model_copy(
             update={
                 "invalid_responses": attempts,
                 "pending_instruction": (
-                    "The final answer did not validate against the FinalAnswer schema: "
-                    f"{error}. Answer again with the checklist filled in."
+                    f"The answer did not validate against the {kind.value} schema: "
+                    f"{error}. Answer again, and only with that artifact."
                 ),
             },
         )
@@ -476,7 +508,7 @@ def _handle_final_answer(
             failed = _finish(retrying, StopReason.ERROR)
             return failed.state, failed.events
         return retrying, ()
-    answered = state.model_copy(update={"final_answer": answer})
+    answered = state.model_copy(update={"final": artifact})
     stopped = _finish(answered, StopReason.FINAL_ANSWER)
     return stopped.state, stopped.events
 
