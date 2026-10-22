@@ -129,6 +129,7 @@ def _backend(model: ModelConfig) -> OpenAiCompatBackend:
         supports_grammar=model.supports_grammar,
         supports_reasoning=model.supports_reasoning,
         reasoning_effort=model.reasoning_effort,
+        timeout_seconds=model.request_timeout_seconds,
     )
 
 
@@ -228,6 +229,25 @@ async def execute(
                 resumed_from=resume.from_seq if resume else 0,
             )
     raise AssertionError("unreachable: the context manager always returns")  # pragma: no cover
+
+
+def _why(error: httpx.HTTPError) -> str:
+    """Return something worth reading about an HTTP failure.
+
+    Several httpx exceptions carry an empty message - a read timeout among
+    them - so a report built from `str(error)` alone ends in a colon and
+    nothing. A run that died after ten minutes of prompt processing should say
+    which wall it hit.
+    """
+    detail = str(error).strip()
+    if detail:
+        return detail
+    if isinstance(error, httpx.TimeoutException):
+        return (
+            f"{type(error).__name__}: no answer within the request timeout. "
+            "On a slow host raise [models.main] request_timeout_seconds."
+        )
+    return type(error).__name__
 
 
 def report(result: RunResult, runs_dir: Path) -> None:
@@ -331,7 +351,7 @@ def implement(
         raise typer.Exit(EX_UNAVAILABLE) from error
     except httpx.HTTPError as error:
         fail(
-            f"the model backend at {config.models.main.base_url} did not answer: {error}",
+            f"the model backend at {config.models.main.base_url} did not answer: {_why(error)}",
             json_mode=json_mode,
             code=EX_UNAVAILABLE,
         )
@@ -389,7 +409,7 @@ def resume(config: HarnessConfig, run_id: str, *, local_tools: bool, json_mode: 
         raise typer.Exit(EX_UNAVAILABLE) from error
     except httpx.HTTPError as error:
         fail(
-            f"the model backend at {config.models.main.base_url} did not answer: {error}",
+            f"the model backend at {config.models.main.base_url} did not answer: {_why(error)}",
             json_mode=json_mode,
             code=EX_UNAVAILABLE,
         )

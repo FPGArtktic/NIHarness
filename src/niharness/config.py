@@ -48,6 +48,11 @@ class ModelConfig(BaseModel):
         default="",
         description="Standard `reasoning_effort`; empty leaves the server's default.",
     )
+    request_timeout_seconds: float = Field(
+        default=600.0,
+        gt=0,
+        description="How long one completion may take; a slow host needs more.",
+    )
     quantization: str = Field(default="Q4_K_M", description="The floor is Q4_K_M.")
     measured_generation_tps: float = Field(
         default=0.0,

@@ -78,6 +78,9 @@ clerical mistakes account for nearly all of the failures:
 | `--- src/a.py` (no `a/`) | one component to strip | retries with `-p0` |
 | `@@ -1,9 +1,9 @@` over a two-line hunk | counts that match | retries with `--recount` |
 | `--- src/new.py` for a new file | `--- /dev/null` | rewrites the header, and says so |
+| `--- a/dev/null` | `--- /dev/null` | the same rewrite: the `a/` convention does not apply to `/dev/null` |
+| a last line with no newline | every line terminated | terminates it, and says so |
+| the same patch twice | - | answers "already applied", because the worktree is in the state that was asked for |
 
 None of that changes what a diff may do: the content still has to match the
 file, so a diff whose context is not in the worktree is still refused, and the
@@ -98,6 +101,13 @@ unreadable.
 
 A tool that silently repaired its caller would teach it nothing, so a repair is
 reported in the successful result too.
+
+The last row is the one that matters most in practice. A model that cannot tell
+"this patch is wrong" from "this patch is already in" re-sends it: observed on a
+live run, three times in a row, until the detectors ended the step. git can tell
+the two apart - if the *reverse* patch applies, the change is already there -
+so the harness answers that the worktree is in the state the model asked for,
+and the step carries on.
 
 ## Stop conditions
 

@@ -53,6 +53,20 @@ def header_path(line: str) -> str:
     return rest.split("\t", 1)[0].strip()
 
 
+def ensure_terminated(diff: str) -> tuple[str, bool]:
+    """Return the diff with its last line terminated, and whether that was needed.
+
+    A hunk's last line has to end with a newline or git reads the hunk as
+    truncated and calls the whole patch corrupt - pointing at a line that looks
+    fine, because the problem is the character that is not there. A model
+    writing the diff as a string argument drops it constantly: observed on a
+    live run, where the diff ended with a bare `+` for an empty added line.
+    """
+    if diff.endswith("\n"):
+        return diff, False
+    return diff + "\n", True
+
+
 def repair_new_file_headers(
     diff: str,
     exists: Callable[[str], bool],

@@ -19,7 +19,7 @@ from pathlib import Path
 
 import structlog
 
-from niharness.domain.diffs import repair_new_file_headers
+from niharness.domain.diffs import ensure_terminated, repair_new_file_headers
 from niharness.domain.gate import (
     GateKind,
     GateResult,
@@ -372,10 +372,12 @@ class Workspace:
             raise WorkspaceError(
                 f"diff is {size} bytes, limit is {self._limits.max_diff_bytes}"
             )
-        # A new file announced as `--- path` instead of `--- /dev/null` is the
-        # one clerical mistake no git option forgives, so it is repaired here
-        # and reported back, because a tool that silently fixes its caller
-        # teaches it nothing.
+        # Two repairs, both clerical, both reported back - because a tool that
+        # silently fixes its caller teaches it nothing. An unterminated last
+        # line makes git call the whole patch corrupt at a line that looks
+        # fine, and a new file announced as `--- path` instead of
+        # `--- /dev/null` is the mistake no git option forgives.
+        diff, terminated = ensure_terminated(diff)
         diff, created = repair_new_file_headers(diff, self._is_file)
         failures: list[str] = []
         for options in APPLY_VARIANTS:
@@ -388,19 +390,47 @@ class Workspace:
             else:
                 failures.append(_variant_failure(options, check.output))
         else:
+            # A patch that will not apply because it is already applied is not
+            # a failure, and telling a model otherwise is how it gets stuck:
+            # observed on a live run, the model re-sent the same patch for a
+            # file it had already written, twice, until the detectors stopped
+            # the step. git can tell the two apart - if the reverse applies,
+            # the change is in the worktree, which is what was asked for.
+            if await self._already_applied(diff):
+                return (
+                    "already applied: the worktree already contains this change, so "
+                    "nothing was done. Read the file if you are unsure what is in it."
+                )
             raise WorkspaceError(_apply_refusal(diff, failures))
-        note = ""
-        if created:
-            note = (
-                f"note: {', '.join(created)} did not exist, so the `---` line was read as "
-                f"`--- {'/dev/null'}`. Announce a new file that way next time.\n"
+        notes: list[str] = []
+        if terminated:
+            notes.append(
+                "note: the diff's last line had no newline, which makes git read the hunk "
+                "as truncated. It was terminated for you; end a diff with a newline.",
             )
+        if created:
+            notes.append(
+                f"note: {', '.join(created)} did not exist, so the `---` line was read as "
+                "`--- /dev/null`. Announce a new file that way next time.",
+            )
+        note = "".join(f"{line}\n" for line in notes)
         changed = await self._git(("status", "--porcelain"))
         # The only writer in the harness is this method, which makes it the one
         # place a language server's view of the tree can be kept honest.
         if self._servers is not None:
             await self._servers.changed(_porcelain_paths(changed.stdout))
         return f"{note}applied.\nworktree now:\n{changed.stdout.strip() or '(clean)'}"
+
+    async def _already_applied(self, diff: str) -> bool:
+        """Return whether this diff describes a change the worktree already has."""
+        for options in APPLY_VARIANTS:
+            reverse = await self._git(
+                ("apply", "--reverse", "--check", *options, "-"),
+                stdin=diff,
+            )
+            if reverse.ok:
+                return True
+        return False
 
     async def _git(self, args: Sequence[str], stdin: str | None = None) -> ProcessResult:
         """Run a git command in the worktree."""
@@ -559,7 +589,10 @@ def _apply_refusal(diff: str, failures: Sequence[str]) -> str:
     what explains it, so it is quoted, with the rule it breaks.
     """
     lines = diff.splitlines()
-    detail = failures[0] if failures else "the diff does not apply"
+    # The last variant is the most lenient one, so its complaint is the one
+    # that survived every repair - reporting the first would describe a
+    # strictness the harness did not insist on.
+    detail = failures[-1] if failures else "the diff does not apply"
     numbers = re.findall(r"patch at .*?:(\d+)", " ".join(failures))
     hint = ""
     if numbers:

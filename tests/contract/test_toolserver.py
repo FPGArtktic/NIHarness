@@ -458,3 +458,53 @@ async def test_a_new_file_a_model_announced_wrongly_still_lands(worktree: Path) 
     assert "did not exist" in result.content, "the model is told what it got wrong"
     assert (worktree / "src" / "greeter" / "greet.py").is_file()
     assert not (worktree / "greeter").exists(), "not one directory too high"
+
+
+async def test_a_patch_that_is_already_applied_is_not_a_failure(worktree: Path) -> None:
+    # A live 9B re-sent the same patch for a file it had already written,
+    # twice, until the loop detectors stopped the step. "does not apply" was
+    # true and useless; what it needed to hear is that the change is in.
+    diff = (
+        "--- a/src/a.py\n+++ b/src/a.py\n@@ -1,2 +1,3 @@\n"
+        " def add(x, y):\n     return x + y  # TODO: types\n+VALUE = 6\n"
+    )
+    async with connected(worktree) as provider:
+        first = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=diff))
+        again = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=diff))
+    assert first.ok
+    assert again.ok, "the worktree is in the state the model asked for"
+    assert "already applied" in again.content
+    body = (worktree / "src" / "a.py").read_text(encoding="utf-8")
+    assert body.count("VALUE = 6") == 1, "and it was not applied twice"
+
+
+# The diff a live Bonsai 2 9B sent three times, which ended the run: a
+# malformed `diff --git` line, a nonsense `index` line, `--- a/dev/null`
+# instead of `--- /dev/null`, a hunk header counting one line too many, and no
+# newline on the last line. Every one of those is clerical, and the change it
+# describes is exactly right.
+LIVE_9B_DIFF = (
+    "diff --git a/src/greeter/greet.py\n"
+    "index /dev/null b/src/greeter/greet.py\n"
+    "new file mode 100644\n"
+    "--- a/dev/null\n"
+    "+++ b/src/greeter/greet.py\n"
+    "@@ -0,0 +1,6 @@\n"
+    '+"""A greeter helper."""\n'
+    "+\n"
+    "+def greet(name: str) -> str:\n"
+    "+    return 'hi'\n"
+    "+"
+)
+
+
+async def test_the_diff_that_ended_a_live_run_now_applies(worktree: Path) -> None:
+    (worktree / "src" / "greeter").mkdir(parents=True)
+    (worktree / "src" / "greeter" / "__init__.py").write_text('"""G."""\n', encoding="utf-8")
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=LIVE_9B_DIFF))
+    assert result.ok, result.content
+    assert "no newline" in result.content, "the model is told about the missing newline"
+    assert "did not exist" in result.content, "and about /dev/null"
+    written = (worktree / "src" / "greeter" / "greet.py").read_text(encoding="utf-8")
+    assert "def greet(name: str) -> str:" in written

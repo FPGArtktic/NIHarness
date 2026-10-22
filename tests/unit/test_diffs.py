@@ -9,7 +9,7 @@ paperwork of a creation is repaired, and nothing else is.
 
 from collections.abc import Callable
 
-from niharness.domain.diffs import repair_new_file_headers
+from niharness.domain.diffs import ensure_terminated, repair_new_file_headers
 
 NOTHING_EXISTS: frozenset[str] = frozenset()
 
@@ -88,3 +88,17 @@ def test_nothing_is_read_as_a_creation_without_a_zero_hunk() -> None:
     repaired, created = repair_new_file_headers(headers_only, exists_in(NOTHING_EXISTS))
     assert repaired == headers_only
     assert created == ()
+
+
+def test_an_unterminated_last_line_is_terminated() -> None:
+    # A model writing a diff as a string argument drops the final newline
+    # constantly, and git then reads the hunk as truncated and calls the whole
+    # patch corrupt at a line that looks fine.
+    terminated, repaired = ensure_terminated("--- /dev/null\n+++ b/a.py\n@@ -0,0 +1 @@\n+x = 1")
+    assert repaired
+    assert terminated.endswith("+x = 1\n")
+
+
+def test_a_terminated_diff_is_left_exactly_as_it_is() -> None:
+    diff = "--- /dev/null\n+++ b/a.py\n@@ -0,0 +1 @@\n+x = 1\n"
+    assert ensure_terminated(diff) == (diff, False)
