@@ -57,14 +57,18 @@ RUN cmake -S /src -B /build \
     && cmake --build /build --target llama-server llama-bench -j
 
 FROM docker.io/nvidia/cuda:12.8.1-runtime-ubuntu24.04
+# The CUDA runtime image already ships a user with UID 1000, so creating one
+# fails; what matters is not running as root, and a numeric USER says that
+# without caring what the account is called.
 RUN apt-get update && apt-get install --no-install-recommends -y libgomp1 \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --create-home --uid 1000 --shell /usr/sbin/nologin llama
+    && (id -u 1000 >/dev/null 2>&1 \
+        || useradd --create-home --uid 1000 --shell /usr/sbin/nologin llama)
 COPY --from=build /build/bin/ /usr/local/lib/llama/
 RUN ln -s /usr/local/lib/llama/llama-server /usr/local/bin/llama-server \
     && ln -s /usr/local/lib/llama/llama-bench /usr/local/bin/llama-bench
 ENV LD_LIBRARY_PATH=/usr/local/lib/llama
 
-USER llama
+USER 1000
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/llama-server", "--host", "127.0.0.1", "--port", "8080"]

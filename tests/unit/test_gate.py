@@ -5,11 +5,13 @@
 from niharness.domain.gate import (
     GATE_MATRIX,
     KIND_ORDER,
+    GateKind,
     GateResult,
     GateStepResult,
     GateTier,
     Language,
     detect_languages,
+    format_commands,
     gate_listing,
     normalize_output,
     plan_gate,
@@ -202,3 +204,29 @@ def test_the_listing_names_the_tables_a_pyproject_declares() -> None:
     assert "pyproject.toml:tool.importlinter" in listing, "[[tool.x.y]] counts as tool.x"
     assert "pyproject.toml:tool.mypy" not in listing
     assert gate_listing([], "") == frozenset()
+
+
+# -------------------------------------------- a formatter that can also write
+
+
+def test_every_formatter_in_the_matrix_can_write() -> None:
+    # A format command that can only complain is a gate a model cannot pass:
+    # it would have to guess the formatter's output in a hand-written diff.
+    for gate in GATE_MATRIX.values():
+        for command in gate.commands:
+            if command.kind is GateKind.FORMAT:
+                assert command.apply_argv, f"{command.name} cannot write"
+                assert command.apply_argv != command.argv, f"{command.name} would only check"
+
+
+def test_the_formatters_offered_are_the_ones_the_project_configures() -> None:
+    chosen = format_commands([Language.PYTHON, Language.RUST])
+    assert [command.name for command in chosen] == ["ruff-format", "cargo-fmt"]
+    assert format_commands([]) == ()
+
+
+def test_a_formatter_for_a_check_the_project_does_not_configure_is_left_out() -> None:
+    # The same requirement rule as the gate: nothing is offered for a
+    # convention this project has not adopted.
+    docs_only = format_commands([Language.DOCS], ["mkdocs.yml"])
+    assert docs_only == (), "there is no formatter for prose in the matrix"

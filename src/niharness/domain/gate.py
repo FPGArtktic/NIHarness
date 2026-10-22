@@ -73,6 +73,20 @@ class GateCommand(BaseModel):
     kind: GateKind
     language: Language
     tiers: frozenset[GateTier] = Field(default=frozenset({GateTier.QUICK, GateTier.FULL}))
+    apply_argv: tuple[str, ...] = ()
+    """The same tool in its writing form, for a `format` command that has one.
+
+    The gate asks a formatter whether the tree is formatted. A model told "it
+    is not" has no way to act: it has `apply_patch` and must guess the
+    formatter's exact output by hand. Measured on a live run, a correct, typed,
+    documented function was refused for one missing blank line, and the model
+    spent the rest of its budget failing to guess it.
+
+    The policy prompt has always said style is the linter's job. This is what
+    makes that true: `format_code` runs these, and the gate goes back to
+    checking instead of blocking.
+    """
+
     requires: tuple[str, ...] = ()
     """Files without which this command is not part of this project's gate.
 
@@ -102,6 +116,7 @@ def _command(
     language: Language,
     tiers: frozenset[GateTier] | None = None,
     requires: tuple[str, ...] = (),
+    apply_argv: tuple[str, ...] = (),
 ) -> GateCommand:
     """Build a gate command, defaulting to both tiers and to no requirement."""
     return GateCommand(
@@ -111,6 +126,7 @@ def _command(
         language=language,
         tiers=tiers if tiers is not None else frozenset({GateTier.QUICK, GateTier.FULL}),
         requires=requires,
+        apply_argv=apply_argv,
     )
 
 
@@ -126,6 +142,7 @@ GATE_MATRIX: dict[Language, LanguageGate] = {
                 ("clang-format", "--dry-run", "--Werror", "-style=file"),
                 GateKind.FORMAT,
                 Language.C_CPP,
+                apply_argv=("clang-format", "-i", "-style=file"),
             ),
             _command(
                 "clang-tidy",
@@ -166,6 +183,7 @@ GATE_MATRIX: dict[Language, LanguageGate] = {
                 ("ruff", "format", "--check", "."),
                 GateKind.FORMAT,
                 Language.PYTHON,
+                apply_argv=("ruff", "format", "."),
             ),
             _command("ruff", ("ruff", "check", "."), GateKind.LINT, Language.PYTHON),
             _command("mypy", ("mypy", "--strict", "src"), GateKind.LINT, Language.PYTHON),
@@ -197,7 +215,13 @@ GATE_MATRIX: dict[Language, LanguageGate] = {
         language=Language.GO,
         markers=("go.mod",),
         commands=(
-            _command("gofmt", ("gofmt", "-l", "."), GateKind.FORMAT, Language.GO),
+            _command(
+                "gofmt",
+                ("gofmt", "-l", "."),
+                GateKind.FORMAT,
+                Language.GO,
+                apply_argv=("gofmt", "-w", "."),
+            ),
             _command("go-vet", ("go", "vet", "./..."), GateKind.LINT, Language.GO),
             _command("staticcheck", ("staticcheck", "./..."), GateKind.LINT, Language.GO),
             _command("go-build", ("go", "build", "./..."), GateKind.BUILD, Language.GO),
@@ -208,7 +232,13 @@ GATE_MATRIX: dict[Language, LanguageGate] = {
         language=Language.RUST,
         markers=("Cargo.toml",),
         commands=(
-            _command("cargo-fmt", ("cargo", "fmt", "--check"), GateKind.FORMAT, Language.RUST),
+            _command(
+                "cargo-fmt",
+                ("cargo", "fmt", "--check"),
+                GateKind.FORMAT,
+                Language.RUST,
+                apply_argv=("cargo", "fmt"),
+            ),
             _command(
                 "cargo-clippy",
                 ("cargo", "clippy", "--", "-D", "warnings"),
@@ -230,7 +260,13 @@ GATE_MATRIX: dict[Language, LanguageGate] = {
         language=Language.BASH,
         markers=(".shellcheckrc",),
         commands=(
-            _command("shfmt", ("shfmt", "-d", "."), GateKind.FORMAT, Language.BASH),
+            _command(
+                "shfmt",
+                ("shfmt", "-d", "."),
+                GateKind.FORMAT,
+                Language.BASH,
+                apply_argv=("shfmt", "-w", "."),
+            ),
             _command("shellcheck", ("shellcheck", "-S", "style"), GateKind.LINT, Language.BASH),
             _command("bats", ("bats", "tests"), GateKind.TEST, Language.BASH),
         ),
@@ -252,6 +288,7 @@ GATE_MATRIX: dict[Language, LanguageGate] = {
                 ("verible-verilog-format", "--verify"),
                 GateKind.FORMAT,
                 Language.HDL,
+                apply_argv=("verible-verilog-format", "--inplace"),
             ),
             _command(
                 "verilator-lint", ("verilator", "--lint-only"), GateKind.LINT, Language.HDL
@@ -412,6 +449,28 @@ def gate_listing(files: Iterable[str], pyproject: str = "") -> frozenset[str]:
         if match is not None:
             listing.add(f"pyproject.toml:tool.{match['name']}")
     return frozenset(listing)
+
+
+def format_commands(
+    languages: Iterable[Language],
+    repo_files: Iterable[str] = (),
+) -> tuple[GateCommand, ...]:
+    """Return the formatters that can write, for the detected languages.
+
+    The same selection the gate makes, narrowed to `format` commands that have
+    a writing form. A language whose formatter only complains does not appear,
+    and neither does one this project has not configured.
+    """
+    present = frozenset(repo_files)
+    commands = [
+        command
+        for language in sorted(set(languages), key=lambda item: item.value)
+        for command in GATE_MATRIX[language].commands
+        if command.kind is GateKind.FORMAT
+        and command.apply_argv
+        and _configured(command, present)
+    ]
+    return tuple(sorted(commands, key=lambda command: (command.language.value, command.name)))
 
 
 def _configured(command: GateCommand, present: frozenset[str]) -> bool:

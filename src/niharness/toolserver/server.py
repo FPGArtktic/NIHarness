@@ -67,6 +67,17 @@ def build_server(workspace: Workspace, *, name: str = SERVER_NAME) -> MCPServer:
     """
     server = MCPServer(name)
 
+    _register_reading(server, workspace)
+    _register_writing(server, workspace)
+    _register_checks(server, workspace)
+
+    _log.info("toolserver.ready", name=name, root=str(workspace.root))
+    return server
+
+
+def _register_reading(server: MCPServer, workspace: Workspace) -> None:
+    """Register the tools that only read: files, searches and symbols."""
+
     @server.tool()
     async def read_file(path: str, start_line: int = 1, end_line: int | None = None) -> Outcome:
         """Read a slice of one file inside the worktree, with line numbers."""
@@ -116,10 +127,37 @@ def build_server(workspace: Workspace, *, name: str = SERVER_NAME) -> MCPServer:
         """
         return await guarded(workspace.file_outline(path))
 
+
+def _register_writing(server: MCPServer, workspace: Workspace) -> None:
+    """Register the tools that change the worktree, and the gate that lets one out."""
+
     @server.tool()
     async def apply_patch(diff: str) -> Outcome:
         """Apply a unified diff. There is no write_file: every change is a reviewable diff."""
         return await guarded(workspace.apply_patch(diff))
+
+    @server.tool()
+    async def format_code(path: str = ".") -> Outcome:
+        """Run the project's formatters, in place.
+
+        Use this instead of hand-writing a diff in the formatter's style: the
+        gate checks formatting on every commit attempt, and guessing what a
+        formatter wants is not work worth spending a budget on.
+        """
+        return await guarded(workspace.format_code(path))
+
+    @server.tool()
+    async def git_commit(message: str) -> Outcome:
+        """Attempt a commit. This is the gate: format, lint, build and quick tests.
+
+        A red gate means there is no commit, and the failing output comes back
+        so it can be fixed. There is no flag that skips it.
+        """
+        return await guarded(workspace.git_commit(message))
+
+
+def _register_checks(server: MCPServer, workspace: Workspace) -> None:
+    """Register the tools that run the toolchain without changing anything."""
 
     @server.tool()
     async def run_lint(path: str = ".") -> Outcome:
@@ -149,18 +187,6 @@ def build_server(workspace: Workspace, *, name: str = SERVER_NAME) -> MCPServer:
         note = "" if not selector else f"(selector {selector!r} does not narrow the gate yet)\n"
         result = await workspace.run_gate(GateTier.QUICK, frozenset({GateKind.TEST}))
         return Outcome(ok=result.passed, text=note + workspace.render_gate(result))
-
-    @server.tool()
-    async def git_commit(message: str) -> Outcome:
-        """Attempt a commit. This is the gate: format, lint, build and quick tests.
-
-        A red gate means there is no commit, and the failing output comes back
-        so it can be fixed. There is no flag that skips it.
-        """
-        return await guarded(workspace.git_commit(message))
-
-    _log.info("toolserver.ready", name=name, root=str(workspace.root))
-    return server
 
 
 def workspace_for(root: Path, *, servers: LanguageServers | None = None) -> Workspace:

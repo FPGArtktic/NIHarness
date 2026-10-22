@@ -32,6 +32,7 @@ from niharness.domain.tools import (
     FileOutlineArgs,
     FindReferencesArgs,
     FindSymbolArgs,
+    FormatCodeArgs,
     GitCommitArgs,
     GrepArgs,
     ListTreeArgs,
@@ -103,11 +104,12 @@ async def connected(
     *,
     green: bool = True,
     servers: LanguageServers | None = None,
+    runner: object | None = None,
 ) -> AsyncIterator[McpToolProvider]:
     """Run the project's own tool server and yield the harness's client for it."""
     workspace = Workspace(
         worktree,
-        runner=gate_runner(green=green),  # type: ignore[arg-type]
+        runner=runner or gate_runner(green=green),  # type: ignore[arg-type]
         servers=servers,
     )
     server = build_server(workspace)
@@ -147,6 +149,7 @@ async def test_the_server_offers_exactly_the_tools_the_role_may_use(worktree: Pa
         "find_references",
         "file_outline",
         "apply_patch",
+        "format_code",
         "run_lint",
         "run_build",
         "run_tests",
@@ -508,3 +511,52 @@ async def test_the_diff_that_ended_a_live_run_now_applies(worktree: Path) -> Non
     assert "did not exist" in result.content, "and about /dev/null"
     written = (worktree / "src" / "greeter" / "greet.py").read_text(encoding="utf-8")
     assert "def greet(name: str) -> str:" in written
+
+
+# ------------------------------------------------------ style is not a guess
+
+
+async def test_the_formatter_runs_the_writing_form_of_the_gate_command(
+    worktree: Path,
+) -> None:
+    # A live run was refused a correct, typed, documented function for one
+    # missing blank line, and then spent its whole budget failing to guess what
+    # `ruff format` wanted. What the harness owes the model is the formatter in
+    # its *writing* form - `ruff format .`, not `ruff format --check .` - and
+    # that is what this asserts. The toolchain itself stays faked here.
+    seen: list[tuple[str, ...]] = []
+
+    async def recording(argv: Sequence[str], cwd: Path, timeout: int) -> ProcessResult:
+        if argv[0] == "git":
+            return await subprocess_runner(argv, cwd, timeout)
+        seen.append(tuple(argv))
+        return ProcessResult(
+            argv=tuple(argv), exit_code=0, stdout="1 file reformatted", duration_seconds=0.1
+        )
+
+    async with connected(worktree, runner=recording) as provider:
+        result = await call(provider, ToolName.FORMAT_CODE, FormatCodeArgs())
+    assert result.ok, result.content
+    assert ("ruff", "format", ".") in seen, seen
+    assert ("ruff", "format", "--check", ".") not in seen, (
+        "that is the gate's form, not this one"
+    )
+    assert "1 file reformatted" in result.content, (
+        "the formatter's own report reaches the model"
+    )
+
+
+async def test_the_formatter_says_so_when_a_project_has_none(tmp_path: Path) -> None:
+    root = tmp_path / "plain"
+    (root / "doc").mkdir(parents=True)
+    (root / "doc" / "notes.txt").write_text("nothing to format\n", encoding="utf-8")
+    git(root, "init", "--initial-branch=main")
+    git(root, "config", "user.email", "test@example.invalid")
+    git(root, "config", "user.name", "Test")
+    git(root, "add", "-A")
+    git(root, "-c", "commit.gpgsign=false", "commit", "-m", "chore: seed\n\nA body.")
+    async with connected(root) as provider:
+        result = await call(provider, ToolName.FORMAT_CODE, FormatCodeArgs())
+    assert not result.ok
+    assert "no formatter is configured" in result.content
+    assert "the style the gate expects" in result.content

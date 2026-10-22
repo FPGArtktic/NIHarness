@@ -27,6 +27,7 @@ from niharness.domain.gate import (
     GateTier,
     Language,
     detect_languages,
+    format_commands,
     gate_listing,
     plan_gate,
 )
@@ -431,6 +432,44 @@ class Workspace:
             if reverse.ok:
                 return True
         return False
+
+    async def format_code(self, path: str = ".") -> str:
+        """Run the project's formatters over the worktree.
+
+        The gate's `format` commands ask whether the tree is formatted. These
+        are the same tools in their writing form, which is the difference
+        between a model that can satisfy the gate and one that has to guess a
+        formatter's output in a hand-written diff.
+
+        Raises:
+            WorkspaceError: when no formatter is configured for this worktree,
+                or one of them fails.
+        """
+        files = await self.tracked_files()
+        commands = format_commands(
+            detect_languages(files),
+            gate_listing(files, self._pyproject()),
+        )
+        if not commands:
+            raise WorkspaceError(
+                "no formatter is configured for this worktree; "
+                "write the diff in the style the gate expects",
+            )
+        note = "" if path == "." else f"(path {path!r} does not narrow the formatters yet)\n"
+        lines: list[str] = []
+        for command in commands:
+            result = await self._runner(command.apply_argv, self._root, self._timeout)
+            # A formatter says what it changed, which is what the model needs
+            # to hear; there is no bookkeeping here to disagree with it.
+            outcome = result.output.strip() or ("ok" if result.ok else "failed")
+            lines.append(f"{command.name}: {outcome}")
+            if not result.ok:
+                raise WorkspaceError(f"{command.name} failed:\n{result.output.strip()}")
+        changed = await self._git(("status", "--porcelain"))
+        return (
+            f"{note}" + "\n".join(lines) + f"\nworktree now:\n"
+            f"{changed.stdout.strip() or '(clean)'}"
+        )
 
     async def _git(self, args: Sequence[str], stdin: str | None = None) -> ProcessResult:
         """Run a git command in the worktree."""

@@ -70,6 +70,39 @@ stray `main.go` in a Python repository does not drag in the Go toolchain.
 The complete matrix, including Go, Bash, TCL, HDL, Yocto and documentation, is
 in the generated [configuration reference](../reference/config.md).
 
+## The formatter is a tool, not only a verdict
+
+The gate's first commands ask whether the tree is formatted. For a long time
+that was all they did, and a model that heard "it is not" had no way to act: it
+has `apply_patch`, so it would have to guess the formatter's exact output in a
+hand-written diff.
+
+Measured on a live run: a correct, typed, documented function was refused for
+**one missing blank line**, and the model spent the rest of its budget failing
+to guess what `ruff format` wanted. The gate was right and the toolbox was
+wrong.
+
+So every `format` command in the matrix carries its writing form, and
+`format_code` runs them:
+
+| Language | The gate asks | `format_code` runs |
+|---|---|---|
+| Python | `ruff format --check .` | `ruff format .` |
+| Rust | `cargo fmt --check` | `cargo fmt` |
+| C / C++ | `clang-format --dry-run --Werror` | `clang-format -i` |
+| Go | `gofmt -l .` | `gofmt -w .` |
+| Bash | `shfmt -d .` | `shfmt -w .` |
+| HDL | `verible-verilog-format --verify` | `verible-verilog-format --inplace` |
+
+A test asserts that no `format` command in the matrix lacks a writing form,
+because such a command is a gate nobody can pass.
+
+The policy prompt has said from the beginning that style is the linter's job.
+This is what makes that sentence true rather than aspirational: the tool is in
+the implementer's and the fixer's allowlists, it is not in any read-only role's,
+and the gate still runs on every commit attempt - `format_code` makes
+formatting cheap to satisfy, it does not make it optional.
+
 ## A check the project does not configure is not its gate
 
 A marker file says a *language* is present. It does not say which *checks*

@@ -63,6 +63,7 @@ class ToolName(StrEnum):
     FILE_OUTLINE = "file_outline"
     RAG_QUERY = "rag_query"
     APPLY_PATCH = "apply_patch"
+    FORMAT_CODE = "format_code"
     RUN_LINT = "run_lint"
     RUN_BUILD = "run_build"
     RUN_TESTS = "run_tests"
@@ -192,6 +193,12 @@ class ApplyPatchArgs(ToolArgs):
     diff: Annotated[str, StringConstraints(min_length=1)]
 
 
+class FormatCodeArgs(ToolArgs):
+    """Run the project's formatters, so style is not something to guess at."""
+
+    path: RelPath = "."
+
+
 class RunLintArgs(ToolArgs):
     """Run the configured linters, optionally narrowed to a path."""
 
@@ -252,6 +259,7 @@ TOOL_ARGUMENTS: dict[ToolName, type[ToolArgs]] = {
     ToolName.FILE_OUTLINE: FileOutlineArgs,
     ToolName.RAG_QUERY: RagQueryArgs,
     ToolName.APPLY_PATCH: ApplyPatchArgs,
+    ToolName.FORMAT_CODE: FormatCodeArgs,
     ToolName.RUN_LINT: RunLintArgs,
     ToolName.RUN_BUILD: RunBuildArgs,
     ToolName.RUN_TESTS: RunTestsArgs,

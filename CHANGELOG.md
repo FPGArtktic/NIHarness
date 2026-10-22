@@ -58,6 +58,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   offer an imported tool, stops the run before it begins. `nih tools` prints
   the whole surface per role, starting the declared servers to ask them. A run
   records a `tools.attached` event for each, and none of them can commit.
+- `format_code`: the gate's `format` commands in their writing form. A live run
+  was refused a correct, typed, documented function for one missing blank line,
+  and a model with only `apply_patch` has to guess a formatter's output by
+  hand. Every `format` command in the matrix now carries its writing form, a
+  test fails if one does not, and the tool is in the implementer's and fixer's
+  allowlists only.
 - Language servers in the sandbox: `find_symbol`, `find_references` and
   `file_outline`, addressed by name rather than by line and column, so a model
   never has to read a file in order to ask about it. One resident server per

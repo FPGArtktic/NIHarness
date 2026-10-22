@@ -1,0 +1,15 @@
+{
+  "additionalProperties": false,
+  "description": "Run the project's formatters, so style is not something to guess at.",
+  "properties": {
+    "path": {
+      "default": ".",
+      "maxLength": 1024,
+      "minLength": 1,
+      "title": "Path",
+      "type": "string"
+    }
+  },
+  "title": "FormatCodeArgs",
+  "type": "object"
+}
