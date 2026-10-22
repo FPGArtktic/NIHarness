@@ -18,6 +18,19 @@ from niharness.domain.events import Event, RunOutcome
 from niharness.domain.identity import Digest, RunId, StepId
 
 
+class TaskProgress(BaseModel):
+    """What the event stream says happened to one task of the plan."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    task_id: str
+    stage: str = ""
+    steps: int = Field(default=0, ge=0)
+    commits: tuple[str, ...] = ()
+    failed: bool = False
+    reason: str = ""
+
+
 class RunSnapshot(BaseModel):
     """Everything the harness needs to resume a run or render its status."""
 
@@ -27,6 +40,8 @@ class RunSnapshot(BaseModel):
     seq: int = Field(default=0, ge=0, description="Sequence of the last folded event.")
     stage: str = ""
     step_id: StepId | None = None
+    current_task: str = Field(default="", description="The task the active step belongs to.")
+    tasks: tuple[TaskProgress, ...] = ()
     outcome: RunOutcome | None = None
     cancelled: bool = False
     spec_digest: Digest | None = None
@@ -78,6 +93,28 @@ def fold(stream: Iterable[Event], run_id: RunId | None = None) -> RunSnapshot:
     return snapshot
 
 
+def _touch_task(
+    snapshot: RunSnapshot,
+    task_id: str,
+    **updates: object,
+) -> tuple[TaskProgress, ...]:
+    """Return the task list with `task_id` updated, adding it if it is new."""
+    if not task_id:
+        return snapshot.tasks
+    tasks = list(snapshot.tasks)
+    index = next(
+        (position for position, task in enumerate(tasks) if task.task_id == task_id),
+        None,
+    )
+    current = tasks[index] if index is not None else TaskProgress(task_id=task_id)
+    updated = current.model_copy(update=updates)
+    if index is None:
+        tasks.append(updated)
+    else:
+        tasks[index] = updated
+    return tuple(tasks)
+
+
 def _apply(snapshot: RunSnapshot, event: Event) -> RunSnapshot:  # noqa: C901 - flat dispatch
     """Return `snapshot` with `event` applied."""
     update: dict[str, object] = {"seq": event.seq}
@@ -90,7 +127,29 @@ def _apply(snapshot: RunSnapshot, event: Event) -> RunSnapshot:  # noqa: C901 - 
         case ev.RunCancelled():
             update |= {"cancelled": True, "outcome": RunOutcome.CANCELLED}
         case ev.StepStarted():
-            update |= {"stage": body.stage, "step_id": event.step_id}
+            task_id = body.task_id or snapshot.current_task
+            update |= {
+                "stage": body.stage,
+                "step_id": event.step_id,
+                "current_task": task_id,
+                "tasks": _touch_task(
+                    snapshot,
+                    task_id,
+                    stage=body.stage,
+                    steps=next(
+                        (task.steps for task in snapshot.tasks if task.task_id == task_id),
+                        0,
+                    )
+                    + 1,
+                ),
+            }
+        case ev.StepFailed():
+            update["tasks"] = _touch_task(
+                snapshot,
+                snapshot.current_task,
+                failed=True,
+                reason=body.reason,
+            )
         case ev.StepFinished():
             update |= {
                 "tokens_used": snapshot.tokens_used + body.tokens_used,
@@ -108,6 +167,21 @@ def _apply(snapshot: RunSnapshot, event: Event) -> RunSnapshot:  # noqa: C901 - 
             }
         case ev.VcsCommitted():
             update["commits"] = (*snapshot.commits, body.sha)
+            update["tasks"] = _touch_task(
+                snapshot,
+                snapshot.current_task,
+                commits=(
+                    *next(
+                        (
+                            task.commits
+                            for task in snapshot.tasks
+                            if task.task_id == snapshot.current_task
+                        ),
+                        (),
+                    ),
+                    body.sha,
+                ),
+            )
         case ev.ContextCompacted():
             update["compactions"] = snapshot.compactions + 1
         case ev.LoopIntervention():

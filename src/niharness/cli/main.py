@@ -26,6 +26,7 @@ from niharness.cli import status as status_module
 from niharness.cli.unavailable import unavailable
 from niharness.config import HarnessConfig
 from niharness.domain.gate import GateTier
+from niharness.management import server as management_server
 
 app = typer.Typer(
     name="nih",
@@ -111,13 +112,13 @@ def status(
     json_mode: JsonOption = False,
 ) -> None:
     """Fold a run's event log into a snapshot."""
-    status_module.status(_config(root.resolve(), None).runs_dir, run_id, json_mode=json_mode)
+    status_module.status(_config(root.resolve(), None), run_id, json_mode=json_mode)
 
 
 @app.command()
 def runs(root: ProjectRoot = Path(), json_mode: JsonOption = False) -> None:
     """List this project's runs, with what each one is doing."""
-    runs_module.runs(_config(root.resolve(), None).runs_dir, json_mode=json_mode)
+    runs_module.runs(_config(root.resolve(), None), json_mode=json_mode)
 
 
 @app.command()
@@ -128,15 +129,29 @@ def cancel(
     json_mode: JsonOption = False,
 ) -> None:
     """Ask a run to stop at its next step boundary."""
-    runs_module.cancel(
-        _config(root.resolve(), None).runs_dir, run_id, reason, json_mode=json_mode
-    )
+    runs_module.cancel(_config(root.resolve(), None), run_id, reason, json_mode=json_mode)
 
 
 @docs_app.command("generate")
 def docs_generate(root: ProjectRoot = Path()) -> None:
     """Regenerate JSON Schemas and the generated reference pages."""
     docs_module.generate(root.resolve(), app)
+
+
+@app.command()
+def mcp(
+    root: ProjectRoot = Path(),
+    profile: Annotated[
+        str | None, typer.Option("--profile", help="Override the profile.")
+    ] = None,
+) -> None:
+    """Serve the management surface over stdio, for an agent to drive this project.
+
+    It can start, stop and inspect runs and approve plans. It cannot read
+    project files, patch, commit, or run the gate: the work belongs to the
+    models in the sandbox, and the gate is the only way in.
+    """
+    management_server.serve(_config(root.resolve(), profile))
 
 
 @app.command()

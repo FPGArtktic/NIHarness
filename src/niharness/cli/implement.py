@@ -10,11 +10,8 @@ pieces to the application layer, and report what happened.
 from __future__ import annotations
 
 import asyncio
-import subprocess
 import sys
-from collections.abc import Sequence
 from contextlib import AsyncExitStack
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -36,11 +33,11 @@ from niharness.adapters.podman import (
 from niharness.application import ImplementationRun, RunResult, StepRunner
 from niharness.application.summarizer import ModelSummarizer
 from niharness.cli.output import emit, fail
-from niharness.cli.runs import pid_file
 from niharness.config import HarnessConfig, ModelConfig
 from niharness.domain.artifacts import Plan
 from niharness.domain.identity import RunId, digest_text
 from niharness.domain.markdown import ArtifactNotFoundError, parse_plan
+from niharness.management.runs import RunRegistry, new_run_id, pid_file
 from niharness.ports.vcs import Worktree
 
 EX_UNAVAILABLE = 69
@@ -64,46 +61,6 @@ def load_plan(config: HarnessConfig, explicit: Path | None) -> Plan:
         typer.secho(f"{source}: invalid plan", fg=typer.colors.RED, err=True)
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
-
-
-def detach(config: HarnessConfig, plan: Plan, arguments: Sequence[str]) -> RunId:
-    """Start the run in its own process and return its id immediately.
-
-    The child is invoked as `python -m niharness`, because the interpreter's
-    path is something this process can be certain of where the location of a
-    console script depends on how the environment was installed.
-    """
-    run_id = new_run_id(plan)
-    log_dir = config.runs_dir / run_id
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / "implement.log"
-    command = [
-        sys.executable,
-        "-m",
-        "niharness",
-        "implement",
-        "-C",
-        str(config.project_root),
-        "--run-id",
-        run_id,
-        *arguments,
-    ]
-    with log_path.open("ab") as log:
-        subprocess.Popen(  # noqa: S603 - fixed argv, this interpreter, no shell
-            command,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True,
-            cwd=str(config.project_root),
-        )
-    return run_id
-
-
-def new_run_id(plan: Plan, now: datetime | None = None) -> RunId:
-    """Return a readable, unique run id: when it started and which plan it ran."""
-    stamp = (now or datetime.now(UTC)).strftime("%Y%m%d-%H%M%S")
-    return RunId(f"{stamp}-{str(plan.digest())[:6]}")
 
 
 def server_parameters(
@@ -292,12 +249,12 @@ def implement(
     """
     plan = load_plan(config, plan_file)
     if detached:
-        arguments: list[str] = []
-        if plan_file is not None:
-            arguments += ["--plan", str(plan_file)]
-        if local_tools:
-            arguments.append("--unsafe-local-tools")
-        started = detach(config, plan, arguments)
+        started = RunRegistry(config).start_detached(
+            new_run_id(plan),
+            plan,
+            plan_file=plan_file,
+            local_tools=local_tools,
+        )
         emit(
             {"ok": True, "run_id": started, "detached": True, "tasks": len(plan.tasks)},
             json_mode=json_mode,

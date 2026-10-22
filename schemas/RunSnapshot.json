@@ -9,6 +9,50 @@
       ],
       "title": "RunOutcome",
       "type": "string"
+    },
+    "TaskProgress": {
+      "additionalProperties": false,
+      "description": "What the event stream says happened to one task of the plan.",
+      "properties": {
+        "commits": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Commits",
+          "type": "array"
+        },
+        "failed": {
+          "default": false,
+          "title": "Failed",
+          "type": "boolean"
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
+          "type": "string"
+        },
+        "stage": {
+          "default": "",
+          "title": "Stage",
+          "type": "string"
+        },
+        "steps": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Steps",
+          "type": "integer"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "title": "TaskProgress",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -39,6 +83,12 @@
       "minimum": 0.0,
       "title": "Context Fill",
       "type": "number"
+    },
+    "current_task": {
+      "default": "",
+      "description": "The task the active step belongs to.",
+      "title": "Current Task",
+      "type": "string"
     },
     "gate_failures": {
       "default": 0,
@@ -142,6 +192,14 @@
       ],
       "default": null,
       "title": "Step Id"
+    },
+    "tasks": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/TaskProgress"
+      },
+      "title": "Tasks",
+      "type": "array"
     },
     "tokens_used": {
       "default": 0,

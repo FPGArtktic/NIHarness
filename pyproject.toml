@@ -227,6 +227,23 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+name = "Layered: cli over management over ports over domain"
+type = "layers"
+layers = [
+  "niharness.cli",
+  "niharness.management",
+  "niharness.ports",
+  "niharness.domain",
+]
+exhaustive = false
+
+[[tool.importlinter.contracts]]
+name = "The management layer never drives the CLI or the tool server"
+type = "forbidden"
+source_modules = ["niharness.management"]
+forbidden_modules = ["niharness.cli", "niharness.toolserver"]
+
+[[tool.importlinter.contracts]]
 name = "The tool server depends on the domain, not on the harness's own plumbing"
 type = "forbidden"
 source_modules = ["niharness.toolserver"]

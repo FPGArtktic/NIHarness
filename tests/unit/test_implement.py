@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 
 from niharness.application import ImplementationRun, StepRunner
 from niharness.application.implement import render_task
-from niharness.cli.implement import detach, load_plan, new_run_id, server_parameters
+from niharness.cli.implement import load_plan, server_parameters
 from niharness.cli.main import app
 from niharness.config import HarnessConfig
 from niharness.domain import events as ev
@@ -49,6 +49,7 @@ from niharness.domain.messages import (
 from niharness.domain.pipeline import Stage
 from niharness.domain.state import RunSnapshot
 from niharness.domain.tools import AcceptedCall, ToolName, ToolResult
+from niharness.management.runs import RunRegistry, new_run_id
 from niharness.ports.model_backend import BackendInfo
 from niharness.ports.vcs import Worktree
 
@@ -589,9 +590,13 @@ def test_detaching_re_invokes_this_interpreter(
         def __init__(self, argv: list[str], **kwargs: object) -> None:
             recorded.append(argv)
 
-    monkeypatch.setattr("niharness.cli.implement.subprocess.Popen", FakeProcess)
+    monkeypatch.setattr("niharness.management.runs.subprocess.Popen", FakeProcess)
     config = HarnessConfig.load(tmp_path)
-    run_id = detach(config, plan(tasks=1), ["--unsafe-local-tools"])
+    run_id = RunRegistry(config).start_detached(
+        new_run_id(plan(tasks=1)),
+        plan(tasks=1),
+        local_tools=True,
+    )
     assert recorded, "a child was started"
     argv = recorded[0]
     assert argv[0].endswith("python") or "python" in argv[0]

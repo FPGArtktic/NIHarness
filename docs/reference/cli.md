@@ -26,6 +26,8 @@ Usage: nih [OPTIONS] COMMAND [ARGS]...
 │ status      Fold a run's event log into a snapshot.                          │
 │ runs        List this project's runs, with what each one is doing.           │
 │ cancel      Ask a run to stop at its next step boundary.                     │
+│ mcp         Serve the management surface over stdio, for an agent to drive   │
+│             this project.                                                    │
 │ brainstorm  Entry A: an interactive session that writes SPEC.md.             │
 │ implement   Execute an approved plan, task by task, through the gate.        │
 │ run         Plan and implement without stopping for approval.                │
@@ -193,6 +195,24 @@ Usage: nih init [OPTIONS]
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
 │ --project-root  -C      <path>  The project to operate on. [default: (.)]    │
 │ --force                         Overwrite harness.toml.                      │
+│ --help                          Show this message and exit.                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+## `nih mcp`
+
+```text
+Usage: nih mcp [OPTIONS]                                                       
+                                                                                
+ Serve the management surface over stdio, for an agent to drive this project.   
+                                                                                
+ It can start, stop and inspect runs and approve plans. It cannot read          
+ project files, patch, commit, or run the gate: the work belongs to the         
+ models in the sandbox, and the gate is the only way in.                        
+                                                                                
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --project-root  -C      <path>  The project to operate on. [default: (.)]    │
+│ --profile               <str>   Override the profile.                        │
 │ --help                          Show this message and exit.                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```

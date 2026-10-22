@@ -9,10 +9,11 @@ from pathlib import Path
 
 from niharness.adapters.jsonl_events import JsonlEventSink
 from niharness.cli.output import emit, fail
-from niharness.cli.runs import is_live
+from niharness.config import HarnessConfig
 from niharness.domain.events import Event
 from niharness.domain.identity import RunId
 from niharness.domain.state import RunSnapshot, fold
+from niharness.management.runs import RunRegistry
 
 
 def list_runs(runs_dir: Path) -> tuple[RunId, ...]:
@@ -53,13 +54,15 @@ def render(snapshot: RunSnapshot) -> str:
     return "\n".join(f"{key.ljust(width)}  {value}" for key, value in rows)
 
 
-def status(runs_dir: Path, run_id: str | None, *, json_mode: bool = False) -> None:
+def status(config: HarnessConfig, run_id: str | None, *, json_mode: bool = False) -> None:
     """Print the status of one run, or list the runs that exist.
 
     Raises:
         typer.Exit: when the named run has no event log.
     """
-    runs = list_runs(runs_dir)
+    runs_dir = config.runs_dir
+    registry = RunRegistry(config)
+    runs = registry.ids()
     if run_id is None:
         emit(
             {"ok": True, "runs": list(runs)},
@@ -78,7 +81,7 @@ def status(runs_dir: Path, run_id: str | None, *, json_mode: bool = False) -> No
     emit(
         {
             "ok": True,
-            "live": is_live(runs_dir, RunId(run_id)),
+            "live": registry.is_live(RunId(run_id)),
             "snapshot": snapshot.model_dump(mode="json"),
         },
         json_mode=json_mode,
