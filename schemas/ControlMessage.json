@@ -1,0 +1,186 @@
+{
+  "$defs": {
+    "Answer": {
+      "additionalProperties": false,
+      "description": "The human answer to one question, appended to the run as an event.",
+      "properties": {
+        "free_text": {
+          "default": "",
+          "title": "Free Text",
+          "type": "string"
+        },
+        "option_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Option Id"
+        },
+        "question_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+          "title": "Question Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "question_id"
+      ],
+      "title": "Answer",
+      "type": "object"
+    },
+    "AnswerQuestions": {
+      "additionalProperties": false,
+      "description": "Answer the clarifying questions a step is waiting on.",
+      "properties": {
+        "answers": {
+          "items": {
+            "$ref": "#/$defs/Answer"
+          },
+          "minItems": 1,
+          "title": "Answers",
+          "type": "array"
+        },
+        "kind": {
+          "const": "answer_questions",
+          "default": "answer_questions",
+          "title": "Kind",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/Driver",
+          "default": "cli"
+        }
+      },
+      "required": [
+        "run_id",
+        "answers"
+      ],
+      "title": "AnswerQuestions",
+      "type": "object"
+    },
+    "ApprovePlan": {
+      "additionalProperties": false,
+      "description": "Approve a plan for execution. The digest ties the approval to one plan.",
+      "properties": {
+        "kind": {
+          "const": "approve_plan",
+          "default": "approve_plan",
+          "title": "Kind",
+          "type": "string"
+        },
+        "plan_digest": {
+          "title": "Plan Digest",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/Driver",
+          "default": "cli"
+        }
+      },
+      "required": [
+        "plan_digest"
+      ],
+      "title": "ApprovePlan",
+      "type": "object"
+    },
+    "CancelRun": {
+      "additionalProperties": false,
+      "description": "Stop the run at the next step boundary, leaving a resumable snapshot.",
+      "properties": {
+        "kind": {
+          "const": "cancel_run",
+          "default": "cancel_run",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/Driver",
+          "default": "cli"
+        }
+      },
+      "required": [
+        "run_id"
+      ],
+      "title": "CancelRun",
+      "type": "object"
+    },
+    "Driver": {
+      "description": "Who asked. Recorded so a run's history says who steered it.",
+      "enum": [
+        "cli",
+        "tui",
+        "mcp"
+      ],
+      "title": "Driver",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One line of the control inbox: a command, when it arrived, and its identity.",
+  "properties": {
+    "command": {
+      "discriminator": {
+        "mapping": {
+          "answer_questions": "#/$defs/AnswerQuestions",
+          "approve_plan": "#/$defs/ApprovePlan",
+          "cancel_run": "#/$defs/CancelRun"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/CancelRun"
+        },
+        {
+          "$ref": "#/$defs/ApprovePlan"
+        },
+        {
+          "$ref": "#/$defs/AnswerQuestions"
+        }
+      ],
+      "title": "Command"
+    },
+    "id": {
+      "description": "Content digest; a repeated submission is the same id.",
+      "title": "Id",
+      "type": "string"
+    },
+    "ts": {
+      "format": "date-time",
+      "title": "Ts",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "ts",
+    "command"
+  ],
+  "title": "ControlMessage",
+  "type": "object"
+}

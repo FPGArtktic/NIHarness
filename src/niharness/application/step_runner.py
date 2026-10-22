@@ -17,6 +17,8 @@ no branches a test would want to pin beyond "it did what it was told".
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 import structlog
 
 from niharness.application.window import Window
@@ -33,6 +35,7 @@ from niharness.domain.tool_loop import (
     Rollback,
     Step,
     Stop,
+    cancel,
     injected,
     next_action,
     observe_model,
@@ -103,6 +106,7 @@ class StepRunner:
         window: Window,
         *,
         step_id: StepId | None = None,
+        should_stop: Callable[[], Awaitable[str | None]] | None = None,
     ) -> LoopState:
         """Run a step until the domain says to stop.
 
@@ -112,6 +116,9 @@ class StepRunner:
                 and any open notes. The executor appends to it and lets it
                 compact itself before every model call.
             step_id: identifier stamped on this step's events.
+            should_stop: asked once per iteration whether something outside the
+                run wants it to stop; the reason, or None to carry on. A stop
+                lands between actions, so the worktree is never left mid-tool.
 
         Returns:
             The final loop state, carrying the stop reason and, when there is
@@ -128,6 +135,13 @@ class StepRunner:
         budget = config.budgets
         limit = self._iteration_limit or (budget.max_tool_calls + 1) * 4 + ITERATION_SLACK
         for _ in range(limit):
+            if should_stop is not None:
+                reason = await should_stop()
+                if reason is not None:
+                    _log.info("step.cancelled", stage=config.stage, reason=reason)
+                    stopped = cancel(state)
+                    await self._append(stopped, step_id)
+                    return stopped.state
             action = next_action(state)
             if isinstance(action, Stop):
                 _log.info(

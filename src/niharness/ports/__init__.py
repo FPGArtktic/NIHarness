@@ -7,6 +7,7 @@ these Protocols; the domain never imports an adapter, and a port never imports
 one either. Adding a subsystem means adding a port here first.
 """
 
+from niharness.ports.control_channel import ControlChannel
 from niharness.ports.event_sink import EventSink
 from niharness.ports.model_backend import BackendInfo, ModelBackend
 from niharness.ports.sandbox import ProcessResult, Sandbox
@@ -18,6 +19,7 @@ from niharness.ports.vector_store import VectorStore
 __all__ = [
     "BackendInfo",
     "Commit",
+    "ControlChannel",
     "EventSink",
     "ModelBackend",
     "ProcessResult",

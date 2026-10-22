@@ -55,7 +55,7 @@ The human cancelled the run; the last snapshot allows a resume.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `type` | `Literal['run.cancelled']` | `'run.cancelled'` |  |
-| `source` | `Literal['tui', 'cli', 'signal']` | required |  |
+| `source` | `Literal['tui', 'cli', 'mcp', 'signal']` | required |  |
 
 ### `run.resumed`
 

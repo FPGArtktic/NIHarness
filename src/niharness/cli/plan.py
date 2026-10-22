@@ -11,6 +11,7 @@ import typer
 from pydantic import ValidationError
 from typer.core import TyperGroup
 
+from niharness.cli.output import emit, fail
 from niharness.cli.unavailable import unavailable
 from niharness.domain.markdown import ArtifactNotFoundError, parse_plan, render_plan
 
@@ -57,24 +58,39 @@ def plan_spec(
 @app.command("check")
 def check(
     plan_file: Annotated[Path, typer.Argument(help="Path to PLAN.md")],
+    json_mode: Annotated[bool, typer.Option("--json", help="Machine-readable output.")] = False,
 ) -> None:
     """Validate a plan against the Plan schema. This is the plan gate, offline."""
     try:
         text = plan_file.read_text(encoding="utf-8")
     except OSError as error:
-        typer.secho(f"cannot read {plan_file}: {error}", fg=typer.colors.RED, err=True)
+        fail(f"cannot read {plan_file}: {error}", json_mode=json_mode)
         raise typer.Exit(1) from error
     try:
         parsed = parse_plan(text)
     except (ArtifactNotFoundError, ValidationError) as error:
-        typer.secho(f"{plan_file}: invalid plan", fg=typer.colors.RED, err=True)
-        typer.echo(str(error), err=True)
+        fail(f"{plan_file}: invalid plan", {"detail": str(error)}, json_mode=json_mode)
         raise typer.Exit(1) from error
-    typer.secho(f"{plan_file}: valid", fg=typer.colors.GREEN)
-    typer.echo(f"  tasks: {len(parsed.tasks)}")
-    typer.echo(f"  spec digest: {parsed.spec_digest}")
-    for index, task in enumerate(parsed.tasks, start=1):
-        typer.echo(f"  {index}. {task.id}: {task.title}")
+    human = [
+        f"{plan_file}: valid",
+        f"  tasks: {len(parsed.tasks)}",
+        f"  spec digest: {parsed.spec_digest}",
+    ]
+    human += [
+        f"  {index}. {task.id}: {task.title}"
+        for index, task in enumerate(parsed.tasks, start=1)
+    ]
+    emit(
+        {
+            "ok": True,
+            "valid": True,
+            "plan_digest": str(parsed.digest()),
+            "spec_digest": str(parsed.spec_digest),
+            "tasks": [{"id": task.id, "title": task.title} for task in parsed.tasks],
+        },
+        json_mode=json_mode,
+        human="\n".join(human),
+    )
 
 
 @app.command("import")

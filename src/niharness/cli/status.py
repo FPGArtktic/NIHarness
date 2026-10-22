@@ -7,9 +7,9 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import typer
-
 from niharness.adapters.jsonl_events import JsonlEventSink
+from niharness.cli.output import emit, fail
+from niharness.cli.runs import is_live
 from niharness.domain.events import Event
 from niharness.domain.identity import RunId
 from niharness.domain.state import RunSnapshot, fold
@@ -53,7 +53,7 @@ def render(snapshot: RunSnapshot) -> str:
     return "\n".join(f"{key.ljust(width)}  {value}" for key, value in rows)
 
 
-def status(runs_dir: Path, run_id: str | None) -> None:
+def status(runs_dir: Path, run_id: str | None, *, json_mode: bool = False) -> None:
     """Print the status of one run, or list the runs that exist.
 
     Raises:
@@ -61,14 +61,26 @@ def status(runs_dir: Path, run_id: str | None) -> None:
     """
     runs = list_runs(runs_dir)
     if run_id is None:
-        if not runs:
-            typer.echo(f"no runs under {runs_dir}")
-            return
-        typer.echo(f"{len(runs)} run(s) under {runs_dir}:")
-        for candidate in runs:
-            typer.echo(f"  {candidate}")
+        emit(
+            {"ok": True, "runs": list(runs)},
+            json_mode=json_mode,
+            human=(
+                f"no runs under {runs_dir}"
+                if not runs
+                else f"{len(runs)} run(s) under {runs_dir}:\n"
+                + "\n".join(f"  {candidate}" for candidate in runs)
+            ),
+        )
         return
     if RunId(run_id) not in runs:
-        typer.secho(f"no event log for run {run_id}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-    typer.echo(render(asyncio.run(read_snapshot(runs_dir, RunId(run_id)))))
+        fail(f"no event log for run {run_id}", {"run_id": run_id}, json_mode=json_mode)
+    snapshot = asyncio.run(read_snapshot(runs_dir, RunId(run_id)))
+    emit(
+        {
+            "ok": True,
+            "live": is_live(runs_dir, RunId(run_id)),
+            "snapshot": snapshot.model_dump(mode="json"),
+        },
+        json_mode=json_mode,
+        human=render(snapshot),
+    )

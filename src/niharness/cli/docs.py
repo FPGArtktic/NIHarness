@@ -21,6 +21,7 @@ from typer.testing import CliRunner
 from niharness.config import HarnessConfig, ModelsConfig, SandboxConfig, VectorConfig
 from niharness.domain.artifacts import ARTIFACT_MODELS
 from niharness.domain.context import CompactionPolicy
+from niharness.domain.control import ControlMessage
 from niharness.domain.events import PAYLOAD_TYPES, Event
 from niharness.domain.gate import GATE_MATRIX, GateTier
 from niharness.domain.loop import LoopThresholds
@@ -59,7 +60,13 @@ def export_schemas(dest: Path) -> tuple[Path, ...]:
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "tools").mkdir(exist_ok=True)
     written: list[Path] = []
-    models: list[type[BaseModel]] = [*ARTIFACT_MODELS, Event, RunSnapshot, ToolCall]
+    models: list[type[BaseModel]] = [
+        *ARTIFACT_MODELS,
+        Event,
+        RunSnapshot,
+        ToolCall,
+        ControlMessage,
+    ]
     for model in models:
         path = dest / f"{model.__name__}.json"
         path.write_text(_schema(model), encoding="utf-8")

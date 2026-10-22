@@ -244,4 +244,5 @@ modules = [
   "niharness.adapters.git",
   "niharness.adapters.podman",
   "niharness.adapters.mcp",
+  "niharness.adapters.jsonl_control",
 ]

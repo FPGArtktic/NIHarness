@@ -545,6 +545,7 @@
           "enum": [
             "tui",
             "cli",
+            "mcp",
             "signal"
           ],
           "title": "Source",

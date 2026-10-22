@@ -87,7 +87,7 @@ class RunCancelled(Payload):
     """The human cancelled the run; the last snapshot allows a resume."""
 
     type: Literal["run.cancelled"] = "run.cancelled"
-    source: Literal["tui", "cli", "signal"]
+    source: Literal["tui", "cli", "mcp", "signal"]
 
 
 class RunResumed(Payload):

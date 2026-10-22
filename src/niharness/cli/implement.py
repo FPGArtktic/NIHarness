@@ -10,7 +10,9 @@ pieces to the application layer, and report what happened.
 from __future__ import annotations
 
 import asyncio
+import subprocess
 import sys
+from collections.abc import Sequence
 from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,6 +24,7 @@ from mcp import StdioServerParameters
 from pydantic import ValidationError
 
 from niharness.adapters.git import GitError, GitVcs
+from niharness.adapters.jsonl_control import JsonlControlChannel
 from niharness.adapters.jsonl_events import JsonlEventSink
 from niharness.adapters.mcp import connect_stdio
 from niharness.adapters.openai_compat import AirGapViolationError, OpenAiCompatBackend
@@ -32,6 +35,8 @@ from niharness.adapters.podman import (
 )
 from niharness.application import ImplementationRun, RunResult, StepRunner
 from niharness.application.summarizer import ModelSummarizer
+from niharness.cli.output import emit, fail
+from niharness.cli.runs import pid_file
 from niharness.config import HarnessConfig, ModelConfig
 from niharness.domain.artifacts import Plan
 from niharness.domain.identity import RunId, digest_text
@@ -59,6 +64,40 @@ def load_plan(config: HarnessConfig, explicit: Path | None) -> Plan:
         typer.secho(f"{source}: invalid plan", fg=typer.colors.RED, err=True)
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
+
+
+def detach(config: HarnessConfig, plan: Plan, arguments: Sequence[str]) -> RunId:
+    """Start the run in its own process and return its id immediately.
+
+    The child is invoked as `python -m niharness`, because the interpreter's
+    path is something this process can be certain of where the location of a
+    console script depends on how the environment was installed.
+    """
+    run_id = new_run_id(plan)
+    log_dir = config.runs_dir / run_id
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "implement.log"
+    command = [
+        sys.executable,
+        "-m",
+        "niharness",
+        "implement",
+        "-C",
+        str(config.project_root),
+        "--run-id",
+        run_id,
+        *arguments,
+    ]
+    with log_path.open("ab") as log:
+        subprocess.Popen(  # noqa: S603 - fixed argv, this interpreter, no shell
+            command,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            cwd=str(config.project_root),
+        )
+    return run_id
 
 
 def new_run_id(plan: Plan, now: datetime | None = None) -> RunId:
@@ -130,6 +169,8 @@ async def execute(
     plan: Plan,
     *,
     local_tools: bool,
+    run_id: RunId | None = None,
+    quiet: bool = False,
 ) -> RunResult:
     """Create the worktree, start the tools, and run the plan.
 
@@ -137,7 +178,7 @@ async def execute(
         typer.Exit: when the worktree cannot be created or the sandbox is absent.
     """
     vcs = GitVcs(config.project_root, config.worktrees_dir)
-    run_id = new_run_id(plan)
+    run_id = run_id or new_run_id(plan)
     try:
         worktree = await vcs.create_worktree(run_id)
     except GitError as error:
@@ -148,15 +189,17 @@ async def execute(
         await _check_sandbox(config, worktree)
 
     sink = JsonlEventSink(config.runs_dir, run_id)
+    control = JsonlControlChannel(config.runs_dir, run_id)
     main = _backend(config.models.main)
     utility = _backend(config.models.utility)
     mode: Literal["sandbox", "local"] = "local" if local_tools else "sandbox"
 
-    typer.echo(f"run {run_id}")
-    typer.echo(f"  worktree: {worktree.path} ({worktree.branch})")
-    typer.echo(f"  model: {config.models.main.name} at {config.models.main.base_url}")
-    typer.echo(f"  tools: {mode}")
-    typer.echo(f"  tasks: {len(plan.tasks)}")
+    if not quiet:
+        typer.echo(f"run {run_id}")
+        typer.echo(f"  worktree: {worktree.path} ({worktree.branch})")
+        typer.echo(f"  model: {config.models.main.name} at {config.models.main.base_url}")
+        typer.echo(f"  tools: {mode}")
+        typer.echo(f"  tasks: {len(plan.tasks)}")
 
     async with AsyncExitStack() as stack:
         stack.push_async_callback(main.aclose)
@@ -185,15 +228,17 @@ async def execute(
             summarizer=ModelSummarizer(utility, config.models.utility.name),
             vcs=vcs,
             worktree=worktree,
+            control=control,
             max_revisions=config.max_revisions,
         )
-        return await run.run(
-            plan,
-            run_id,
-            branch=worktree.branch,
-            profile=config.profile,
-            tools=mode,
-        )
+        with pid_file(config.runs_dir, run_id):
+            return await run.run(
+                plan,
+                run_id,
+                branch=worktree.branch,
+                profile=config.profile,
+                tools=mode,
+            )
     raise AssertionError("unreachable: the context manager always returns")  # pragma: no cover
 
 
@@ -231,13 +276,38 @@ def report(result: RunResult, runs_dir: Path) -> None:
     typer.echo(f"  status: nih status {result.run_id}")
 
 
-def implement(config: HarnessConfig, plan_file: Path | None, *, local_tools: bool) -> None:
+def implement(
+    config: HarnessConfig,
+    plan_file: Path | None,
+    *,
+    local_tools: bool,
+    detached: bool = False,
+    run_id: str | None = None,
+    json_mode: bool = False,
+) -> None:
     """Run `nih implement` end to end.
 
     Raises:
         typer.Exit: on a failed run, or when a backend cannot be reached.
     """
     plan = load_plan(config, plan_file)
+    if detached:
+        arguments: list[str] = []
+        if plan_file is not None:
+            arguments += ["--plan", str(plan_file)]
+        if local_tools:
+            arguments.append("--unsafe-local-tools")
+        started = detach(config, plan, arguments)
+        emit(
+            {"ok": True, "run_id": started, "detached": True, "tasks": len(plan.tasks)},
+            json_mode=json_mode,
+            human=(
+                f"run {started} started in the background\n"
+                f"  status: nih status {started}\n"
+                f"  cancel: nih cancel {started}"
+            ),
+        )
+        return
     if local_tools:
         typer.secho(
             "running tools on this host, outside the sandbox: they can reach the "
@@ -247,15 +317,32 @@ def implement(config: HarnessConfig, plan_file: Path | None, *, local_tools: boo
             err=True,
         )
     try:
-        result = asyncio.run(execute(config, plan, local_tools=local_tools))
+        result = asyncio.run(
+            execute(
+                config,
+                plan,
+                local_tools=local_tools,
+                run_id=RunId(run_id) if run_id else None,
+                quiet=json_mode,
+            ),
+        )
     except AirGapViolationError as error:
-        typer.secho(str(error), fg=typer.colors.RED, err=True)
+        fail(str(error), json_mode=json_mode)
         raise typer.Exit(1) from error
     except httpx.HTTPError as error:
-        typer.secho(f"the model backend did not answer: {error}", fg=typer.colors.RED, err=True)
-        typer.echo(f"  expected it at {config.models.main.base_url}", err=True)
+        fail(
+            f"the model backend at {config.models.main.base_url} did not answer: {error}",
+            json_mode=json_mode,
+            code=EX_UNAVAILABLE,
+        )
         raise typer.Exit(EX_UNAVAILABLE) from error
-    report(result, config.runs_dir)
+    if json_mode:
+        emit(
+            {"ok": result.completed, "run": result.model_dump(mode="json")},
+            json_mode=True,
+        )
+    else:
+        report(result, config.runs_dir)
     if not result.completed:
         raise typer.Exit(1)
 

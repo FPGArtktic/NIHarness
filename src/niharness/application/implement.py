@@ -24,14 +24,16 @@ from niharness.application.window import Window
 from niharness.domain import events as ev
 from niharness.domain.artifacts import Decision, FinalAnswer, Plan, Task, Verdict
 from niharness.domain.context import CompactionPolicy
+from niharness.domain.control import AnswerQuestions, ApprovePlan, CancelRun
 from niharness.domain.events import RunOutcome, StopReason
-from niharness.domain.identity import RunId, StepId, derive_id
+from niharness.domain.identity import RunId, StepId, derive_id, digest_json
 from niharness.domain.loop import LoopThresholds
 from niharness.domain.messages import ResponseFormat
 from niharness.domain.pipeline import DEFAULT_MAX_REVISIONS, Outcome, Stage, advance, step_for
 from niharness.domain.roles import DEFAULT_ROLES, Role
 from niharness.domain.tool_loop import ArtifactKind, LoopConfig
 from niharness.domain.tools import ToolLimits
+from niharness.ports.control_channel import ControlChannel
 from niharness.ports.event_sink import EventSink
 from niharness.ports.tokenizer import Tokenizer
 from niharness.ports.vcs import Vcs, Worktree
@@ -156,6 +158,7 @@ class ImplementationRun:
         vcs: Vcs,
         worktree: Worktree,
         summarizer: Summarizer | None = None,
+        control: ControlChannel | None = None,
         max_revisions: int = DEFAULT_MAX_REVISIONS,
     ) -> None:
         """Wire what a run needs beyond the step executor.
@@ -172,6 +175,8 @@ class ImplementationRun:
             vcs: version control. A run needs it: the commit gate is "did a
                 commit land", and the reviewer starts from the diff.
             worktree: the run's worktree.
+            control: the inbox other drivers submit to - a cancel from the TUI
+                and a cancel from an agent arrive the same way.
             max_revisions: how many fix rounds a task gets before it goes back
                 to the human.
         """
@@ -185,7 +190,9 @@ class ImplementationRun:
         self._summarizer = summarizer
         self._vcs = vcs
         self._worktree = worktree
+        self._control = control
         self._max_revisions = max_revisions
+        self._cancelled: str | None = None
 
     async def run(
         self,
@@ -215,8 +222,18 @@ class ImplementationRun:
 
         results: list[TaskResult] = []
         for position, task in enumerate(plan.tasks, start=1):
+            if await self._stop_requested(run_id) is not None:
+                break
             result = await self._run_task(task, plan, position, run_id)
             results.append(result)
+            if self._cancelled is not None:
+                await self._finish(RunOutcome.CANCELLED, self._cancelled)
+                return RunResult(
+                    run_id=run_id,
+                    outcome=RunOutcome.CANCELLED,
+                    tasks=tuple(results),
+                    stopped_at=task.id,
+                )
             if not result.finished:
                 await self._finish(RunOutcome.FAILED, f"task {task.id} did not finish")
                 return RunResult(
@@ -225,6 +242,9 @@ class ImplementationRun:
                     tasks=tuple(results),
                     stopped_at=task.id,
                 )
+        if self._cancelled is not None:
+            await self._finish(RunOutcome.CANCELLED, self._cancelled)
+            return RunResult(run_id=run_id, outcome=RunOutcome.CANCELLED, tasks=tuple(results))
         await self._finish(RunOutcome.COMPLETED, f"{len(results)} task(s) done")
         return RunResult(run_id=run_id, outcome=RunOutcome.COMPLETED, tasks=tuple(results))
 
@@ -306,6 +326,34 @@ class ImplementationRun:
                 )
             stage, revision = transition.stage, transition.revision
 
+    async def _stop_requested(self, run_id: RunId) -> str | None:
+        """Drain the control inbox and return a reason to stop, if one arrived.
+
+        Every command is turned into an event here, by the run, so the log keeps
+        its single writer and records what the run acted on rather than what was
+        merely asked for.
+        """
+        if self._control is None:
+            return self._cancelled
+        for message in await self._control.drain():
+            command = message.command
+            if isinstance(command, CancelRun) and command.run_id == run_id:
+                self._cancelled = command.reason or f"cancelled from {command.source.value}"
+                await self._events.append(ev.RunCancelled(source=command.source.value))
+                _log.warning("run.cancel_requested", run_id=run_id, source=command.source.value)
+            elif isinstance(command, ApprovePlan):
+                await self._events.append(ev.PlanApproved(plan_digest=command.plan_digest))
+            elif isinstance(command, AnswerQuestions) and command.run_id == run_id:
+                await self._events.append(
+                    ev.QuestionsAnswered(
+                        answers_digest=digest_json(
+                            [answer.model_dump(mode="json") for answer in command.answers],
+                        ),
+                        count=len(command.answers),
+                    ),
+                )
+        return self._cancelled
+
     async def _head(self) -> str:
         """Return the worktree's current commit."""
         return await self._vcs.head(self._worktree)
@@ -365,7 +413,12 @@ class ImplementationRun:
                 json_schema=ARTIFACT_SCHEMAS[kind](),
             ),
         )
-        state = await self._runner.run(config, window, step_id=step_id)
+        state = await self._runner.run(
+            config,
+            window,
+            step_id=step_id,
+            should_stop=(lambda: self._stop_requested(run_id)) if self._control else None,
+        )
         return StepResult(
             stage=stage.value,
             step_id=step_id,

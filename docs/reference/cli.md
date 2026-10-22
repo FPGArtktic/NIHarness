@@ -24,6 +24,8 @@ Usage: nih [OPTIONS] COMMAND [ARGS]...
 │ config      Print the merged configuration, as the harness sees it.          │
 │ gate        Show the commands the gate would run in this repository.         │
 │ status      Fold a run's event log into a snapshot.                          │
+│ runs        List this project's runs, with what each one is doing.           │
+│ cancel      Ask a run to stop at its next step boundary.                     │
 │ brainstorm  Entry A: an interactive session that writes SPEC.md.             │
 │ implement   Execute an approved plan, task by task, through the gate.        │
 │ run         Plan and implement without stopping for approval.                │
@@ -59,6 +61,25 @@ Usage: nih brainstorm [OPTIONS]
                                                                                 
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
 │ --project-root  -C      <path>  The project to operate on. [default: (.)]    │
+│ --help                          Show this message and exit.                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+## `nih cancel`
+
+```text
+Usage: nih cancel [OPTIONS] {run_id}                                           
+                                                                                
+ Ask a run to stop at its next step boundary.                                   
+                                                                                
+╭─ Arguments ──────────────────────────────────────────────────────────────────╮
+│ *    run_id      <str>  Run id to stop [required]                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --project-root  -C      <path>  The project to operate on. [default: (.)]    │
+│ --reason                <str>   Recorded in the event log.                   │
+│ --json                          Print one JSON object instead of the human   │
+│                                 form.                                        │
 │ --help                          Show this message and exit.                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
@@ -133,6 +154,8 @@ Usage: nih gate [OPTIONS]
 │ --tier                  <quick|full>  Which tier to plan. [default: quick]   │
 │ --changed               <str>         Paths changed since the last green     │
 │                                       commit.                                │
+│ --json                                Print one JSON object instead of the   │
+│                                       human form.                            │
 │ --help                                Show this message and exit.            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
@@ -152,6 +175,10 @@ Usage: nih implement [OPTIONS]
 │ --profile                     <str>   Override the profile.                  │
 │ --unsafe-local-tools                  Run the tool server on this host       │
 │                                       instead of in the sandbox.             │
+│ --detach                              Start the run in the background and    │
+│                                       print its id.                          │
+│ --json                                Print one JSON object instead of the   │
+│                                       human form.                            │
 │ --help                                Show this message and exit.            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
@@ -199,6 +226,7 @@ Usage: nih plan check [OPTIONS] {plan_file}
 │ *    plan_file      <path>  Path to PLAN.md [required]                       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --json          Machine-readable output.                                     │
 │ --help          Show this message and exit.                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
@@ -282,6 +310,21 @@ Usage: nih run [OPTIONS] {spec}
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
+## `nih runs`
+
+```text
+Usage: nih runs [OPTIONS]                                                      
+                                                                                
+ List this project's runs, with what each one is doing.                         
+                                                                                
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --project-root  -C      <path>  The project to operate on. [default: (.)]    │
+│ --json                          Print one JSON object instead of the human   │
+│                                 form.                                        │
+│ --help                          Show this message and exit.                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
 ## `nih status`
 
 ```text
@@ -294,6 +337,8 @@ Usage: nih status [OPTIONS] [run_id]
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
 │ --project-root  -C      <path>  The project to operate on. [default: (.)]    │
+│ --json                          Print one JSON object instead of the human   │
+│                                 form.                                        │
 │ --help                          Show this message and exit.                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```

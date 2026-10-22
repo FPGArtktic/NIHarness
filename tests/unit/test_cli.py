@@ -38,7 +38,7 @@ def test_version_is_the_package_version() -> None:
 def test_config_prints_the_merged_configuration(tmp_path: Path) -> None:
     result = runner.invoke(app, ["config", "-C", str(tmp_path)])
     assert result.exit_code == 0
-    parsed = json.loads(result.output)
+    parsed = json.loads(result.stdout)
     assert parsed["sandbox"]["network"] == "none"
     assert parsed["compact"]["threshold"] == 0.75
 
@@ -167,3 +167,81 @@ def test_the_generated_files_in_the_tree_are_up_to_date(tmp_path: Path) -> None:
         if (repo / relative).read_bytes() != (tmp_path / relative).read_bytes()
     ]
     assert not stale, f"run `nih docs generate`: {', '.join(stale)}"
+
+
+def test_runs_lists_nothing_when_there_are_no_runs(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["runs", "-C", str(tmp_path), "--json"])
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {"ok": True, "runs": []}
+
+
+def test_runs_reports_what_a_run_is_doing(tmp_path: Path) -> None:
+    run_id = RunId("20261022-090000-aaaaaa")
+    asyncio.run(seed_run(tmp_path / ".nih" / "runs", run_id))
+    parsed = json.loads(runner.invoke(app, ["runs", "-C", str(tmp_path), "--json"]).stdout)
+    entry = parsed["runs"][0]
+    assert entry["run_id"] == run_id
+    assert entry["outcome"] == "running", "no terminal event was appended"
+    assert entry["live"] is False, "no process owns it"
+    assert entry["commits"] == 1
+
+
+def test_cancel_writes_to_the_inbox(tmp_path: Path) -> None:
+    run_id = RunId("20261022-090000-bbbbbb")
+    runs_dir = tmp_path / ".nih" / "runs"
+    asyncio.run(seed_run(runs_dir, run_id))
+    result = runner.invoke(
+        app,
+        ["cancel", run_id, "-C", str(tmp_path), "--reason", "enough", "--json"],
+    )
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["ok"] is True
+    inbox = (runs_dir / run_id / "control.jsonl").read_text(encoding="utf-8")
+    assert '"cancel_run"' in inbox
+    assert "enough" in inbox
+
+
+def test_cancelling_an_unknown_run_fails_in_the_requested_shape(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["cancel", "nope", "-C", str(tmp_path), "--json"])
+    assert result.exit_code == 1
+    assert json.loads(result.stdout) == {"ok": False, "error": "no run nope", "run_id": "nope"}
+
+
+def test_status_json_carries_the_folded_snapshot(tmp_path: Path) -> None:
+    run_id = RunId("20261022-090000-cccccc")
+    asyncio.run(seed_run(tmp_path / ".nih" / "runs", run_id))
+    parsed = json.loads(
+        runner.invoke(app, ["status", run_id, "-C", str(tmp_path), "--json"]).stdout,
+    )
+    assert parsed["ok"] is True
+    assert parsed["live"] is False
+    assert parsed["snapshot"]["run_id"] == run_id
+    assert parsed["snapshot"]["commits"] == ["cafe"]
+
+
+def test_gate_json_lists_the_commands() -> None:
+    parsed = json.loads(runner.invoke(app, ["gate", "--json"]).stdout)
+    assert parsed["ok"] is True
+    assert "python" in parsed["languages"]
+    names = [command["name"] for command in parsed["commands"]]
+    assert "ruff-format" in names
+    assert parsed["commands"][0]["argv"][0] == "ruff"
+
+
+def test_plan_check_json_names_the_tasks(tmp_path: Path) -> None:
+    target = tmp_path / "PLAN.md"
+    target.write_text(render_plan(plan()), encoding="utf-8")
+    parsed = json.loads(runner.invoke(app, ["plan", "check", str(target), "--json"]).stdout)
+    assert parsed["valid"] is True
+    assert parsed["tasks"] == [{"id": "t1", "title": "Add the parser"}]
+    assert len(parsed["plan_digest"]) == 16
+
+
+def test_plan_check_json_reports_an_invalid_plan(tmp_path: Path) -> None:
+    target = tmp_path / "PLAN.md"
+    target.write_text("# Plan\n\nprose only\n", encoding="utf-8")
+    result = runner.invoke(app, ["plan", "check", str(target), "--json"])
+    assert result.exit_code == 1
+    parsed = json.loads(result.stdout)
+    assert parsed["ok"] is False
+    assert "invalid plan" in parsed["error"]

@@ -7,11 +7,12 @@ from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from niharness.application import ImplementationRun, StepRunner
 from niharness.application.implement import render_task
-from niharness.cli.implement import load_plan, new_run_id, server_parameters
+from niharness.cli.implement import detach, load_plan, new_run_id, server_parameters
 from niharness.cli.main import app
 from niharness.config import HarnessConfig
 from niharness.domain import events as ev
@@ -26,6 +27,14 @@ from niharness.domain.artifacts import (
     Verdict,
 )
 from niharness.domain.context import CompactionPolicy
+from niharness.domain.control import (
+    ApprovePlan,
+    CancelRun,
+    ControlCommand,
+    ControlMessage,
+    Driver,
+    message_id,
+)
 from niharness.domain.events import Event, EventBody, RunOutcome
 from niharness.domain.identity import CallId, Digest, RunId, StepId
 from niharness.domain.markdown import render_plan
@@ -477,3 +486,118 @@ def test_local_tools_are_announced_as_unsafe(tmp_path: Path) -> None:
     result = runner.invoke(app, ["implement", "-C", str(tmp_path), "--unsafe-local-tools"])
     assert "outside the sandbox" in result.output
     assert result.exit_code != 0, "there is no git worktree here, so the run cannot start"
+
+
+class FakeControl:
+    """A control inbox that hands out prepared commands once."""
+
+    def __init__(self, *commands: ControlCommand) -> None:
+        self._commands = list(commands)
+        self.drains = 0
+
+    async def submit(self, command: ControlCommand) -> ControlMessage:  # pragma: no cover
+        raise NotImplementedError
+
+    async def drain(self) -> tuple[ControlMessage, ...]:
+        self.drains += 1
+        if not self._commands:
+            return ()
+        pending = self._commands.pop(0)
+        now = datetime.now(UTC)
+        return (ControlMessage(id=message_id(pending, now), ts=now, command=pending),)
+
+    async def pending(self) -> int:  # pragma: no cover - not used here
+        return len(self._commands)
+
+
+def build_with_control(
+    backend: FakeBackend,
+    tools: FakeTools,
+    sink: FakeSink,
+    vcs: FakeVcs,
+    control: FakeControl,
+) -> ImplementationRun:
+    return ImplementationRun(
+        runner=StepRunner(backend=backend, tools=tools, events=sink),
+        events=sink,
+        tokenizer=backend,
+        model="m",
+        policy=CompactionPolicy(),
+        vcs=vcs,  # type: ignore[arg-type]
+        worktree=Worktree(path="/work", branch="b", base_sha="0" * 40),
+        control=control,
+    )
+
+
+async def test_a_cancel_from_another_driver_stops_the_run() -> None:
+    vcs = FakeVcs()
+    control = FakeControl(
+        CancelRun(run_id=RunId("r1"), reason="changed my mind", source=Driver.MCP)
+    )
+    sink = FakeSink()
+    result = await build_with_control(
+        FakeBackend(*task_run(), *task_run()),
+        CommittingTools(vcs),
+        sink,
+        vcs,
+        control,
+    ).run(plan(), RunId("r1"), branch="b", profile="cpu-only")
+
+    assert result.outcome is RunOutcome.CANCELLED
+    assert "RunCancelled" in kinds(sink)
+    cancelled = [body for body in sink.bodies if isinstance(body, ev.RunCancelled)]
+    assert cancelled[0].source == "mcp"
+    finished = [body for body in sink.bodies if isinstance(body, ev.RunFinished)]
+    assert finished[0].outcome is RunOutcome.CANCELLED
+    assert "changed my mind" in finished[0].reason
+
+
+async def test_a_cancel_for_another_run_is_ignored() -> None:
+    vcs = FakeVcs()
+    control = FakeControl(CancelRun(run_id=RunId("someone-else"), source=Driver.TUI))
+    result = await build_with_control(
+        FakeBackend(*task_run()),
+        CommittingTools(vcs),
+        FakeSink(),
+        vcs,
+        control,
+    ).run(plan(tasks=1), RunId("r1"), branch="b", profile="cpu-only")
+    assert result.completed
+
+
+async def test_an_approval_from_the_inbox_is_recorded_as_an_event() -> None:
+    vcs = FakeVcs()
+    control = FakeControl(ApprovePlan(plan_digest=plan().digest(), source=Driver.MCP))
+    sink = FakeSink()
+    await build_with_control(
+        FakeBackend(*task_run()),
+        CommittingTools(vcs),
+        sink,
+        vcs,
+        control,
+    ).run(plan(tasks=1), RunId("r1"), branch="b", profile="cpu-only")
+    approvals = [body for body in sink.bodies if isinstance(body, ev.PlanApproved)]
+    assert len(approvals) == 2, "the run's own approval, and the one from the inbox"
+
+
+def test_detaching_re_invokes_this_interpreter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorded: list[list[str]] = []
+
+    class FakeProcess:
+        def __init__(self, argv: list[str], **kwargs: object) -> None:
+            recorded.append(argv)
+
+    monkeypatch.setattr("niharness.cli.implement.subprocess.Popen", FakeProcess)
+    config = HarnessConfig.load(tmp_path)
+    run_id = detach(config, plan(tasks=1), ["--unsafe-local-tools"])
+    assert recorded, "a child was started"
+    argv = recorded[0]
+    assert argv[0].endswith("python") or "python" in argv[0]
+    assert argv[1:4] == ["-m", "niharness", "implement"]
+    assert "--run-id" in argv
+    assert argv[argv.index("--run-id") + 1] == run_id
+    assert "--unsafe-local-tools" in argv
+    assert "--detach" not in argv, "the child must not detach again"
+    assert (config.runs_dir / run_id / "implement.log").exists()

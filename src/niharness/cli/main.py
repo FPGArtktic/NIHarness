@@ -21,6 +21,7 @@ from niharness.cli import implement as implement_module
 from niharness.cli import init as init_module
 from niharness.cli import logging as logging_module
 from niharness.cli import plan as plan_module
+from niharness.cli import runs as runs_module
 from niharness.cli import status as status_module
 from niharness.cli.unavailable import unavailable
 from niharness.config import HarnessConfig
@@ -40,6 +41,11 @@ app.add_typer(docs_app, name="docs")
 ProjectRoot = Annotated[
     Path,
     typer.Option("--project-root", "-C", help="The project to operate on.", show_default="."),
+]
+
+JsonOption = Annotated[
+    bool,
+    typer.Option("--json", help="Print one JSON object instead of the human form."),
 ]
 
 
@@ -92,18 +98,39 @@ def gate(
         list[str] | None,
         typer.Option("--changed", help="Paths changed since the last green commit."),
     ] = None,
+    json_mode: JsonOption = False,
 ) -> None:
     """Show the commands the gate would run in this repository."""
-    gate_module.gate(root.resolve(), tier, tuple(changed or ()))
+    gate_module.gate(root.resolve(), tier, tuple(changed or ()), json_mode=json_mode)
 
 
 @app.command()
 def status(
     run_id: Annotated[str | None, typer.Argument(help="Run id; omit to list runs.")] = None,
     root: ProjectRoot = Path(),
+    json_mode: JsonOption = False,
 ) -> None:
     """Fold a run's event log into a snapshot."""
-    status_module.status(_config(root.resolve(), None).runs_dir, run_id)
+    status_module.status(_config(root.resolve(), None).runs_dir, run_id, json_mode=json_mode)
+
+
+@app.command()
+def runs(root: ProjectRoot = Path(), json_mode: JsonOption = False) -> None:
+    """List this project's runs, with what each one is doing."""
+    runs_module.runs(_config(root.resolve(), None).runs_dir, json_mode=json_mode)
+
+
+@app.command()
+def cancel(
+    run_id: Annotated[str, typer.Argument(help="Run id to stop")],
+    root: ProjectRoot = Path(),
+    reason: Annotated[str, typer.Option("--reason", help="Recorded in the event log.")] = "",
+    json_mode: JsonOption = False,
+) -> None:
+    """Ask a run to stop at its next step boundary."""
+    runs_module.cancel(
+        _config(root.resolve(), None).runs_dir, run_id, reason, json_mode=json_mode
+    )
 
 
 @docs_app.command("generate")
@@ -140,12 +167,24 @@ def implement(
             help="Run the tool server on this host instead of in the sandbox.",
         ),
     ] = False,
+    detached: Annotated[
+        bool,
+        typer.Option("--detach", help="Start the run in the background and print its id."),
+    ] = False,
+    run_id: Annotated[
+        str | None,
+        typer.Option("--run-id", help="Use this run id.", hidden=True),
+    ] = None,
+    json_mode: JsonOption = False,
 ) -> None:
     """Execute an approved plan, task by task, through the gate."""
     implement_module.implement(
         _config(root.resolve(), profile),
         plan_file,
         local_tools=local_tools,
+        detached=detached,
+        run_id=run_id,
+        json_mode=json_mode,
     )
 
 
