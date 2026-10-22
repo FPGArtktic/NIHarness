@@ -20,7 +20,7 @@ from typing import Final
 import structlog
 
 from niharness.domain.control import ControlCommand, ControlMessage, message_id
-from niharness.domain.identity import RunId
+from niharness.domain.identity import RunId, digest_text
 
 CONTROL_FILE: Final = "control.jsonl"
 CURSOR_FILE: Final = "control.cursor"
@@ -97,11 +97,18 @@ class JsonlControlChannel:
         messages: list[ControlMessage] = []
         for line in fresh:
             try:
-                messages.append(ControlMessage.model_validate_json(line))
+                message = ControlMessage.model_validate_json(line)
             except ValueError:
                 # A malformed line is dropped rather than stalling the run; the
                 # file keeps it, so nothing is lost for a human reading later.
                 _log.warning("control.unreadable", run_id=self._run_id, line=line[:120])
+                continue
+            if not message.id:
+                # Submitters that are not this codebase - the TUI writes these
+                # lines with nothing but a JSON serialiser - leave the identity
+                # to the reader.
+                message = message.model_copy(update={"id": digest_text(line)})
+            messages.append(message)
         return tuple(messages)
 
     async def drain(self) -> tuple[ControlMessage, ...]:

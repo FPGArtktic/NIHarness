@@ -74,7 +74,14 @@ class ControlMessage(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    id: Digest = Field(description="Content digest; a repeated submission is the same id.")
+    id: Digest = Field(
+        default=Digest(""),
+        description=(
+            "Identity of the submission. A submitter may leave it empty - the "
+            "inbox fills it in when it reads the line - so writing a command "
+            "needs nothing but JSON."
+        ),
+    )
     ts: AwareDatetime
     command: ControlCommand
 

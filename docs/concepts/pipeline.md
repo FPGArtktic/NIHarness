@@ -74,6 +74,14 @@ if the gate passed. When one landed, the harness emits `vcs.committed` derived
 from the diff, so the event log records it even though the harness did not make
 it. See [ADR 0014](../adr/0014-review-starts-from-the-diff.md).
 
+## Approval, cancellation and questions
+
+Three things come from outside the run: a plan being approved, a run being
+stopped, and the answers to a step's questions. All three arrive the same way -
+as a request in the run's control inbox - and become events when the run acts
+on them. A cancel lands at the next step boundary, never mid-tool, and leaves a
+snapshot `nih resume` can pick up.
+
 ## Budgets
 
 Every step carries a tool-call, token and wall-time budget, enforced by the

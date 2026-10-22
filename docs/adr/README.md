@@ -28,6 +28,9 @@ the pipeline. A change that does one of those without an ADR is incomplete.
 | [0012](0012-mcp-is-the-tool-protocol.md) | MCP is the tool protocol, and the first runtime dependency | Accepted |
 | [0013](0013-tools-answer-with-an-outcome-envelope.md) | This project's tools answer with an outcome envelope | Accepted |
 | [0014](0014-review-starts-from-the-diff.md) | A step declares its artifact; review starts from the diff | Accepted |
+| [0015](0015-control-actions-are-requests.md) | Control actions are requests, delivered through an inbox | Accepted |
+| [0016](0016-the-management-surface.md) | The management surface: full control, no code path | Accepted |
+| [0017](0017-the-tui-follows-the-event-log.md) | The TUI follows the event log (supersedes the socket) | Accepted |
 
 ## Template
 

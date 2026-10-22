@@ -125,6 +125,7 @@ nav:
       - operations/profiles.md
       - operations/models.md
       - operations/sandbox.md
+      - operations/managing-from-claude.md
   - Benchmarks:
       - benchmarks/methodology.md
       - benchmarks/results.md
@@ -144,3 +145,6 @@ nav:
       - adr/0012-mcp-is-the-tool-protocol.md
       - adr/0013-tools-answer-with-an-outcome-envelope.md
       - adr/0014-review-starts-from-the-diff.md
+      - adr/0015-control-actions-are-requests.md
+      - adr/0016-the-management-surface.md
+      - adr/0017-the-tui-follows-the-event-log.md

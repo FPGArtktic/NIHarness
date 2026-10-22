@@ -64,8 +64,17 @@ uv run nih brainstorm         # entry A: interactive session → SPEC.md
 uv run nih plan SPEC.md       # entry B: spec gate + planning → approval
 uv run nih plan import plan.md # entry C: external plan → Plan schema
 uv run nih implement          # execute the approved plan
+uv run nih implement --detach # run it in the background
+uv run nih runs               # what is running, and what it has done
 uv run nih status <run-id>    # fold the event log into a snapshot
+uv run nih cancel <run-id>    # stop at the next step boundary
+uv run nih mcp                # the management surface, for an agent to drive
 ```
+
+The harness is meant to be *managed*, not watched: an agent writes the spec and
+the plan, starts the run and reads digests, while the local models do the
+reading, patching and testing. See
+[docs/operations/managing-from-claude.md](docs/operations/managing-from-claude.md).
 
 ## Layout
 

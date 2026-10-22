@@ -30,6 +30,7 @@ pipeline with gates, driven from a terminal, with a Rust TUI as a thin viewer.
 | Domain | `niharness.domain` | Pure. No I/O, no clock, no adapter imports. All the interesting decisions live here. |
 | Ports | `niharness.ports` | Protocols only. Depends on the domain, nothing else. |
 | Application | `niharness.application` | Drives the domain through the ports. No rules, no protocols, no adapter imports. |
+| Management | `niharness.management` | Starts, stops and reports on runs, for whoever is driving. Never writes code, never commits. |
 | Adapters | `niharness.adapters` | One adapter per port. Adapters never import each other. |
 | CLI | `niharness.cli` | The only place that wires adapters into the domain. |
 
@@ -56,6 +57,9 @@ suggestion. See [Architecture](concepts/architecture.md) and
   `nih docs generate`.
 - `nih implement`: with a model served and the sandbox image built, it executes
   an approved plan task by task, each commit going through the gate.
+- The control plane: `nih runs`, `nih cancel`, `--detach`, `--json`, and
+  `nih mcp` - the management surface an agent drives, which cannot touch the
+  code. See [Managing from an agent](operations/managing-from-claude.md).
 
 ## What does not work yet
 

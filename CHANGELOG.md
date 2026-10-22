@@ -27,6 +27,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - Tool loop as a pure state machine: it decides the next action and folds what
   comes back into state plus the events to append, so a bounded ReAct loop is
   unit-testable without a model or a container.
+- Control plane: commands (`CancelRun`, `ApprovePlan`, `AnswerQuestions`) arrive
+  through an append-only inbox beside the event log and become events when the
+  run acts on them, so a cancel from the TUI, from `nih cancel` and from an
+  agent are one mechanism.
+- Management surface: `niharness.management` with the run registry, plan store
+  and bounded views; `nih runs`, `nih cancel`, `nih implement --detach`, `--json`
+  on the commands that print, and `nih mcp` - an MCP server an agent drives,
+  with no path to reading or writing project code.
+- The TUI follows a live run (`nih-tui --run <dir>`) and can ask it to stop.
 - Tool server (`niharness.toolserver`): an MCP server for one worktree, offering
   the harness's own tools, resolving every path against the root, and holding the
   gate - `git_commit` runs the quick tier and refuses with the failing output

@@ -65,6 +65,32 @@ No model, no container, no clock. The clock lives in the event sink, which is
 also why replaying a log is deterministic: timestamps and sequence numbers are
 data, not side effects.
 
+## Who drives it
+
+The harness is driven by whoever is there, through one surface:
+
+```mermaid
+flowchart TD
+  CLAUDE[agent over MCP] --> MGMT[niharness.management]
+  TUI[Rust TUI] --> INBOX[(control inbox)]
+  CLI[nih runs, status, cancel] --> MGMT
+  MGMT --> INBOX
+  MGMT --> LOG[(events.jsonl)]
+  INBOX --> RUN[the run]
+  RUN --> LOG
+  LOG --> TUI
+```
+
+`niharness.management` holds the registry, the plan store and the bounded views;
+`niharness.cli` and the MCP server in `niharness.management.server` are two
+callers that know nothing about each other. The layer may not import the CLI or
+the tool server, and `lint-imports` checks that.
+
+What that surface deliberately cannot do is write code, commit or run the gate -
+see [ADR 0016](../adr/0016-the-management-surface.md), and
+[Managing from an agent](../operations/managing-from-claude.md) for the
+reasoning in full.
+
 ## Adding a subsystem
 
 A new subsystem is six things in one change: a port Protocol, an adapter, a

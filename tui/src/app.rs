@@ -97,6 +97,8 @@ pub(crate) struct AppState {
     pub(crate) activity: Vec<Activity>,
     /// The selected view.
     pub(crate) view: View,
+    /// A short line of feedback about something the viewer just did.
+    pub(crate) notice: String,
 }
 
 #[allow(

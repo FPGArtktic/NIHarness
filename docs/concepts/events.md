@@ -43,6 +43,33 @@ flowchart LR
 optimisation so a resume need not replay from zero - never a second source of
 truth.
 
+## Control is a request, not an event
+
+A run is steerable from outside: a person at the TUI, an agent over MCP, a
+script at the CLI. None of them appends to the log, and the reason is
+mechanical - `JsonlEventSink` assigns sequence numbers in memory, so a second
+writer would duplicate `seq` and the fold would reject the stream.
+
+So control arrives through an **inbox**, `control.jsonl` beside the log:
+
+```mermaid
+flowchart LR
+  TUI -->|c| INBOX[(control.jsonl)]
+  AGENT[agent over MCP] -->|run_cancel| INBOX
+  CLI[nih cancel] --> INBOX
+  INBOX -->|drained between steps| RUN[the run]
+  RUN -->|run.cancelled| LOG[(events.jsonl)]
+```
+
+Many writers, each submission one `O_APPEND` write the kernel keeps whole; one
+reader, the run, with a cursor beside the file. The run turns a request into an
+event when it acts on it, which keeps the log a record of what happened rather
+than of what was asked for - and makes an ignored request visible as an inbox
+line with no matching event.
+
+A submitter may leave the message id empty; the inbox fills it in. That is what
+lets the TUI write a control line with a JSON serialiser and nothing else.
+
 ## Schemas
 
 `nih docs generate` exports the JSON Schema of the envelope, every artifact and

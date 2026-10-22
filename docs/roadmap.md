@@ -172,9 +172,29 @@ flag on the sandbox adapter:
 
 ## Stage: the TUI
 
-- [ ] Unix socket event feed from the harness.
-- [ ] Work, Metrics, Bench and Log views.
-- [ ] Questions picker, cancel on `Esc`.
+- [x] Follow a live run: `nih-tui --run .nih/runs/<id>` tails the event log by
+      byte offset and applies whole lines only
+      ([ADR 0017](adr/0017-the-tui-follows-the-event-log.md)).
+- [x] Work, Metrics, Bench and Log views.
+- [x] Cancel from the viewer: `c` writes the same inbox line `nih cancel` and an
+      agent write.
+- [ ] Questions picker and plan approval from the viewer.
+- [ ] A socket feed, for a viewer that cannot see the run directory - another
+      machine, or a container without it mounted.
+
+## Stage: management
+
+- [x] A control plane every driver shares: commands as requests in
+      `control.jsonl`, turned into events by the run
+      ([ADR 0015](adr/0015-control-actions-are-requests.md)).
+- [x] `--json` on the commands that print, `nih runs`, `nih cancel`,
+      `nih implement --detach`.
+- [x] `nih mcp`: the management surface for an agent - read and steer, with no
+      path to the code ([ADR 0016](adr/0016-the-management-surface.md)).
+- [ ] `nih resume`: the snapshot exists and a cancelled run is resumable; the
+      command that picks one up is not written.
+- [ ] Questions: the loop has the pause and the inbox carries the answers, but
+      no stage emits `questions.asked` yet.
 
 ## Stage: benchmarks
 

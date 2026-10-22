@@ -166,7 +166,8 @@
       "title": "Command"
     },
     "id": {
-      "description": "Content digest; a repeated submission is the same id.",
+      "default": "",
+      "description": "Identity of the submission. A submitter may leave it empty - the inbox fills it in when it reads the line - so writing a command needs nothing but JSON.",
       "title": "Id",
       "type": "string"
     },
@@ -177,7 +178,6 @@
     }
   },
   "required": [
-    "id",
     "ts",
     "command"
   ],

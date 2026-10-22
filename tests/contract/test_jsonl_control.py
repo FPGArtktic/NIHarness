@@ -93,3 +93,22 @@ async def test_the_inbox_is_a_file_a_human_can_read(channel: JsonlControlChannel
     assert len(lines) == 1
     assert '"cancel_run"' in lines[0]
     assert "look at me" in lines[0]
+
+
+async def test_a_line_written_without_an_identity_gets_one(
+    channel: JsonlControlChannel,
+) -> None:
+    """The TUI writes these lines with a JSON serialiser and nothing else."""
+    channel.inbox_path.parent.mkdir(parents=True, exist_ok=True)
+    with channel.inbox_path.open("a", encoding="utf-8") as handle:
+        handle.write(
+            '{"ts": 1766400000.5, "command": {"kind": "cancel_run", "source": "tui",'
+            f' "run_id": "{RUN}", "reason": "esc"}}}}\n',
+        )
+    drained = await channel.drain()
+    assert len(drained) == 1
+    assert drained[0].id, "the inbox assigned an identity"
+    assert len(drained[0].id) == 16
+    assert isinstance(drained[0].command, CancelRun)
+    assert drained[0].command.source is Driver.TUI
+    assert drained[0].ts.tzinfo is not None, "an epoch timestamp is read as an instant in UTC"

@@ -279,9 +279,14 @@ fn draw_placeholder(frame: &mut Frame, area: Rect, title: &str, text: &str) {
 }
 
 fn draw_status(frame: &mut Frame, area: Rect, state: &AppState) {
+    let notice = if state.notice.is_empty() {
+        String::new()
+    } else {
+        format!("   {}", state.notice)
+    };
     let text = format!(
-        " Tab/F1-F4 switch view   q quit   events folded: {} ",
-        state.seq
+        " Tab/F1-F4 view   c cancel run   q quit   events: {}{} ",
+        state.seq, notice
     );
     frame.render_widget(
         Paragraph::new(text).style(Style::default().fg(Color::Black).bg(Color::Cyan)),
