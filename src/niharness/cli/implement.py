@@ -35,9 +35,17 @@ from niharness.application.summarizer import ModelSummarizer
 from niharness.cli.output import emit, fail
 from niharness.config import HarnessConfig, ModelConfig
 from niharness.domain.artifacts import Plan
-from niharness.domain.identity import RunId, digest_text
+from niharness.domain.identity import Digest, RunId
 from niharness.domain.markdown import ArtifactNotFoundError, parse_plan
-from niharness.management.runs import RunRegistry, new_run_id, pid_file
+from niharness.management.plans import NoSuchPlanError, PlanStore
+from niharness.management.runs import (
+    NoSuchRunError,
+    NotResumableError,
+    ResumePoint,
+    RunRegistry,
+    new_run_id,
+    pid_file,
+)
 from niharness.ports.vcs import Worktree
 
 EX_UNAVAILABLE = 69
@@ -128,6 +136,7 @@ async def execute(
     local_tools: bool,
     run_id: RunId | None = None,
     quiet: bool = False,
+    resume: ResumePoint | None = None,
 ) -> RunResult:
     """Create the worktree, start the tools, and run the plan.
 
@@ -135,11 +144,14 @@ async def execute(
         typer.Exit: when the worktree cannot be created or the sandbox is absent.
     """
     vcs = GitVcs(config.project_root, config.worktrees_dir)
-    run_id = run_id or new_run_id(plan)
+    run_id = resume.run_id if resume else (run_id or new_run_id(plan))
     try:
-        worktree = await vcs.create_worktree(run_id)
+        worktree = (
+            await vcs.open_worktree(run_id) if resume else await vcs.create_worktree(run_id)
+        )
     except GitError as error:
-        typer.secho(f"cannot create the run worktree: {error}", fg=typer.colors.RED, err=True)
+        verb = "open" if resume else "create"
+        typer.secho(f"cannot {verb} the run worktree: {error}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from error
 
     if not local_tools:
@@ -156,7 +168,8 @@ async def execute(
         typer.echo(f"  worktree: {worktree.path} ({worktree.branch})")
         typer.echo(f"  model: {config.models.main.name} at {config.models.main.base_url}")
         typer.echo(f"  tools: {mode}")
-        typer.echo(f"  tasks: {len(plan.tasks)}")
+        remaining = len(plan.tasks) - len(resume.done) if resume else len(plan.tasks)
+        typer.echo(f"  tasks: {remaining} of {len(plan.tasks)}")
 
     async with AsyncExitStack() as stack:
         stack.push_async_callback(main.aclose)
@@ -195,6 +208,8 @@ async def execute(
                 branch=worktree.branch,
                 profile=config.profile,
                 tools=mode,
+                done=resume.done if resume else (),
+                resumed_from=resume.from_seq if resume else 0,
             )
     raise AssertionError("unreachable: the context manager always returns")  # pragma: no cover
 
@@ -304,6 +319,53 @@ def implement(
         raise typer.Exit(1)
 
 
-def plan_digest_hint(plan: Plan) -> str:
-    """Return a short digest of the plan, for logs and run ids."""
-    return str(digest_text(plan.model_dump_json()))[:6]
+def resume(config: HarnessConfig, run_id: str, *, local_tools: bool, json_mode: bool) -> None:
+    """Continue a run that was cancelled or stopped short.
+
+    The tasks it already finished are skipped - their commits are on the branch
+    already - and the rest run in the same worktree, appending to the same
+    event log.
+
+    Raises:
+        typer.Exit: when the run cannot be continued, or the run fails.
+    """
+    registry = RunRegistry(config)
+    try:
+        resolved = registry.require(run_id)
+        point = asyncio.run(registry.resume_point(resolved))
+    except (NoSuchRunError, NotResumableError) as error:
+        fail(str(error), {"run_id": run_id}, json_mode=json_mode)
+        raise typer.Exit(1) from error
+    try:
+        plan, _ = PlanStore(config).load(Digest(point.plan_digest))
+    except NoSuchPlanError as error:
+        fail(
+            f"the plan {point.plan_digest} this run was executing is not stored; "
+            "submit it again before resuming",
+            {"run_id": run_id, "plan_digest": point.plan_digest},
+            json_mode=json_mode,
+        )
+        raise typer.Exit(1) from error
+
+    if not json_mode:
+        typer.echo(
+            f"resuming {resolved} from event {point.from_seq}, "
+            f"skipping {len(point.done)} finished task(s)",
+        )
+    try:
+        result = asyncio.run(
+            execute(config, plan, local_tools=local_tools, quiet=json_mode, resume=point),
+        )
+    except httpx.HTTPError as error:
+        fail(
+            f"the model backend at {config.models.main.base_url} did not answer: {error}",
+            json_mode=json_mode,
+            code=EX_UNAVAILABLE,
+        )
+        raise typer.Exit(EX_UNAVAILABLE) from error
+    if json_mode:
+        emit({"ok": result.completed, "run": result.model_dump(mode="json")}, json_mode=True)
+    else:
+        report(result, config.runs_dir)
+    if not result.completed:
+        raise typer.Exit(1)

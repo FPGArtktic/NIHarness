@@ -275,3 +275,54 @@ async def test_a_diff_is_refused_when_the_worktree_is_gone(project: HarnessConfi
     async with connected(project) as session:
         result = await session.call_tool("run_diff", {"run_id": RUN})
     assert "worktree" in text_of(result)
+
+
+async def test_a_run_that_is_still_live_is_not_resumed(
+    project: HarnessConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await seed_run(project)
+    monkeypatch.setattr("niharness.management.runs.RunRegistry.is_live", lambda self, run: True)
+    async with connected(project) as session:
+        result = await session.call_tool("run_resume", {"run_id": RUN})
+    assert not ok_of(result)
+    assert "still running" in text_of(result)
+
+
+async def test_resuming_needs_the_plan_that_was_running(project: HarnessConfig) -> None:
+    await seed_run(project)
+    async with connected(project) as session:
+        result = await session.call_tool("run_resume", {"run_id": RUN})
+    assert not ok_of(result)
+    assert "not stored" in text_of(result), "the plan was never submitted here"
+
+
+async def test_a_stopped_run_is_resumed_where_it_stopped(
+    project: HarnessConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started: list[list[str]] = []
+
+    class FakeProcess:
+        def __init__(self, argv: list[str], **kwargs: object) -> None:
+            started.append(argv)
+
+    monkeypatch.setattr("niharness.management.runs.subprocess.Popen", FakeProcess)
+    await seed_run(project)
+    sink = JsonlEventSink(project.runs_dir, RUN)
+    await sink.append(
+        ev.TaskFinished(
+            task_id="t1", outcome="completed", revisions=0, commits=("cafe1234cafe",)
+        ),
+    )
+    await sink.append(ev.RunCancelled(source="mcp"))
+
+    async with connected(project) as session:
+        await session.call_tool("plan_submit", {"markdown": render_plan(plan())})
+        result = await session.call_tool("run_resume", {"run_id": RUN})
+
+    assert ok_of(result), text_of(result)
+    assert "skipping 1 finished task" in text_of(result)
+    assert started, "a detached child continued the run"
+    assert started[0][3] == "resume"
+    assert started[0][4] == RUN

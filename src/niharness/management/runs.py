@@ -20,7 +20,7 @@ from niharness.adapters.jsonl_events import JsonlEventSink
 from niharness.config import HarnessConfig
 from niharness.domain.artifacts import Answer, Plan
 from niharness.domain.control import AnswerQuestions, CancelRun, ControlMessage, Driver
-from niharness.domain.events import Event
+from niharness.domain.events import Event, RunOutcome
 from niharness.domain.identity import RunId
 from niharness.domain.state import RunSnapshot, fold
 
@@ -54,6 +54,21 @@ class RunEntry(BaseModel):
 
 class NoSuchRunError(LookupError):
     """The run id does not name a run of this project."""
+
+
+class NotResumableError(RuntimeError):
+    """The run cannot be continued, and the reason says what to do instead."""
+
+
+class ResumePoint(BaseModel):
+    """Where a run stopped, and what a continuation may skip."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    run_id: RunId
+    from_seq: int
+    done: tuple[str, ...]
+    plan_digest: str
 
 
 class RunRegistry:
@@ -133,6 +148,28 @@ class RunRegistry:
         """Return every run as a registry row."""
         return tuple([await self.entry(run_id) for run_id in self.ids()])
 
+    async def resume_point(self, run_id: RunId) -> ResumePoint:
+        """Return where `run_id` stopped.
+
+        Raises:
+            NotResumableError: when the run is still going, or finished, or
+                never recorded which plan it was running. A resume that guessed
+                at any of those would be worse than a refusal.
+        """
+        if self.is_live(run_id):
+            raise NotResumableError(f"{run_id} is still running; cancel it first")
+        snapshot = await self.snapshot(run_id)
+        if snapshot.outcome is RunOutcome.COMPLETED:
+            raise NotResumableError(f"{run_id} completed; there is nothing to continue")
+        if snapshot.plan_digest is None:
+            raise NotResumableError(f"{run_id} never recorded which plan it was running")
+        return ResumePoint(
+            run_id=run_id,
+            from_seq=snapshot.seq,
+            done=tuple(task.task_id for task in snapshot.tasks if task.done),
+            plan_digest=str(snapshot.plan_digest),
+        )
+
     def worktree_path(self, run_id: RunId) -> Path:
         """Where this run's worktree is."""
         return self._config.worktrees_dir / run_id
@@ -163,8 +200,9 @@ class RunRegistry:
         *,
         plan_file: Path | None = None,
         local_tools: bool = False,
+        resume: bool = False,
     ) -> RunId:
-        """Start `nih implement` in its own process and return the run id.
+        """Start a run in its own process and return the run id.
 
         The child is invoked as `python -m niharness`: the interpreter's path is
         something this process can be certain of, where the location of a
@@ -177,13 +215,13 @@ class RunRegistry:
             sys.executable,
             "-m",
             "niharness",
-            "implement",
+            *(["resume", run_id] if resume else ["implement"]),
             "-C",
             str(self._config.project_root),
-            "--run-id",
-            run_id,
         ]
-        if plan_file is not None:
+        if not resume:
+            command += ["--run-id", run_id]
+        if plan_file is not None and not resume:
             command += ["--plan", str(plan_file)]
         if local_tools:
             command.append("--unsafe-local-tools")

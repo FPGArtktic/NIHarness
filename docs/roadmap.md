@@ -152,7 +152,7 @@ flag on the sandbox adapter:
 - [ ] Structured output: JSON Schema for every artifact, GBNF where the backend
       supports it.
 - [ ] Forced finalisation two calls before the budget ends.
-- [ ] `nih run` and `nih resume`.
+- [ ] `nih run`: plan and implement without stopping for approval.
 
 ## Stage: retrieval
 
@@ -191,8 +191,10 @@ flag on the sandbox adapter:
       `nih implement --detach`.
 - [x] `nih mcp`: the management surface for an agent - read and steer, with no
       path to the code ([ADR 0016](adr/0016-the-management-surface.md)).
-- [ ] `nih resume`: the snapshot exists and a cancelled run is resumable; the
-      command that picks one up is not written.
+- [x] `nih resume <run-id>` and `run_resume` over MCP: a run records what it
+      concluded about each task (`task.finished`), so a continuation skips what
+      is already committed and refuses what it cannot know
+      ([ADR 0018](adr/0018-a-run-records-its-conclusions.md)).
 - [ ] Questions: the loop has the pause and the inbox carries the answers, but
       no stage emits `questions.asked` yet.
 

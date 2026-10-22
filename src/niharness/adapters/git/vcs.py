@@ -97,6 +97,22 @@ class GitVcs:
         _log.info("vcs.worktree_created", branch=branch, path=str(path), base=base_sha)
         return Worktree(path=str(path), branch=branch, base_sha=base_sha)
 
+    async def open_worktree(self, run_id: RunId) -> Worktree:
+        """Return the worktree `run_id` is already using.
+
+        Raises:
+            GitError: when the directory is gone, which is what a resume has to
+                be told rather than work around.
+        """
+        path = self._worktree_root / run_id
+        branch = run_branch(run_id)
+        if not (path / ".git").exists():
+            raise GitError(
+                ("git", "worktree", "open", str(path)), 1, f"{path} is not a worktree"
+            )
+        base = (await self._git("rev-parse", "HEAD", cwd=path)).strip()
+        return Worktree(path=str(path), branch=branch, base_sha=base)
+
     async def remove_worktree(self, worktree: Worktree) -> None:
         """Remove the worktree directory, leaving the branch for inspection."""
         await self._git("worktree", "remove", "--force", worktree.path)

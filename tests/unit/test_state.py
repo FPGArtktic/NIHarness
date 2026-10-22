@@ -136,3 +136,39 @@ def test_folding_is_idempotent_for_the_same_stream() -> None:
 def test_reasoning_is_an_event_like_any_other() -> None:
     snapshot = fold(stream(ev.ModelReasoning(text="thinking out loud")))
     assert snapshot.seq == 1
+
+
+def test_a_tasks_conclusion_is_what_a_resume_reads() -> None:
+    snapshot = fold(
+        stream(
+            ev.StepStarted(
+                stage="implement",
+                role="implementer",
+                task_id="t1",
+                max_tool_calls=1,
+                max_tokens=1,
+                max_wall_seconds=1,
+            ),
+            ev.TaskFinished(task_id="t1", outcome="completed", revisions=0, commits=("cafe",)),
+            ev.StepStarted(
+                stage="implement",
+                role="implementer",
+                task_id="t2",
+                max_tool_calls=1,
+                max_tokens=1,
+                max_wall_seconds=1,
+            ),
+            ev.TaskFinished(
+                task_id="t2",
+                outcome="handoff",
+                revisions=3,
+                reason="fix loop limit of 3 reached",
+            ),
+        ),
+    )
+    by_id = {task.task_id: task for task in snapshot.tasks}
+    assert by_id["t1"].done, "a resume skips this one"
+    assert by_id["t1"].commits == ("cafe",)
+    assert not by_id["t2"].done
+    assert by_id["t2"].failed
+    assert "fix loop limit" in by_id["t2"].reason

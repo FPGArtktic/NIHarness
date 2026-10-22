@@ -606,3 +606,52 @@ def test_detaching_re_invokes_this_interpreter(
     assert "--unsafe-local-tools" in argv
     assert "--detach" not in argv, "the child must not detach again"
     assert (config.runs_dir / run_id / "implement.log").exists()
+
+
+async def test_a_finished_task_is_recorded_in_the_log() -> None:
+    vcs = FakeVcs()
+    sink = FakeSink()
+    await build(FakeBackend(*task_run()), CommittingTools(vcs), sink, vcs).run(
+        plan(tasks=1),
+        RunId("r1"),
+        branch="b",
+        profile="cpu-only",
+    )
+    concluded = [body for body in sink.bodies if isinstance(body, ev.TaskFinished)]
+    assert len(concluded) == 1
+    assert concluded[0].task_id == "t1"
+    assert concluded[0].outcome == "completed"
+    assert concluded[0].commits, "the commits of the task are in its conclusion"
+
+
+async def test_a_handed_back_task_says_so_in_the_log() -> None:
+    vcs = FakeVcs()
+    sink = FakeSink()
+    await build(
+        FakeBackend(*[answer() for _ in range(8)]),
+        FakeTools(),
+        sink,
+        vcs,
+        max_revisions=0,
+    ).run(plan(tasks=1), RunId("r1"), branch="b", profile="cpu-only")
+    concluded = [body for body in sink.bodies if isinstance(body, ev.TaskFinished)]
+    assert concluded[0].outcome == "handoff"
+
+
+async def test_a_resumed_run_skips_what_it_already_did() -> None:
+    vcs = FakeVcs()
+    backend = FakeBackend(*task_run())
+    sink = FakeSink()
+    result = await build(backend, CommittingTools(vcs), sink, vcs).run(
+        plan(tasks=2),
+        RunId("r1"),
+        branch="b",
+        profile="cpu-only",
+        done=("t1",),
+        resumed_from=42,
+    )
+    assert result.completed
+    assert [task.task_id for task in result.tasks] == ["t2"], "t1 was not run again"
+    resumed = [body for body in sink.bodies if isinstance(body, ev.RunResumed)]
+    assert resumed[0].from_seq == 42
+    assert kinds(sink).index("RunResumed") < kinds(sink).index("RunStarted")

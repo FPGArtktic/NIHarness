@@ -27,6 +27,16 @@
           "title": "Failed",
           "type": "boolean"
         },
+        "outcome": {
+          "default": "running",
+          "enum": [
+            "running",
+            "completed",
+            "handoff"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
         "reason": {
           "default": "",
           "title": "Reason",

@@ -82,6 +82,7 @@ itself produced.
 | stop it | `run_cancel(run_id, reason)` | a request lands in the run's inbox; the run stops at its next step boundary and leaves a resumable snapshot |
 | answer a question | `questions_answer(run_id, answers_json)` | the answers reach the step that is waiting |
 | approve a plan | `plan_approve(digest)` | the next `implement_start` uses it |
+| continue a stopped run | `run_resume(run_id)` | the tasks it already finished are skipped; the rest run in the same worktree, appending to the same log |
 
 These are requests, not events: the run writes the event when it acts on one.
 See [ADR 0015](../adr/0015-control-actions-are-requests.md) for why, and
@@ -97,5 +98,6 @@ nih runs                      # the registry
 nih status <run-id>           # the folded snapshot
 nih implement --detach        # start a run in the background
 nih cancel <run-id>           # the same inbox line an agent writes
+nih resume <run-id>           # continue where it stopped
 nih-tui --run .nih/runs/<id>  # follow it live; c asks it to stop
 ```

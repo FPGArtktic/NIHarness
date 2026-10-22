@@ -36,6 +36,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   on the commands that print, and `nih mcp` - an MCP server an agent drives,
   with no path to reading or writing project code.
 - The TUI follows a live run (`nih-tui --run <dir>`) and can ask it to stop.
+- `nih resume <run-id>` and `run_resume`: a run now records what it concluded
+  about each task, so a cancelled run continues without redoing committed work,
+  and refuses when it cannot know what it was running.
 - Tool server (`niharness.toolserver`): an MCP server for one worktree, offering
   the harness's own tools, resolving every path against the root, and holding the
   gate - `git_commit` runs the quick tier and refuses with the failing output

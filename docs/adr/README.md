@@ -31,6 +31,7 @@ the pipeline. A change that does one of those without an ADR is incomplete.
 | [0015](0015-control-actions-are-requests.md) | Control actions are requests, delivered through an inbox | Accepted |
 | [0016](0016-the-management-surface.md) | The management surface: full control, no code path | Accepted |
 | [0017](0017-the-tui-follows-the-event-log.md) | The TUI follows the event log (supersedes the socket) | Accepted |
+| [0018](0018-a-run-records-its-conclusions.md) | A run records its conclusions, so it can be continued | Accepted |
 
 ## Template
 

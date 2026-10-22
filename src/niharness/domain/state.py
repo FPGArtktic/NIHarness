@@ -10,6 +10,7 @@ same stream always folds to the same snapshot, which is what makes `nih status`,
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -29,6 +30,12 @@ class TaskProgress(BaseModel):
     commits: tuple[str, ...] = ()
     failed: bool = False
     reason: str = ""
+    outcome: Literal["running", "completed", "handoff"] = "running"
+
+    @property
+    def done(self) -> bool:
+        """True when the run concluded this task; a resume skips those."""
+        return self.outcome == "completed"
 
 
 class RunSnapshot(BaseModel):
@@ -143,6 +150,19 @@ def _apply(snapshot: RunSnapshot, event: Event) -> RunSnapshot:  # noqa: C901 - 
                     + 1,
                 ),
             }
+        case ev.TaskFinished():
+            update["tasks"] = _touch_task(
+                snapshot,
+                body.task_id,
+                outcome=body.outcome,
+                reason=body.reason,
+                failed=body.outcome == "handoff",
+                commits=body.commits
+                or next(
+                    (task.commits for task in snapshot.tasks if task.task_id == body.task_id),
+                    (),
+                ),
+            )
         case ev.StepFailed():
             update["tasks"] = _touch_task(
                 snapshot,

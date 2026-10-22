@@ -32,7 +32,12 @@ from niharness.domain.gate import GateTier, detect_languages, plan_gate
 from niharness.domain.identity import Digest
 from niharness.management import views
 from niharness.management.plans import NoSuchPlanError, PlanStore
-from niharness.management.runs import NoSuchRunError, RunRegistry, new_run_id
+from niharness.management.runs import (
+    NoSuchRunError,
+    NotResumableError,
+    RunRegistry,
+    new_run_id,
+)
 from niharness.ports.vcs import Worktree
 
 SERVER_NAME = "niharness"
@@ -206,6 +211,39 @@ def _register_steering(
             ok=True,
             text=f"run {run_id} started {where}, {len(plan.tasks)} task(s)",
             run_id=run_id,
+        )
+
+    @server.tool()
+    async def run_resume(run_id: str, local_tools: bool = False) -> Started:
+        """Continue a run that was cancelled or stopped short, in the background.
+
+        The tasks it already finished are skipped; the rest run in the same
+        worktree and append to the same event log.
+        """
+        try:
+            point = await registry.resume_point(registry.require(run_id))
+            plan, path = plans.load(Digest(point.plan_digest))
+        except (NoSuchRunError, NotResumableError) as error:
+            return Started(ok=False, text=str(error))
+        except NoSuchPlanError as error:
+            return Started(
+                ok=False,
+                text=f"the plan {error} this run was executing is not stored; submit it again",
+            )
+        registry.start_detached(
+            point.run_id,
+            plan,
+            plan_file=path,
+            local_tools=local_tools,
+            resume=True,
+        )
+        return Started(
+            ok=True,
+            text=(
+                f"run {point.run_id} resumed from event {point.from_seq}, "
+                f"skipping {len(point.done)} finished task(s)"
+            ),
+            run_id=point.run_id,
         )
 
     @server.tool()

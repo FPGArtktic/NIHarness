@@ -215,10 +215,28 @@ def run(spec: Annotated[Path, typer.Argument(help="Path to SPEC.md")]) -> None:
 
 
 @app.command()
-def resume(run_id: Annotated[str, typer.Argument(help="Run id to resume")]) -> None:
-    """Resume a cancelled run from its last snapshot."""
-    del run_id
-    unavailable("resume", "the run loop, which needs the inference adapter", "docs/roadmap.md")
+def resume(
+    run_id: Annotated[str, typer.Argument(help="Run id to continue")],
+    root: ProjectRoot = Path(),
+    profile: Annotated[
+        str | None, typer.Option("--profile", help="Override the profile.")
+    ] = None,
+    local_tools: Annotated[
+        bool,
+        typer.Option(
+            "--unsafe-local-tools",
+            help="Run the tool server on this host instead of in the sandbox.",
+        ),
+    ] = False,
+    json_mode: JsonOption = False,
+) -> None:
+    """Continue a run that was cancelled or stopped short of its plan."""
+    implement_module.resume(
+        _config(root.resolve(), profile),
+        run_id,
+        local_tools=local_tools,
+        json_mode=json_mode,
+    )
 
 
 @app.command()

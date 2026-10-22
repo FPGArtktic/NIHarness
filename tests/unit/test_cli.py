@@ -102,7 +102,6 @@ def test_plan_import_needs_a_model_for_free_form_prose(tmp_path: Path) -> None:
     [
         (["brainstorm"], "inference"),
         (["run", "SPEC.md"], "pipeline"),
-        (["resume", "abc"], "run loop"),
         (["compact", "abc"], "tokenizer"),
         (["research", "topic"], "vector store"),
         (["bench"], "benchmark"),
@@ -245,3 +244,23 @@ def test_plan_check_json_reports_an_invalid_plan(tmp_path: Path) -> None:
     parsed = json.loads(result.stdout)
     assert parsed["ok"] is False
     assert "invalid plan" in parsed["error"]
+
+
+def test_resuming_an_unknown_run_is_refused(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["resume", "nope", "-C", str(tmp_path), "--json"])
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["error"] == "nope"
+
+
+def test_resuming_a_finished_run_says_there_is_nothing_to_do(tmp_path: Path) -> None:
+    run_id = RunId("20261022-090000-dddddd")
+    runs_dir = tmp_path / ".nih" / "runs"
+    asyncio.run(seed_run(runs_dir, run_id))
+    asyncio.run(
+        JsonlEventSink(runs_dir, run_id).append(
+            ev.RunFinished(outcome=ev.RunOutcome.COMPLETED, reason="done"),
+        ),
+    )
+    result = runner.invoke(app, ["resume", run_id, "-C", str(tmp_path), "--json"])
+    assert result.exit_code == 1
+    assert "nothing to continue" in json.loads(result.stdout)["error"]

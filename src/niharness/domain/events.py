@@ -122,6 +122,23 @@ class StepFinished(Payload):
     wall_seconds: float = Field(ge=0)
 
 
+class TaskFinished(Payload):
+    """A task of the plan reached a terminal stage.
+
+    The steps a task took are already in the log; this is the run's conclusion
+    about the task, which is what a resume needs and what a supervisor asks
+    for. Without it, "did t3 get through review?" is a question only the
+    process that ran it could answer.
+    """
+
+    type: Literal["task.finished"] = "task.finished"
+    task_id: str
+    outcome: Literal["completed", "handoff"]
+    revisions: int = Field(ge=0)
+    commits: tuple[str, ...] = ()
+    reason: str = ""
+
+
 class StepFailed(Payload):
     """A step failed and the task goes back to the human."""
 
@@ -355,6 +372,7 @@ EventBody = Annotated[
     | StepStarted
     | StepFinished
     | StepFailed
+    | TaskFinished
     | ModelRequest
     | ModelResponse
     | ModelReasoning
@@ -406,6 +424,7 @@ PAYLOAD_TYPES: tuple[type[Payload], ...] = (
     StepStarted,
     StepFinished,
     StepFailed,
+    TaskFinished,
     ModelRequest,
     ModelResponse,
     ModelReasoning,

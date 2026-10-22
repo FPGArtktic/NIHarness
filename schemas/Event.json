@@ -853,6 +853,55 @@
       "title": "StopReason",
       "type": "string"
     },
+    "TaskFinished": {
+      "additionalProperties": false,
+      "description": "A task of the plan reached a terminal stage.\n\nThe steps a task took are already in the log; this is the run's conclusion\nabout the task, which is what a resume needs and what a supervisor asks\nfor. Without it, \"did t3 get through review?\" is a question only the\nprocess that ran it could answer.",
+      "properties": {
+        "commits": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Commits",
+          "type": "array"
+        },
+        "outcome": {
+          "enum": [
+            "completed",
+            "handoff"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
+          "type": "string"
+        },
+        "revisions": {
+          "minimum": 0,
+          "title": "Revisions",
+          "type": "integer"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "task.finished",
+          "default": "task.finished",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "outcome",
+        "revisions"
+      ],
+      "title": "TaskFinished",
+      "type": "object"
+    },
     "ToolCalled": {
       "additionalProperties": false,
       "description": "A validated tool call was dispatched to the sandbox.",
@@ -1062,6 +1111,7 @@
           "step.failed": "#/$defs/StepFailed",
           "step.finished": "#/$defs/StepFinished",
           "step.started": "#/$defs/StepStarted",
+          "task.finished": "#/$defs/TaskFinished",
           "tool.called": "#/$defs/ToolCalled",
           "tool.rejected": "#/$defs/ToolRejected",
           "tool.returned": "#/$defs/ToolReturned",
@@ -1091,6 +1141,9 @@
         },
         {
           "$ref": "#/$defs/StepFailed"
+        },
+        {
+          "$ref": "#/$defs/TaskFinished"
         },
         {
           "$ref": "#/$defs/ModelRequest"

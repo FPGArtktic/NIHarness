@@ -19,7 +19,7 @@ The TUI reads these and computes nothing of its own.
 | `ts` | `pydantic.types.AwareDatetime` | required | When the sink accepted the payload (UTC). |
 | `run_id` | `identity.RunId` | required |  |
 | `step_id` | `Optional[identity.StepId]` | `None` |  |
-| `body` | `events.RunStarted | events.RunFinished | events.RunCancelled | events.RunResumed | events.StepStarted | events.StepFinished | events.StepFailed | events.ModelRequest | events.ModelResponse | events.ModelReasoning | events.ToolCalled | events.ToolReturned | events.ToolRejected | events.GateStarted | events.GateCommandFinished | events.GateFinished | events.ContextCompacted | events.LoopDetected | events.LoopIntervention | events.SpecAccepted | events.PlanCreated | events.PlanApproved | events.QuestionsAsked | events.QuestionsAnswered | events.NotesAppended | events.VcsCommitted | events.VcsRolledBack | events.MetricsSampled` | required |  |
+| `body` | `events.RunStarted | events.RunFinished | events.RunCancelled | events.RunResumed | events.StepStarted | events.StepFinished | events.StepFailed | events.TaskFinished | events.ModelRequest | events.ModelResponse | events.ModelReasoning | events.ToolCalled | events.ToolReturned | events.ToolRejected | events.GateStarted | events.GateCommandFinished | events.GateFinished | events.ContextCompacted | events.LoopDetected | events.LoopIntervention | events.SpecAccepted | events.PlanCreated | events.PlanApproved | events.QuestionsAsked | events.QuestionsAnswered | events.NotesAppended | events.VcsCommitted | events.VcsRolledBack | events.MetricsSampled` | required |  |
 
 ## Payloads
 
@@ -101,6 +101,19 @@ A step failed and the task goes back to the human.
 | `type` | `Literal['step.failed']` | `'step.failed'` |  |
 | `reason` | `str` | required |  |
 | `diagnostics` | `str` | `''` |  |
+
+### `task.finished`
+
+A task of the plan reached a terminal stage.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `type` | `Literal['task.finished']` | `'task.finished'` |  |
+| `task_id` | `str` | required |  |
+| `outcome` | `Literal['completed', 'handoff']` | required |  |
+| `revisions` | `int` | required |  |
+| `commits` | `tuple[str, ...]` | `()` |  |
+| `reason` | `str` | `''` |  |
 
 ### `model.request`
 

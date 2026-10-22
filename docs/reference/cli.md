@@ -31,7 +31,7 @@ Usage: nih [OPTIONS] COMMAND [ARGS]...
 │ brainstorm  Entry A: an interactive session that writes SPEC.md.             │
 │ implement   Execute an approved plan, task by task, through the gate.        │
 │ run         Plan and implement without stopping for approval.                │
-│ resume      Resume a cancelled run from its last snapshot.                   │
+│ resume      Continue a run that was cancelled or stopped short of its plan.  │
 │ compact     Compact a run's window now, instead of waiting for the           │
 │             threshold.                                                       │
 │ research    Run a read-only researcher sub-run over the index.               │
@@ -305,13 +305,20 @@ Usage: nih research [OPTIONS] {topic}
 ```text
 Usage: nih resume [OPTIONS] {run_id}                                           
                                                                                 
- Resume a cancelled run from its last snapshot.                                 
+ Continue a run that was cancelled or stopped short of its plan.                
                                                                                 
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
-│ *    run_id      <str>  Run id to resume [required]                          │
+│ *    run_id      <str>  Run id to continue [required]                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --help          Show this message and exit.                                  │
+│ --project-root        -C      <path>  The project to operate on.             │
+│                                       [default: (.)]                         │
+│ --profile                     <str>   Override the profile.                  │
+│ --unsafe-local-tools                  Run the tool server on this host       │
+│                                       instead of in the sandbox.             │
+│ --json                                Print one JSON object instead of the   │
+│                                       human form.                            │
+│ --help                                Show this message and exit.            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 

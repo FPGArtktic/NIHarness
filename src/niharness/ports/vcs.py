@@ -45,6 +45,18 @@ class Vcs(Protocol):
         """Create the run's worktree and branch, based on the current HEAD."""
         ...
 
+    async def open_worktree(self, run_id: RunId) -> Worktree:
+        """Return the worktree a run already has.
+
+        A resumed run continues where it stopped, on the branch and in the
+        directory it was using. Creating them again would fail, and creating
+        new ones would strand the commits already made.
+
+        Raises:
+            Exception: an adapter-specific error when the run has no worktree.
+        """
+        ...
+
     async def remove_worktree(self, worktree: Worktree) -> None:
         """Remove a worktree, leaving its branch in place for inspection."""
         ...

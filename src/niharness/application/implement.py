@@ -202,8 +202,26 @@ class ImplementationRun:
         branch: str,
         profile: str,
         tools: Literal["sandbox", "local"] = "sandbox",
+        done: Sequence[str] = (),
+        resumed_from: int = 0,
     ) -> RunResult:
-        """Execute every task of `plan`, stopping at the first one that does not finish."""
+        """Execute the plan's tasks, stopping at the first one that does not finish.
+
+        Args:
+            plan: the approved plan.
+            run_id: this run.
+            branch: the worktree's branch.
+            profile: the hardware profile in force.
+            tools: where the tool server ran.
+            done: tasks a previous attempt at this run already completed; they
+                are skipped, because their commits are already on the branch.
+            resumed_from: the event this run continues after, when it is a resume.
+
+        Returns:
+            What happened to each task that ran.
+        """
+        if resumed_from:
+            await self._events.append(ev.RunResumed(from_seq=resumed_from))
         await self._events.append(
             ev.RunStarted(
                 branch=branch,
@@ -220,8 +238,12 @@ class ImplementationRun:
         )
         await self._events.append(ev.PlanApproved(plan_digest=plan.digest()))
 
+        finished = set(done)
         results: list[TaskResult] = []
         for position, task in enumerate(plan.tasks, start=1):
+            if task.id in finished:
+                _log.info("task.skipped", task=task.id, reason="already done in this run")
+                continue
             if await self._stop_requested(run_id) is not None:
                 break
             result = await self._run_task(task, plan, position, run_id)
@@ -290,14 +312,16 @@ class ImplementationRun:
                 verdict = step.verdict
                 outcome = _review_outcome(verdict)
             else:  # Stage.FULL_GATE - the task is done as far as this run goes
-                return TaskResult(
-                    task_id=task.id,
-                    stage=Stage.COMPLETED,
-                    reason="reviewer ACK; the full gate tier has not run",
-                    revisions=revision,
-                    steps=tuple(steps),
-                    commits=tuple(commits),
-                    full_gate_pending=True,
+                return await self._conclude(
+                    TaskResult(
+                        task_id=task.id,
+                        stage=Stage.COMPLETED,
+                        reason="reviewer ACK; the full gate tier has not run",
+                        revisions=revision,
+                        steps=tuple(steps),
+                        commits=tuple(commits),
+                        full_gate_pending=True,
+                    ),
                 )
 
             transition = advance(stage, outcome, revision, self._max_revisions)
@@ -316,13 +340,15 @@ class ImplementationRun:
                         diagnostics=_diagnostics(steps[-1] if steps else None, verdict),
                     ),
                 )
-                return TaskResult(
-                    task_id=task.id,
-                    stage=transition.stage,
-                    reason=transition.reason,
-                    revisions=transition.revision,
-                    steps=tuple(steps),
-                    commits=tuple(commits),
+                return await self._conclude(
+                    TaskResult(
+                        task_id=task.id,
+                        stage=transition.stage,
+                        reason=transition.reason,
+                        revisions=transition.revision,
+                        steps=tuple(steps),
+                        commits=tuple(commits),
+                    ),
                 )
             stage, revision = transition.stage, transition.revision
 
@@ -353,6 +379,19 @@ class ImplementationRun:
                     ),
                 )
         return self._cancelled
+
+    async def _conclude(self, result: TaskResult) -> TaskResult:
+        """Record what the run concluded about a task, then return it."""
+        await self._events.append(
+            ev.TaskFinished(
+                task_id=result.task_id,
+                outcome="completed" if result.finished else "handoff",
+                revisions=result.revisions,
+                commits=result.commits,
+                reason=result.reason,
+            ),
+        )
+        return result
 
     async def _head(self) -> str:
         """Return the worktree's current commit."""
