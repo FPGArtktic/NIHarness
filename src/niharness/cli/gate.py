@@ -15,7 +15,7 @@ import typer
 
 from niharness.adapters.git import GitError, GitVcs
 from niharness.cli.output import emit, fail
-from niharness.domain.gate import GateTier, detect_languages, plan_gate
+from niharness.domain.gate import GateTier, detect_languages, gate_listing, plan_gate
 from niharness.ports.vcs import Worktree
 
 
@@ -40,7 +40,12 @@ def gate(
         fail(f"not a git repository: {root}", {"detail": str(error)}, json_mode=json_mode)
         raise typer.Exit(1) from error
     languages = detect_languages(files)
-    commands = plan_gate(tier, languages, changed)
+    pyproject = root / "pyproject.toml"
+    listing = gate_listing(
+        files,
+        pyproject.read_text(encoding="utf-8", errors="replace") if pyproject.is_file() else "",
+    )
+    commands = plan_gate(tier, languages, changed, listing)
     human = [
         f"tier: {tier.value}",
         f"languages: {', '.join(sorted(item.value for item in languages)) or 'none detected'}",

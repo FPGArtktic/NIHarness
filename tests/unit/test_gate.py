@@ -10,6 +10,7 @@ from niharness.domain.gate import (
     GateTier,
     Language,
     detect_languages,
+    gate_listing,
     normalize_output,
     plan_gate,
 )
@@ -142,3 +143,62 @@ def test_green_result_has_no_signature() -> None:
 def test_normalisation_keeps_only_diagnostic_lines() -> None:
     output = "collecting ...\nall good so far\nerror: boom at 0x7ffd\n"
     assert normalize_output(output) == "error: boom at <addr>"
+
+
+# ------------------------------------- a check this project does not configure
+
+PYPROJECT = """
+[project]
+name = "demo"
+
+[tool.ruff]
+line-length = 96
+
+[[tool.importlinter.contracts]]
+name = "layers"
+"""
+
+
+def names(commands: object) -> list[str]:
+    assert isinstance(commands, tuple)
+    return [command.name for command in commands]
+
+
+def test_a_check_this_project_does_not_configure_is_not_in_its_gate() -> None:
+    # import-linter and REUSE are this repository's conventions, not Python's.
+    # In a project that configures neither they are not a gate, they are two
+    # red commands and a model with no way to make them green.
+    listing = gate_listing(["pyproject.toml", "src/app.py", "tests/test_app.py"])
+    planned = names(plan_gate(GateTier.QUICK, [Language.PYTHON], (), listing))
+    assert "ruff" in planned
+    assert "pytest" in planned
+    assert "lint-imports" not in planned
+    assert "reuse" not in planned
+
+
+def test_a_project_that_does_configure_them_still_gets_them() -> None:
+    listing = gate_listing(["pyproject.toml", "REUSE.toml", "src/app.py"], PYPROJECT)
+    planned = names(plan_gate(GateTier.QUICK, [Language.PYTHON], (), listing))
+    assert "lint-imports" in planned, "the pyproject declares [[tool.importlinter.contracts]]"
+    assert "reuse" in planned
+
+
+def test_a_requirement_is_met_by_a_directory_in_the_listing() -> None:
+    listing = gate_listing(["pyproject.toml", "LICENSES/GPL-3.0-or-later.txt"])
+    assert "reuse" in names(plan_gate(GateTier.QUICK, [Language.PYTHON], (), listing))
+
+
+def test_without_a_listing_nothing_is_filtered() -> None:
+    # An empty listing is not evidence of an empty worktree: a caller that
+    # does not know must get the whole gate, not a quietly smaller one.
+    planned = names(plan_gate(GateTier.QUICK, [Language.PYTHON]))
+    assert "lint-imports" in planned
+    assert "reuse" in planned
+
+
+def test_the_listing_names_the_tables_a_pyproject_declares() -> None:
+    listing = gate_listing(["pyproject.toml"], PYPROJECT)
+    assert "pyproject.toml:tool.ruff" in listing
+    assert "pyproject.toml:tool.importlinter" in listing, "[[tool.x.y]] counts as tool.x"
+    assert "pyproject.toml:tool.mypy" not in listing
+    assert gate_listing([], "") == frozenset()

@@ -26,6 +26,7 @@ from niharness.domain.gate import (
     GateTier,
     Language,
     detect_languages,
+    gate_listing,
     plan_gate,
 )
 from niharness.domain.tools import (
@@ -379,6 +380,14 @@ class Workspace:
 
     # ------------------------------------------------------------------ gate
 
+    def _pyproject(self) -> str:
+        """Return this worktree's `pyproject.toml`, or nothing when there is none."""
+        target = self._root / "pyproject.toml"
+        try:
+            return target.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+
     async def tracked_files(self) -> tuple[str, ...]:
         """Return the worktree's files, for language detection."""
         listing = await self._git(("ls-files", "--cached", "--others", "--exclude-standard"))
@@ -390,8 +399,12 @@ class Workspace:
         kinds: frozenset[GateKind] | None = None,
     ) -> GateResult:
         """Run the gate, or the part of it `kinds` selects."""
-        languages = detect_languages(await self.tracked_files())
-        commands = plan_gate(tier, languages, await self.changed_paths())
+        files = await self.tracked_files()
+        languages = detect_languages(files)
+        # A command that checks a convention this project does not configure is
+        # not part of its gate: see `gate_listing`.
+        listing = gate_listing(files, self._pyproject())
+        commands = plan_gate(tier, languages, await self.changed_paths(), listing)
         steps: list[GateStepResult] = []
         for command in commands:
             if kinds is not None and command.kind not in kinds:

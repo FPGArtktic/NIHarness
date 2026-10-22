@@ -36,8 +36,8 @@ stray `main.go` in a Python repository does not drag in the Go toolchain.
     ruff format --check .     (format)
     ruff check .              (lint)
     mypy --strict src         (lint)
-    lint-imports              (lint)
-    reuse lint                (lint)
+    lint-imports              (lint, only if import contracts are configured)
+    reuse lint                (lint, only if the project is REUSE-organised)
     pytest                    (test)
     pytest -m integration     (test, full tier only)
     ```
@@ -69,6 +69,39 @@ stray `main.go` in a Python repository does not drag in the Go toolchain.
 
 The complete matrix, including Go, Bash, TCL, HDL, Yocto and documentation, is
 in the generated [configuration reference](../reference/config.md).
+
+## A check the project does not configure is not its gate
+
+A marker file says a *language* is present. It does not say which *checks*
+belong to the project, and the difference matters as soon as the harness is
+pointed at something other than this repository.
+
+`lint-imports` and `reuse lint` are in the Python row because this project
+configures import contracts and is REUSE-organised. In a Python project that
+configures neither they are not a gate - they are two commands that are red on
+every attempt, with nothing the model can do about it. A red gate it cannot fix
+is the worst thing the harness can hand a model: it spends its whole fix budget
+on a wall.
+
+So a command may declare the files it needs:
+
+| Command | Runs when the worktree has |
+|---|---|
+| `lint-imports` | `.importlinter`, `setup.cfg`, or `[tool.importlinter]` in `pyproject.toml` |
+| `reuse lint` | `REUSE.toml`, `.reuse/dep5`, or a `LICENSES/` directory |
+
+`gate_listing` builds what this is planned against: the worktree's files, plus
+one entry per tool table a `pyproject.toml` declares. The domain reads no
+files - the caller reads, `gate_listing` parses - so the rule stays pure and
+unit-tested.
+
+Two deliberate details:
+
+- **a listing is never inferred.** A caller that passes no listing gets the
+  whole gate, because an empty listing is not evidence of an empty worktree.
+- **only conventions are optional.** `pytest` has no requirement: a Python
+  project without tests configured still has to answer for `pytest`, and the
+  answer is the gate's to give, not the matrix's to assume.
 
 ## Ordering
 

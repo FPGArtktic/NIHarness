@@ -73,6 +73,16 @@ class GateCommand(BaseModel):
     kind: GateKind
     language: Language
     tiers: frozenset[GateTier] = Field(default=frozenset({GateTier.QUICK, GateTier.FULL}))
+    requires: tuple[str, ...] = ()
+    """Files without which this command is not part of this project's gate.
+
+    A marker file says a language is present (`pyproject.toml` means Python).
+    This says a *check* is present: `lint-imports` is a real gate here because
+    this repository configures import contracts, and it is nothing but a red
+    command in a project that does not. Empty means the command belongs to the
+    language itself - a Python project without `pytest` configured still has to
+    answer for `pytest`.
+    """
 
 
 class LanguageGate(BaseModel):
@@ -91,14 +101,16 @@ def _command(
     kind: GateKind,
     language: Language,
     tiers: frozenset[GateTier] | None = None,
+    requires: tuple[str, ...] = (),
 ) -> GateCommand:
-    """Build a gate command, defaulting to both tiers."""
+    """Build a gate command, defaulting to both tiers and to no requirement."""
     return GateCommand(
         name=name,
         argv=argv,
         kind=kind,
         language=language,
         tiers=tiers if tiers is not None else frozenset({GateTier.QUICK, GateTier.FULL}),
+        requires=requires,
     )
 
 
@@ -157,8 +169,20 @@ GATE_MATRIX: dict[Language, LanguageGate] = {
             ),
             _command("ruff", ("ruff", "check", "."), GateKind.LINT, Language.PYTHON),
             _command("mypy", ("mypy", "--strict", "src"), GateKind.LINT, Language.PYTHON),
-            _command("lint-imports", ("lint-imports",), GateKind.LINT, Language.PYTHON),
-            _command("reuse", ("reuse", "lint"), GateKind.LINT, Language.PYTHON),
+            _command(
+                "lint-imports",
+                ("lint-imports",),
+                GateKind.LINT,
+                Language.PYTHON,
+                requires=(".importlinter", "setup.cfg", "pyproject.toml:tool.importlinter"),
+            ),
+            _command(
+                "reuse",
+                ("reuse", "lint"),
+                GateKind.LINT,
+                Language.PYTHON,
+                requires=("REUSE.toml", ".reuse/dep5", "LICENSES"),
+            ),
             _command("pytest", ("pytest",), GateKind.TEST, Language.PYTHON),
             _command(
                 "pytest-integration",
@@ -317,6 +341,7 @@ def plan_gate(
     tier: GateTier,
     languages: Iterable[Language],
     changed_paths: Iterable[str] = (),
+    repo_files: Iterable[str] = (),
 ) -> tuple[GateCommand, ...]:
     """Return the commands to run, in execution order.
 
@@ -325,6 +350,10 @@ def plan_gate(
         languages: the languages detected in the worktree.
         changed_paths: paths touched since the last green commit. In the quick
             tier the documentation build runs only when documentation changed.
+        repo_files: the worktree's files. A command that declares `requires`
+            runs only if one of those files is there; without a listing,
+            nothing is filtered, because an empty listing is not evidence of an
+            empty worktree.
 
     Returns:
         The ordered command list. Yocto never appears in the quick tier.
@@ -340,11 +369,12 @@ def plan_gate(
         if changed and not touched_docs:
             selected.discard(Language.DOCS)
 
+    present = frozenset(repo_files)
     commands = [
         command
         for language in sorted(selected, key=lambda item: item.value)
         for command in GATE_MATRIX[language].commands
-        if tier in command.tiers
+        if tier in command.tiers and _configured(command, present)
     ]
     commands.sort(
         key=lambda command: (
@@ -354,6 +384,49 @@ def plan_gate(
         )
     )
     return tuple(commands)
+
+
+TOOL_TABLE = re.compile(r"^\[\[?tool\.(?P<name>[A-Za-z0-9_-]+)")
+"""A `[tool.x]` or `[[tool.x.y]]` table header in a `pyproject.toml`."""
+
+
+def gate_listing(files: Iterable[str], pyproject: str = "") -> frozenset[str]:
+    """Return the listing :func:`plan_gate` plans against.
+
+    The file names, plus one entry per tool table a `pyproject.toml` declares,
+    spelled `pyproject.toml:tool.<name>`. That is what tells a project which
+    configures `[tool.importlinter]` from one that has merely heard of
+    `pyproject.toml`, without the domain reading a file: the caller does the
+    reading and this does the parsing, which is pure and testable.
+
+    Args:
+        files: worktree-relative paths, as the sandbox lists them.
+        pyproject: the text of `pyproject.toml`, when there is one.
+
+    Returns:
+        The listing, with the declared tables added.
+    """
+    listing = set(files)
+    for line in pyproject.splitlines():
+        match = TOOL_TABLE.match(line.strip())
+        if match is not None:
+            listing.add(f"pyproject.toml:tool.{match['name']}")
+    return frozenset(listing)
+
+
+def _configured(command: GateCommand, present: frozenset[str]) -> bool:
+    """Return whether this project has what `command` checks.
+
+    A requirement is met by an exact path, by a directory the listing has files
+    under (`LICENSES` is met by `LICENSES/GPL-3.0-or-later.txt`), or by a
+    `pyproject.toml:tool.<name>` entry from :func:`gate_listing`.
+    """
+    if not command.requires or not present:
+        return True
+    return any(
+        requirement in present or any(path.startswith(f"{requirement}/") for path in present)
+        for requirement in command.requires
+    )
 
 
 class GateStepResult(BaseModel):

@@ -12,7 +12,7 @@ FROM docker.io/library/debian:trixie-slim AS build
 ARG LLAMA_CPP_REF=master
 
 RUN apt-get update && apt-get install --no-install-recommends -y \
-      build-essential cmake git libcurl4-openssl-dev \
+      build-essential cmake git ca-certificates libcurl4-openssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 --branch "${LLAMA_CPP_REF}" \
