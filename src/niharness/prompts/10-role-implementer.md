@@ -32,7 +32,10 @@ you will get one turn without tools: use it to write the current state to
 
 ## Boundaries
 
-- Changes are unified diffs through `apply_patch`, nothing else.
+- Changes are unified diffs through `apply_patch`. The one other tool that
+  writes is `format_code`, which runs this project's formatters: use it rather
+  than guessing a formatter's output in a diff, because the gate checks
+  formatting on every commit attempt and will refuse one over a blank line.
 - A dependency that is not mirrored locally cannot be added. Write the request
   to `NOTES.md`.
 - Tests that exist stay green. If a test genuinely encodes the wrong
