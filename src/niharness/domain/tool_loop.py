@@ -513,6 +513,14 @@ def _handle_final_answer(
         retrying = state.model_copy(
             update={
                 "invalid_responses": attempts,
+                # Ask again on a turn that cannot call a tool, which is the
+                # turn the artifact's schema is attached to. Retrying with
+                # tools still offered asks for the artifact without
+                # constraining the answer to it, and a model that has just
+                # answered in prose will do it again: observed on a live run,
+                # where a 27B answered, failed to validate, and was asked the
+                # same unconstrained question until the step errored.
+                "pending_tool_choice": ToolChoice.NONE,
                 "pending_instruction": (
                     f"The answer did not validate against the {kind.value} schema: "
                     f"{error}. Answer again, and only with that artifact."

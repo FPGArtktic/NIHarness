@@ -418,3 +418,18 @@ def test_the_token_budget_is_not_spent_by_reading() -> None:
     step = observe_model(current, big_prompt)
     assert step.state.budget.tokens_used == 40
     assert step.state.stop_reason is None, "30k of window is not 30k of work"
+
+
+def test_an_answer_that_does_not_validate_is_asked_again_without_tools() -> None:
+    # The artifact's schema is only attached to a turn that cannot call a tool,
+    # so asking again with tools offered asks for the artifact without
+    # constraining the answer to it. A live 27B answered in prose, failed to
+    # validate, and was asked the same unconstrained question until the step
+    # errored.
+    current = state()
+    step = observe_model(current, answers(content="I have added the function."))
+    assert step.state.stop_reason is None, "one bad answer is not a failed step"
+    action = next_action(step.state)
+    assert isinstance(action, CallModel)
+    assert action.tool_choice is ToolChoice.NONE
+    assert "did not validate" in action.instruction
