@@ -39,6 +39,13 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
       build-essential cmake git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# libcuda.so.1 belongs to the host driver, not to the toolkit, so it is absent
+# at build time and the link fails with a page of undefined `cu*` symbols. The
+# toolkit ships a stub to link against; the real library arrives at runtime
+# through CDI.
+ENV LIBRARY_PATH=/usr/local/cuda/lib64/stubs
+RUN ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1
+
 RUN git clone --depth 1 --branch "${PRISM_REF}" \
       https://github.com/PrismML-Eng/llama.cpp /src
 RUN cmake -S /src -B /build \

@@ -174,6 +174,31 @@ flag on the sandbox adapter:
 - [ ] Forced finalisation two calls before the budget ends.
 - [ ] `nih run`: plan and implement without stopping for approval.
 
+## What four live runs showed, and what is still open
+
+The harness now runs end to end against a real model: plan, worktree, tool
+loop, patches that apply, the gate, the detectors, and a handoff with
+diagnostics. What it has not done yet is reach a **green commit**, and the
+reason is the model rather than the plumbing - a 9B keeps writing a test whose
+body is missing, then re-sends work it has already done until the detectors
+stop the step.
+
+- [ ] A worked diff example in the implementer's prompt. Three runs were lost
+      to diff paperwork, and most of it is now repaired by the tool server -
+      but showing the format once would be cheaper than repairing it. This is a
+      prompt change, so §11 wants an L1-L3 run in the same change, and the
+      bench runner does not exist yet. That ordering is deliberate: a prompt
+      change without a number is how prompts quietly rot.
+- [ ] `nih bench --layer L0`. The numbers in
+      `benchmarks/results/l0-bonsai2-2026-10-22.jsonl` were taken by hand with
+      `llama-bench`; the runner has to produce them, and the record format
+      there is a first draft of what it should write.
+- [ ] A second slot is a waste for this client. Measured: `--parallel 1`
+      raised prompt processing from 4.8 to 15.8 tok/s, because the harness is
+      one conversation per run and four slots split the KV cache four ways.
+      `nih init` should write the server command line it expects, rather than
+      leaving it to be rediscovered.
+
 ## Stage: retrieval
 
 - [ ] `VectorStore` adapter (Qdrant) and the embedding backends.
