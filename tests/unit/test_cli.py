@@ -43,6 +43,44 @@ def test_config_prints_the_merged_configuration(tmp_path: Path) -> None:
     assert parsed["compact"]["threshold"] == 0.75
 
 
+def test_tools_lists_what_each_role_may_call(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["tools", "-C", str(tmp_path), "--json"])
+    assert result.exit_code == 0
+    parsed = json.loads(result.stdout)
+    assert "git_commit" in parsed["builtin"]["implementer"]
+    assert "git_commit" not in parsed["builtin"]["reviewer"], "the reviewer does not commit"
+    assert parsed["servers"] == [], "no project declares one by default"
+
+
+def test_tools_reports_a_declared_server_it_cannot_start(tmp_path: Path) -> None:
+    (tmp_path / "harness.toml").write_text(
+        "[[mcp.servers]]\n"
+        'name = "fpga"\n'
+        'command = "nih-no-such-mcp-server"\n'
+        'tools = ["read_report"]\n'
+        'roles = ["implementer"]\n',
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["tools", "-C", str(tmp_path), "--json"])
+    assert result.exit_code == EX_UNAVAILABLE
+    parsed = json.loads(result.stdout)
+    assert parsed["ok"] is False
+    assert "nih-no-such-mcp-server" in parsed["error"]
+
+
+def test_a_declared_server_must_say_which_roles_get_it(tmp_path: Path) -> None:
+    (tmp_path / "harness.toml").write_text(
+        "[[mcp.servers]]\n"
+        'name = "fpga"\n'
+        'command = "/bin/true"\n'
+        'tools = ["read_report"]\n'
+        "roles = []\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["config", "-C", str(tmp_path)])
+    assert result.exit_code != 0
+
+
 def test_gate_plans_the_quick_tier_for_this_repository() -> None:
     result = runner.invoke(app, ["gate", "--tier", "quick"])
     assert result.exit_code == 0

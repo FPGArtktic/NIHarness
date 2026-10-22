@@ -38,6 +38,13 @@ The sandbox side of that picture is this project's own MCP server
 against the worktree root, and holds the gate, so `git_commit` is an attempt
 rather than a write. See [Sandbox](../operations/sandbox.md).
 
+A project may add MCP servers of its own. Their tools go through the same loop
+and the same validation, addressed as `<server>__<tool>` so nothing they
+advertise can be mistaken for the tools above, and with the schema the server
+advertised standing in for the argument model the harness does not have. The
+rules, and what such a server still cannot do, are in
+[declared MCP servers](../operations/mcp-servers.md).
+
 ## Stop conditions
 
 - a final answer with the Definition of Done checklist filled,

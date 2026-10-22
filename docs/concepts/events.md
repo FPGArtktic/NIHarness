@@ -70,6 +70,23 @@ line with no matching event.
 A submitter may leave the message id empty; the inbox fills it in. That is what
 lets the TUI write a control line with a JSON serialiser and nothing else.
 
+## A run says which tools it could reach
+
+A run that reaches an MCP server the harness did not write records it, once,
+before the first task:
+
+```json
+{"seq":4,"ts":"...","run_id":"8f21c0","body":{"type":"tools.attached",
+ "server":"fpga","tools":["read_timing_report"],"roles":["implementer"]}}
+```
+
+Without that line, a `tool.called` naming `fpga__read_timing_report` would be
+unexplainable on replay: the catalogue is built at connect time and lives
+nowhere in the log otherwise. The event carries the server's name and its
+imported tools, not its command line - a command line is where a token hides,
+and anyone who can read the run can read the log. See
+[declared MCP servers](../operations/mcp-servers.md).
+
 ## Schemas
 
 `nih docs generate` exports the JSON Schema of the envelope, every artifact and

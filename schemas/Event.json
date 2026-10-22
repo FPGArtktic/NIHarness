@@ -1011,6 +1011,43 @@
       "title": "ToolReturned",
       "type": "object"
     },
+    "ToolsAttached": {
+      "additionalProperties": false,
+      "description": "A configured MCP server was reached and the tools named in it imported.\n\nThe server's name, never its command line: a command line is where a token\nhides, and the log is readable by anyone who can read the run. The command\nis in the structured log instead, where it belongs with the rest of the\nwiring.",
+      "properties": {
+        "roles": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Roles",
+          "type": "array"
+        },
+        "server": {
+          "title": "Server",
+          "type": "string"
+        },
+        "tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tools",
+          "type": "array"
+        },
+        "type": {
+          "const": "tools.attached",
+          "default": "tools.attached",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "server",
+        "tools",
+        "roles"
+      ],
+      "title": "ToolsAttached",
+      "type": "object"
+    },
     "VcsCommitted": {
       "additionalProperties": false,
       "description": "The gate passed and a commit landed on the run branch.",
@@ -1115,6 +1152,7 @@
           "tool.called": "#/$defs/ToolCalled",
           "tool.rejected": "#/$defs/ToolRejected",
           "tool.returned": "#/$defs/ToolReturned",
+          "tools.attached": "#/$defs/ToolsAttached",
           "vcs.committed": "#/$defs/VcsCommitted",
           "vcs.rolled_back": "#/$defs/VcsRolledBack"
         },
@@ -1153,6 +1191,9 @@
         },
         {
           "$ref": "#/$defs/ModelReasoning"
+        },
+        {
+          "$ref": "#/$defs/ToolsAttached"
         },
         {
           "$ref": "#/$defs/ToolCalled"

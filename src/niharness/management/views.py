@@ -97,6 +97,8 @@ def _detail(body: ev.EventBody) -> str:  # noqa: C901 - one branch per event typ
             return f"{body.stop_reason.value}, {body.tokens_used} tokens"
         case ev.StepFailed():
             return body.reason
+        case ev.ToolsAttached():
+            return f"{body.server}: {', '.join(body.tools)} for {', '.join(body.roles)}"
         case ev.ToolCalled():
             return body.name
         case ev.ToolReturned():

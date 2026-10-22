@@ -13,12 +13,14 @@ adapter's job, because only it can touch a filesystem.
 
 from __future__ import annotations
 
+import json
 import re
+from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
 from niharness.domain.identity import CallId, Digest, digest_json
 
@@ -26,6 +28,28 @@ RelPath = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1024)
 ]
 """A path, validated for confinement by :func:`confine_path`."""
+
+NAMESPACE = "__"
+"""Separates a configured server's name from the name of the tool it advertises.
+
+No built-in tool contains it, so an external server cannot have the harness
+mistake one of its tools for `git_commit`: whatever a server calls its tool,
+the harness, the model and the event log address it as `<server>__<tool>`.
+"""
+
+TOOL_ID_PATTERN = r"^[a-z][a-z0-9_-]*(?:__[A-Za-z0-9_.-]{1,64})?$"
+"""A built-in tool name, or an external tool's namespaced address."""
+
+ToolId = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=128,
+        pattern=TOOL_ID_PATTERN,
+    ),
+]
+"""How a tool is addressed: a :class:`ToolName` value, or `<server>__<tool>`."""
 
 
 class ToolName(StrEnum):
@@ -59,6 +83,7 @@ class Violation(StrEnum):
     ABSOLUTE_PATH = "absolute_path"
     PATH_ESCAPE = "path_escape"
     DIFF_TOO_LARGE = "diff_too_large"
+    ARGUMENTS_TOO_LARGE = "arguments_too_large"
     COMMIT_MESSAGE = "commit_message"
 
 
@@ -69,6 +94,11 @@ class ToolLimits(BaseModel):
 
     max_diff_bytes: int = Field(default=64_000, ge=1)
     max_result_bytes: int = Field(default=16_000, ge=256)
+    max_argument_bytes: int = Field(
+        default=16_000,
+        ge=256,
+        description="Cap on an external tool's arguments, which the harness cannot model.",
+    )
     max_read_lines: int = Field(default=2_000, ge=1)
     max_grep_matches: int = Field(default=200, ge=1)
     max_commit_subject: int = Field(default=72, ge=20)
@@ -161,6 +191,18 @@ class ShellArgs(ToolArgs):
     timeout_seconds: int = Field(default=60, ge=1)
 
 
+class ExternalArgs(ToolArgs):
+    """Arguments for a tool the harness does not model itself.
+
+    Extras are kept rather than forbidden, because the shape belongs to the
+    server that advertised it. They are checked against that advertised schema
+    by :func:`check_arguments` and capped by `max_argument_bytes`; nothing else
+    is assumed about them.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+
 TOOL_ARGUMENTS: dict[ToolName, type[ToolArgs]] = {
     ToolName.READ_FILE: ReadFileArgs,
     ToolName.LIST_TREE: ListTreeArgs,
@@ -178,6 +220,215 @@ TOOL_ARGUMENTS: dict[ToolName, type[ToolArgs]] = {
 
 PATH_FIELDS: frozenset[str] = frozenset({"path"})
 """Argument names subject to path confinement."""
+
+
+# ------------------------------------------------------- tools from elsewhere
+
+
+class ExternalTool(BaseModel):
+    """A tool the harness forwards from a configured MCP server.
+
+    The harness has no argument model for it: `parameters` is the schema the
+    server advertised, carried as data so the model can be told what the tool
+    takes and so a plainly malformed call can be refused before it is sent. It
+    is a description, not a promise about what the server will do.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    server: Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]{0,31}$")]
+    name: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_.-]{1,64}$")]
+    description: str = ""
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    roles: frozenset[str] = frozenset()
+    """Roles granted this tool, as names - strings, so this module stays below `roles`."""
+
+    @property
+    def id(self) -> str:
+        """Return the namespaced address the model, the log and the router use."""
+        return f"{self.server}{NAMESPACE}{self.name}"
+
+
+class ToolCatalog(BaseModel):
+    """The external tools a run may reach, and which roles may reach them.
+
+    A run with no `[[mcp.servers]]` in `harness.toml` carries
+    :data:`EMPTY_CATALOG`, and then nothing in the harness behaves differently
+    from before this existed.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    external: tuple[ExternalTool, ...] = ()
+
+    def get(self, tool_id: str) -> ExternalTool | None:
+        """Return the external tool addressed by `tool_id`, or None when there is none."""
+        for tool in self.external:
+            if tool.id == tool_id:
+                return tool
+        return None
+
+    def allowlist_for(self, role: str) -> frozenset[ToolId]:
+        """Return the ids of the external tools `role` was granted."""
+        return frozenset(tool.id for tool in self.external if role in tool.roles)
+
+    def servers(self) -> tuple[str, ...]:
+        """Return the server names, in the order they were configured, without repeats."""
+        return tuple(dict.fromkeys(tool.server for tool in self.external))
+
+    def tools_of(self, server: str) -> tuple[str, ...]:
+        """Return the tool names imported from `server`."""
+        return tuple(tool.name for tool in self.external if tool.server == server)
+
+    def roles_of(self, server: str) -> tuple[str, ...]:
+        """Return the roles any of `server`'s tools were granted to, sorted."""
+        granted: set[str] = set()
+        for tool in self.external:
+            if tool.server == server:
+                granted |= tool.roles
+        return tuple(sorted(granted))
+
+
+EMPTY_CATALOG = ToolCatalog()
+"""No external servers, which is what a project gets until it configures one."""
+
+
+def is_external(name: str) -> bool:
+    """Return whether `name` addresses a tool outside the harness's own set."""
+    return NAMESPACE in name
+
+
+# --------------------------------------------- the schema subset we can check
+
+JSON_TYPES: dict[str, type | tuple[type, ...]] = {
+    "object": dict,
+    "array": list,
+    "string": str,
+    "integer": int,
+    "number": (int, float),
+    "boolean": bool,
+    "null": type(None),
+}
+"""The JSON Schema types :func:`check_arguments` understands."""
+
+
+class SchemaMismatchError(ValueError):
+    """An argument contradicted the schema the server advertised for its tool."""
+
+
+def check_arguments(
+    schema: Mapping[str, JsonValue],
+    value: JsonValue,
+    path: str = "arguments",
+) -> None:
+    """Check `value` against the part of JSON Schema the harness honours.
+
+    Honoured: `type`, `enum`, `required`, `properties`, `additionalProperties`
+    when it is `false`, and `items`. Formats, numeric bounds and the combinators
+    are left to the server, which is the only side that knows what its tool
+    means. This is not a validator and does not pretend to be one: its job is
+    to turn an obviously malformed call into a rejection the model can read,
+    instead of a transport error it cannot.
+
+    Args:
+        schema: the advertised schema, or a sub-schema during recursion.
+        value: the arguments, or a nested value during recursion.
+        path: where in the arguments this value sits, for the message.
+
+    Raises:
+        SchemaMismatchError: when the value contradicts the schema.
+    """
+    _check_type(schema, value, path)
+    _check_enum(schema, value, path)
+    if isinstance(value, dict):
+        _check_object(schema, value, path)
+        return
+    if isinstance(value, list):
+        items = schema.get("items")
+        if isinstance(items, Mapping):
+            for index, element in enumerate(value):
+                check_arguments(items, element, f"{path}[{index}]")
+
+
+def _declared_types(schema: Mapping[str, JsonValue]) -> list[str]:
+    """Return the schema's `type` as a list of names the harness knows."""
+    declared = schema.get("type")
+    if isinstance(declared, str):
+        names: list[JsonValue] = [declared]
+    elif isinstance(declared, list):
+        names = declared
+    else:
+        return []
+    return [name for name in names if isinstance(name, str) and name in JSON_TYPES]
+
+
+def _is_type(name: str, value: JsonValue) -> bool:
+    """Return whether `value` is of the JSON type `name`."""
+    if isinstance(value, bool) and name in {"integer", "number"}:
+        # True is an int in Python; in JSON it is not a number.
+        return False
+    return isinstance(value, JSON_TYPES[name])
+
+
+def _type_of(value: JsonValue) -> str:
+    """Return the JSON type name of `value`, for a message a model can act on."""
+    for name in ("boolean", "null", "string", "integer", "number", "array", "object"):
+        if _is_type(name, value):
+            return name
+    return type(value).__name__  # pragma: no cover - JSON has no other types
+
+
+def _check_type(schema: Mapping[str, JsonValue], value: JsonValue, path: str) -> None:
+    """Raise unless `value` has one of the types the schema declares.
+
+    Raises:
+        SchemaMismatchError: when it has none of them.
+    """
+    declared = _declared_types(schema)
+    if not declared or any(_is_type(name, value) for name in declared):
+        return
+    wanted = " or ".join(declared)
+    raise SchemaMismatchError(f"{path} is {_type_of(value)}, the schema says {wanted}")
+
+
+def _check_enum(schema: Mapping[str, JsonValue], value: JsonValue, path: str) -> None:
+    """Raise unless `value` is one of the schema's permitted values.
+
+    Raises:
+        SchemaMismatchError: when the enumeration does not contain it.
+    """
+    permitted = schema.get("enum")
+    if not isinstance(permitted, list) or value in permitted:
+        return
+    options = ", ".join(repr(option) for option in permitted)
+    raise SchemaMismatchError(f"{path}={value!r} is not one of {options}")
+
+
+def _check_object(
+    schema: Mapping[str, JsonValue],
+    value: Mapping[str, JsonValue],
+    path: str,
+) -> None:
+    """Raise unless `value` has the required keys, no refused ones, and valid members.
+
+    Raises:
+        SchemaMismatchError: on a missing key, an unexpected key, or a member
+            that contradicts its own sub-schema.
+    """
+    declared = schema.get("properties")
+    properties: Mapping[str, JsonValue] = declared if isinstance(declared, Mapping) else {}
+    required = schema.get("required")
+    if isinstance(required, list):
+        missing = sorted(key for key in required if isinstance(key, str) and key not in value)
+        if missing:
+            raise SchemaMismatchError(f"{path} is missing {', '.join(missing)}")
+    if schema.get("additionalProperties") is False:
+        unexpected = sorted(set(value) - set(properties))
+        if unexpected:
+            raise SchemaMismatchError(f"{path} does not take {', '.join(unexpected)}")
+    for key, member in properties.items():
+        if key in value and isinstance(member, Mapping):
+            check_arguments(member, value[key], f"{path}.{key}")
 
 
 # ----------------------------------------------------------------- call and result
@@ -207,7 +458,7 @@ class AcceptedCall(BaseModel):
         description="Discriminator, so callers narrow the union without isinstance.",
     )
     call_id: CallId
-    tool: ToolName
+    tool: ToolId
     args: ToolArgs
 
 
@@ -236,7 +487,7 @@ class ToolResult(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     call_id: CallId
-    tool: ToolName
+    tool: ToolId
     ok: bool
     content: str
     truncated: bool = False
@@ -326,8 +577,9 @@ def validate_commit_message(message: str, limits: ToolLimits) -> str:
 
 def validate_call(
     call: ToolCall,
-    allowlist: frozenset[ToolName],
+    allowlist: frozenset[ToolId],
     limits: ToolLimits,
+    catalog: ToolCatalog = EMPTY_CATALOG,
 ) -> Validation:
     """Validate one proposed tool call.
 
@@ -339,10 +591,13 @@ def validate_call(
         call: the call as proposed by the model.
         allowlist: the tools this step's role may use.
         limits: caps in force for this step.
+        catalog: the external tools this run reached, if any.
 
     Returns:
         An :class:`AcceptedCall` with parsed arguments, or a :class:`RejectedCall`.
     """
+    if is_external(call.name):
+        return _validate_external(call, allowlist, limits, catalog)
     try:
         tool = ToolName(call.name)
     except ValueError:
@@ -350,7 +605,7 @@ def validate_call(
             call_id=call.call_id,
             name=call.name,
             violation=Violation.UNKNOWN_TOOL,
-            detail=f"no such tool; available: {', '.join(sorted(t.value for t in allowlist))}",
+            detail=f"no such tool; available: {_offered(allowlist)}",
         )
 
     if tool not in allowlist:
@@ -407,6 +662,75 @@ def validate_call(
             )
 
     return AcceptedCall(call_id=call.call_id, tool=tool, args=args)
+
+
+def _offered(allowlist: frozenset[ToolId]) -> str:
+    """Return the allowed tools as a list the model can read back."""
+    return ", ".join(sorted(str(tool) for tool in allowlist))
+
+
+def _validate_external(
+    call: ToolCall,
+    allowlist: frozenset[ToolId],
+    limits: ToolLimits,
+    catalog: ToolCatalog,
+) -> Validation:
+    """Validate a call to a tool a configured MCP server advertised.
+
+    There is no path confinement here, and that is deliberate: the harness
+    cannot confine arguments whose meaning it does not know. What bounds an
+    external tool is everything upstream of this function - a human named the
+    server in `harness.toml`, named the tools to import, and named the roles
+    that may use them. Nothing else on that server is reachable, and the gate
+    is still the only way a change becomes a commit.
+
+    Args:
+        call: the call as proposed by the model.
+        allowlist: the tools this step's role may use.
+        limits: caps in force for this step.
+        catalog: the external tools this run reached.
+
+    Returns:
+        An :class:`AcceptedCall` carrying the arguments as advertised, or a
+        :class:`RejectedCall`.
+    """
+    tool = catalog.get(call.name)
+    if tool is None:
+        return RejectedCall(
+            call_id=call.call_id,
+            name=call.name,
+            violation=Violation.UNKNOWN_TOOL,
+            detail=f"no such tool; available: {_offered(allowlist)}",
+        )
+    if tool.id not in allowlist:
+        return RejectedCall(
+            call_id=call.call_id,
+            name=call.name,
+            violation=Violation.NOT_ALLOWED,
+            detail=f"{tool.id} is not in this role's allowlist",
+        )
+    size = len(json.dumps(call.arguments, sort_keys=True, default=str).encode("utf-8"))
+    if size > limits.max_argument_bytes:
+        return RejectedCall(
+            call_id=call.call_id,
+            name=call.name,
+            violation=Violation.ARGUMENTS_TOO_LARGE,
+            detail=f"arguments are {size} bytes, limit is {limits.max_argument_bytes}",
+        )
+    try:
+        check_arguments(tool.parameters, call.arguments)
+    except SchemaMismatchError as error:
+        return RejectedCall(
+            call_id=call.call_id,
+            name=call.name,
+            violation=Violation.INVALID_ARGUMENTS,
+            detail=str(error),
+        )
+    return AcceptedCall(
+        call_id=call.call_id,
+        tool=tool.id,
+        args=ExternalArgs.model_validate(call.arguments),
+    )
 
 
 def truncate_result(content: str, limits: ToolLimits) -> tuple[str, bool]:

@@ -53,13 +53,18 @@ suggestion. See [Architecture](concepts/architecture.md) and
   holding the gate. The harness talks to it through the MCP adapter, and the two
   are tested end to end in one process.
 - CLI commands that need no model: `nih init`, `nih config`, `nih gate`,
-  `nih status`, `nih plan check`, `nih plan import` (for conforming plans), and
-  `nih docs generate`.
+  `nih status`, `nih tools`, `nih plan check`, `nih plan import` (for
+  conforming plans), and `nih docs generate`.
 - `nih implement`: with a model served and the sandbox image built, it executes
   an approved plan task by task, each commit going through the gate.
-- The control plane: `nih runs`, `nih cancel`, `--detach`, `--json`, and
-  `nih mcp` - the management surface an agent drives, which cannot touch the
-  code. See [Managing from an agent](operations/managing-from-claude.md).
+- The control plane: `nih runs`, `nih cancel`, `nih resume`, `--detach`,
+  `--json`, and `nih mcp` - the management surface an agent drives, which
+  cannot touch the code. See
+  [Managing from an agent](operations/managing-from-claude.md).
+- Declared MCP servers: a project can name MCP servers of its own, import their
+  tools and grant them to roles. They arrive namespaced, go through the same
+  validation, and cannot commit. See
+  [declared MCP servers](operations/mcp-servers.md).
 
 ## What does not work yet
 

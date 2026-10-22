@@ -125,6 +125,7 @@ nav:
       - operations/profiles.md
       - operations/models.md
       - operations/sandbox.md
+      - operations/mcp-servers.md
       - operations/managing-from-claude.md
   - Benchmarks:
       - benchmarks/methodology.md
@@ -149,3 +150,4 @@ nav:
       - adr/0016-the-management-surface.md
       - adr/0017-the-tui-follows-the-event-log.md
       - adr/0018-a-run-records-its-conclusions.md
+      - adr/0019-declared-mcp-servers.md

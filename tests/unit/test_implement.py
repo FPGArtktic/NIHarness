@@ -48,7 +48,14 @@ from niharness.domain.messages import (
 )
 from niharness.domain.pipeline import Stage
 from niharness.domain.state import RunSnapshot
-from niharness.domain.tools import AcceptedCall, ToolName, ToolResult
+from niharness.domain.tools import (
+    AcceptedCall,
+    ExternalTool,
+    ToolCatalog,
+    ToolId,
+    ToolName,
+    ToolResult,
+)
 from niharness.management.runs import RunRegistry, new_run_id
 from niharness.ports.model_backend import BackendInfo
 from niharness.ports.vcs import Worktree
@@ -144,8 +151,10 @@ class FakeBackend:
 class FakeTools:
     def __init__(self) -> None:
         self.calls: list[AcceptedCall] = []
+        self.offered: list[frozenset[ToolId]] = []
 
-    async def descriptors(self, allowlist: frozenset[ToolName]) -> tuple[ToolSchema, ...]:
+    async def descriptors(self, allowlist: frozenset[ToolId]) -> tuple[ToolSchema, ...]:
+        self.offered.append(allowlist)
         return (ToolSchema(name="git_commit", description="the gate", parameters={}),)
 
     async def call(self, accepted: AcceptedCall) -> ToolResult:
@@ -217,7 +226,7 @@ class CommittingTools(FakeTools):
 
     async def call(self, accepted: AcceptedCall) -> ToolResult:
         result = await super().call(accepted)
-        if accepted.tool is ToolName.GIT_COMMIT:
+        if accepted.tool == ToolName.GIT_COMMIT:
             self._vcs.commit_lands()
         return result
 
@@ -229,6 +238,7 @@ def build(
     vcs: FakeVcs | None = None,
     *,
     max_revisions: int = 3,
+    catalog: ToolCatalog | None = None,
 ) -> ImplementationRun:
     version_control = vcs or FakeVcs()
     return ImplementationRun(
@@ -239,6 +249,7 @@ def build(
         policy=CompactionPolicy(),
         vcs=version_control,  # type: ignore[arg-type]
         worktree=Worktree(path="/work", branch="harness/run-x", base_sha="0" * 40),
+        catalog=catalog,
         max_revisions=max_revisions,
     )
 
@@ -250,6 +261,41 @@ def kinds(sink: FakeSink) -> list[str]:
 def task_run(*, ack: bool = True) -> list[ChatResponse]:
     """One task's worth of responses: commit, report done, then the review."""
     return [proposes_commit(), answer(), verdict(ack=ack)]
+
+
+async def test_a_declared_server_is_logged_and_granted_to_the_named_roles() -> None:
+    catalog = ToolCatalog(
+        external=(
+            ExternalTool(
+                server="fpga",
+                name="read_report",
+                parameters={"type": "object"},
+                roles=frozenset({"implementer"}),
+            ),
+        ),
+    )
+    vcs = FakeVcs()
+    backend = FakeBackend(*task_run(), *task_run())
+    tools, sink = CommittingTools(vcs), FakeSink()
+    await build(backend, tools, sink, vcs, catalog=catalog).run(
+        plan(),
+        RunId("20261014-120000-abc123"),
+        branch="harness/run-x",
+        profile="cpu-only",
+    )
+
+    attached = [body for body in sink.bodies if isinstance(body, ev.ToolsAttached)]
+    assert len(attached) == 1, "once per run, not once per step"
+    assert attached[0].server == "fpga"
+    assert attached[0].tools == ("read_report",)
+    assert attached[0].roles == ("implementer",)
+
+    # The implementer was granted it; the reviewer was not, and the gate is in
+    # neither list, because the gate is the sandbox's.
+    implementer, reviewer = tools.offered[0], tools.offered[1]
+    assert "fpga__read_report" in implementer
+    assert "fpga__read_report" not in reviewer
+    assert ToolName.GIT_COMMIT in implementer
 
 
 async def test_a_task_goes_implement_commit_review() -> None:

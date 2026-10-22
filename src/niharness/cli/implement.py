@@ -23,7 +23,7 @@ from pydantic import ValidationError
 from niharness.adapters.git import GitError, GitVcs
 from niharness.adapters.jsonl_control import JsonlControlChannel
 from niharness.adapters.jsonl_events import JsonlEventSink
-from niharness.adapters.mcp import connect_stdio
+from niharness.adapters.mcp import ExternalToolsError, connect_tools
 from niharness.adapters.openai_compat import AirGapViolationError, OpenAiCompatBackend
 from niharness.adapters.podman import (
     PodmanSandbox,
@@ -32,7 +32,9 @@ from niharness.adapters.podman import (
 )
 from niharness.application import ImplementationRun, RunResult, StepRunner
 from niharness.application.summarizer import ModelSummarizer
+from niharness.cli.blocking import blocking
 from niharness.cli.output import emit, fail
+from niharness.cli.tools import external_servers
 from niharness.config import HarnessConfig, ModelConfig
 from niharness.domain.artifacts import Plan
 from niharness.domain.identity import Digest, RunId
@@ -168,6 +170,9 @@ async def execute(
         typer.echo(f"  worktree: {worktree.path} ({worktree.branch})")
         typer.echo(f"  model: {config.models.main.name} at {config.models.main.base_url}")
         typer.echo(f"  tools: {mode}")
+        for server in config.mcp.servers:
+            granted = ", ".join(role.value for role in server.roles)
+            typer.echo(f"  mcp: {server.name} -> {', '.join(server.tools)} ({granted})")
         remaining = len(plan.tasks) - len(resume.done) if resume else len(plan.tasks)
         typer.echo(f"  tasks: {remaining} of {len(plan.tasks)}")
 
@@ -175,8 +180,9 @@ async def execute(
         stack.push_async_callback(main.aclose)
         stack.push_async_callback(utility.aclose)
         tools = await stack.enter_async_context(
-            connect_stdio(
+            connect_tools(
                 server_parameters(config, worktree, local=local_tools),
+                external_servers(config),
                 limits=config.tools,
             ),
         )
@@ -199,6 +205,7 @@ async def execute(
             vcs=vcs,
             worktree=worktree,
             control=control,
+            catalog=tools.catalog,
             max_revisions=config.max_revisions,
         )
         with pid_file(config.runs_dir, run_id):
@@ -280,6 +287,15 @@ def implement(
             ),
         )
         return
+    if config.mcp.servers:
+        typer.secho(
+            f"{len(config.mcp.servers)} declared MCP server(s) will be started as "
+            "configured: their tools run wherever their command runs, which is outside "
+            "the sandbox unless the command is a container. The gate is unaffected - "
+            "they cannot commit.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
     if local_tools:
         typer.secho(
             "running tools on this host, outside the sandbox: they can reach the "
@@ -289,7 +305,7 @@ def implement(
             err=True,
         )
     try:
-        result = asyncio.run(
+        result = blocking(
             execute(
                 config,
                 plan,
@@ -301,6 +317,9 @@ def implement(
     except AirGapViolationError as error:
         fail(str(error), json_mode=json_mode)
         raise typer.Exit(1) from error
+    except ExternalToolsError as error:
+        fail(str(error), json_mode=json_mode, code=EX_UNAVAILABLE)
+        raise typer.Exit(EX_UNAVAILABLE) from error
     except httpx.HTTPError as error:
         fail(
             f"the model backend at {config.models.main.base_url} did not answer: {error}",
@@ -353,9 +372,12 @@ def resume(config: HarnessConfig, run_id: str, *, local_tools: bool, json_mode: 
             f"skipping {len(point.done)} finished task(s)",
         )
     try:
-        result = asyncio.run(
+        result = blocking(
             execute(config, plan, local_tools=local_tools, quiet=json_mode, resume=point),
         )
+    except ExternalToolsError as error:
+        fail(str(error), json_mode=json_mode, code=EX_UNAVAILABLE)
+        raise typer.Exit(EX_UNAVAILABLE) from error
     except httpx.HTTPError as error:
         fail(
             f"the model backend at {config.models.main.base_url} did not answer: {error}",

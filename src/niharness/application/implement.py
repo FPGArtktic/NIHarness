@@ -32,7 +32,7 @@ from niharness.domain.messages import ResponseFormat
 from niharness.domain.pipeline import DEFAULT_MAX_REVISIONS, Outcome, Stage, advance, step_for
 from niharness.domain.roles import DEFAULT_ROLES, Role
 from niharness.domain.tool_loop import ArtifactKind, LoopConfig
-from niharness.domain.tools import ToolLimits
+from niharness.domain.tools import EMPTY_CATALOG, ToolCatalog, ToolLimits
 from niharness.ports.control_channel import ControlChannel
 from niharness.ports.event_sink import EventSink
 from niharness.ports.tokenizer import Tokenizer
@@ -159,6 +159,7 @@ class ImplementationRun:
         worktree: Worktree,
         summarizer: Summarizer | None = None,
         control: ControlChannel | None = None,
+        catalog: ToolCatalog | None = None,
         max_revisions: int = DEFAULT_MAX_REVISIONS,
     ) -> None:
         """Wire what a run needs beyond the step executor.
@@ -177,6 +178,9 @@ class ImplementationRun:
             worktree: the run's worktree.
             control: the inbox other drivers submit to - a cancel from the TUI
                 and a cancel from an agent arrive the same way.
+            catalog: the external MCP tools this run reached, and the roles
+                they were granted to; empty unless the project declared a
+                server.
             max_revisions: how many fix rounds a task gets before it goes back
                 to the human.
         """
@@ -191,6 +195,7 @@ class ImplementationRun:
         self._vcs = vcs
         self._worktree = worktree
         self._control = control
+        self._catalog = catalog or EMPTY_CATALOG
         self._max_revisions = max_revisions
         self._cancelled: str | None = None
 
@@ -237,6 +242,14 @@ class ImplementationRun:
             ),
         )
         await self._events.append(ev.PlanApproved(plan_digest=plan.digest()))
+        for server in self._catalog.servers():
+            await self._events.append(
+                ev.ToolsAttached(
+                    server=server,
+                    tools=self._catalog.tools_of(server),
+                    roles=self._catalog.roles_of(server),
+                ),
+            )
 
         finished = set(done)
         results: list[TaskResult] = []
@@ -440,7 +453,8 @@ class ImplementationRun:
             stage=stage.value,
             role=role,
             model=self._model,
-            allowlist=spec.allowlist,
+            allowlist=spec.allowlist | self._catalog.allowlist_for(role.value),
+            catalog=self._catalog,
             budgets=definition.budgets,
             thresholds=self._thresholds,
             limits=self._limits,

@@ -109,7 +109,7 @@ def test_a_valid_call_is_dispatched_and_recorded() -> None:
     assert kinds(step.events) == ["ModelResponse", "ToolCalled"]
     action = next_action(step.state)
     assert isinstance(action, ExecuteTool)
-    assert action.call.tool is ToolName.READ_FILE
+    assert action.call.tool == ToolName.READ_FILE
 
 
 def test_a_refused_call_never_becomes_an_action() -> None:

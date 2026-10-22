@@ -45,9 +45,13 @@ nothing, because you are not the one doing them.
 
 ## Commands that need no agent
 
-`nih runs`, `nih status <id>`, `nih cancel <id>`, `nih gate --tier quick`,
-`nih-tui --run .nih/runs/<id>`. Everything you can do, a person can do without
-you; the surface is one implementation.
+`nih runs`, `nih status <id>`, `nih cancel <id>`, `nih resume <id>`,
+`nih gate --tier quick`, `nih tools`, `nih-tui --run .nih/runs/<id>`. Everything
+you can do, a person can do without you; the surface is one implementation.
+
+If a task needs a tool the sandbox does not have, the answer is a declared MCP
+server in `harness.toml` (`docs/operations/mcp-servers.md`), not a shell: ask
+for one rather than working around its absence.
 
 Details: `docs/operations/managing-from-claude.md`, and `docs/orientation.md`
 before changing the harness itself.

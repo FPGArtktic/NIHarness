@@ -16,15 +16,16 @@ from __future__ import annotations
 import tomllib
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 import platformdirs
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from niharness.domain.context import CompactionPolicy
 from niharness.domain.loop import LoopThresholds
 from niharness.domain.pipeline import DEFAULT_MAX_REVISIONS
+from niharness.domain.roles import Role
 from niharness.domain.tools import ToolLimits
 
 PROJECT_FILE = "harness.toml"
@@ -87,6 +88,44 @@ class SandboxConfig(BaseModel):
     full_timeout_seconds: int = Field(default=10_800, ge=1)
 
 
+class McpServerConfig(BaseModel):
+    """One MCP server this project declares, beyond the harness's own.
+
+    Nothing about it is discovered. A server exists because it is written here;
+    it contributes only the tools named in `tools`, and only to the roles named
+    in `roles`. Both are required, because an entry that grants nothing is a
+    mistake worth hearing about at load time.
+
+    `command` decides where the server runs. A host binary runs on the host,
+    with whatever this user can reach; `podman run --network=none ...` runs it
+    in a container. The harness reports which it started, and `nih tools` shows
+    what came back - see `docs/operations/mcp-servers.md`.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]{0,31}$")]
+    """The namespace its tools appear under: `<name>__<tool>`."""
+
+    command: str = Field(min_length=1)
+    args: tuple[str, ...] = ()
+    env: dict[str, str] = Field(
+        default_factory=dict,
+        description="The server's environment, written out; nothing is inherited implicitly.",
+    )
+    tools: tuple[str, ...] = Field(min_length=1, description="The tools to import, by name.")
+    roles: tuple[Role, ...] = Field(min_length=1, description="The roles granted them.")
+    timeout_seconds: float = Field(default=120.0, gt=0)
+
+
+class McpConfig(BaseModel):
+    """The declared MCP servers. Empty by default: the sandbox is enough."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    servers: tuple[McpServerConfig, ...] = ()
+
+
 class VectorConfig(BaseModel):
     """Where the vector store lives and how collections are named."""
 
@@ -125,6 +164,7 @@ class HarnessConfig(BaseSettings):
     max_revisions: int = Field(default=DEFAULT_MAX_REVISIONS, ge=0)
     models: ModelsConfig = ModelsConfig()
     sandbox: SandboxConfig = SandboxConfig()
+    mcp: McpConfig = McpConfig()
     vector: VectorConfig = VectorConfig()
     gate: GateConfig = GateConfig()
     loop: LoopThresholds = LoopThresholds()

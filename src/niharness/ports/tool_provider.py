@@ -12,14 +12,14 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from niharness.domain.messages import ToolSchema
-from niharness.domain.tools import AcceptedCall, ToolName, ToolResult
+from niharness.domain.tools import AcceptedCall, ToolId, ToolResult
 
 
 @runtime_checkable
 class ToolProvider(Protocol):
     """Advertises tool schemas and executes validated calls."""
 
-    async def descriptors(self, allowlist: frozenset[ToolName]) -> tuple[ToolSchema, ...]:
+    async def descriptors(self, allowlist: frozenset[ToolId]) -> tuple[ToolSchema, ...]:
         """Return the schemas of the allowed tools, for the model's tool list."""
         ...
 

@@ -182,6 +182,21 @@ class ModelReasoning(Payload):
 # -------------------------------------------------------------------- tool scope
 
 
+class ToolsAttached(Payload):
+    """A configured MCP server was reached and the tools named in it imported.
+
+    The server's name, never its command line: a command line is where a token
+    hides, and the log is readable by anyone who can read the run. The command
+    is in the structured log instead, where it belongs with the rest of the
+    wiring.
+    """
+
+    type: Literal["tools.attached"] = "tools.attached"
+    server: str
+    tools: tuple[str, ...]
+    roles: tuple[str, ...]
+
+
 class ToolCalled(Payload):
     """A validated tool call was dispatched to the sandbox."""
 
@@ -376,6 +391,7 @@ EventBody = Annotated[
     | ModelRequest
     | ModelResponse
     | ModelReasoning
+    | ToolsAttached
     | ToolCalled
     | ToolReturned
     | ToolRejected

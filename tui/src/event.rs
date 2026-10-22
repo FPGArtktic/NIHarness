@@ -41,6 +41,12 @@ pub struct Body {
     /// Tool name, on `tool.called` and `tool.rejected`.
     #[serde(default)]
     pub name: Option<String>,
+    /// The MCP server a run attached, on `tools.attached`.
+    #[serde(default)]
+    pub server: Option<String>,
+    /// The tools imported from it, on `tools.attached`.
+    #[serde(default)]
+    pub tools: Option<Vec<String>>,
     /// Reasoning text, on `model.reasoning`.
     #[serde(default)]
     pub text: Option<String>,

@@ -30,6 +30,7 @@ from mcp.shared.exceptions import MCPError
 from niharness.domain.messages import ToolSchema
 from niharness.domain.tools import (
     AcceptedCall,
+    ToolId,
     ToolLimits,
     ToolName,
     ToolResult,
@@ -54,6 +55,62 @@ SUMMARY_LENGTH = 96
 _log = structlog.get_logger(__name__)
 
 
+def envelope_of(raw: types.CallToolResult) -> tuple[bool, str] | None:
+    """Return this project's `(ok, text)` envelope, or None for a foreign server."""
+    structured = raw.structured_content
+    if not isinstance(structured, dict) or not set(structured) >= ENVELOPE_KEYS:
+        return None
+    ok, text = structured["ok"], structured["text"]
+    if isinstance(ok, bool) and isinstance(text, str):
+        return ok, text
+    return None
+
+
+def render_content(raw: types.CallToolResult) -> str:
+    """Flatten a result's content blocks into text the window can carry."""
+    parts: list[str] = []
+    for block in raw.content:
+        if isinstance(block, types.TextContent):
+            parts.append(block.text)
+        else:
+            parts.append(f"[{type(block).__name__} omitted: the window carries text]")
+    if not parts and raw.structured_content is not None:
+        return json.dumps(raw.structured_content, indent=2, sort_keys=True)
+    return "\n".join(parts)
+
+
+def result_summary(accepted: AcceptedCall, text: str, arguments: dict[str, Any]) -> str:
+    """Return the one-line digest the window keeps once the body is compacted."""
+    target = ""
+    for field in TARGET_FIELDS:
+        value = arguments.get(field)
+        if isinstance(value, str) and value:
+            target = value
+            break
+    where = f" {target}" if target else ""
+    lines = text.count("\n") + 1 if text else 0
+    head = text.strip().splitlines()[0][:SUMMARY_LENGTH] if text.strip() else ""
+    detail = f": {lines} lines" if lines > 1 else (f": {head}" if head else "")
+    return f"{accepted.tool}{where}{detail}"
+
+
+def transport_failure(accepted: AcceptedCall, error: object) -> ToolResult:
+    """Return the red result a failed transport becomes.
+
+    A tool server that breaks mid-step is a failed tool call, not a failed run:
+    the model is told plainly, the detectors see a red result, and the step ends
+    the way any other dead end ends.
+    """
+    _log.warning("tool.transport_error", tool=accepted.tool, error=str(error))
+    return ToolResult(
+        call_id=accepted.call_id,
+        tool=accepted.tool,
+        ok=False,
+        content=f"the tool server failed to run {accepted.tool}: {error}",
+        summary=f"{accepted.tool}: transport error",
+    )
+
+
 class McpToolProvider:
     """A :class:`niharness.ports.tool_provider.ToolProvider` over an MCP session."""
 
@@ -75,7 +132,7 @@ class McpToolProvider:
         self._limits = limits or ToolLimits()
         self._timeout = timeout_seconds
 
-    async def descriptors(self, allowlist: frozenset[ToolName]) -> tuple[ToolSchema, ...]:
+    async def descriptors(self, allowlist: frozenset[ToolId]) -> tuple[ToolSchema, ...]:
         """Return the schemas of the allowed tools the server actually offers.
 
         A tool the harness does not know, or that this role may not use, is not
@@ -110,21 +167,14 @@ class McpToolProvider:
         arguments: dict[str, Any] = accepted.args.model_dump(mode="json")
         try:
             raw = await self._session.call_tool(
-                accepted.tool.value,
+                accepted.tool,
                 arguments,
                 read_timeout_seconds=self._timeout,
             )
         except MCPError as error:
-            _log.warning("tool.transport_error", tool=accepted.tool.value, error=str(error))
-            return ToolResult(
-                call_id=accepted.call_id,
-                tool=accepted.tool,
-                ok=False,
-                content=f"the tool server failed to run {accepted.tool.value}: {error}",
-                summary=f"{accepted.tool.value}: transport error",
-            )
-        envelope = self._envelope(raw)
-        ok, text = envelope if envelope is not None else (not raw.is_error, self._render(raw))
+            return transport_failure(accepted, error)
+        envelope = envelope_of(raw)
+        ok, text = envelope if envelope is not None else (not raw.is_error, render_content(raw))
         content, truncated = truncate_result(text, self._limits)
         return ToolResult(
             call_id=accepted.call_id,
@@ -132,47 +182,8 @@ class McpToolProvider:
             ok=ok,
             content=content,
             truncated=truncated,
-            summary=self._summary(accepted, text, arguments),
+            summary=result_summary(accepted, text, arguments),
         )
-
-    @staticmethod
-    def _envelope(raw: types.CallToolResult) -> tuple[bool, str] | None:
-        """Return this project's `(ok, text)` envelope, or None for a foreign server."""
-        structured = raw.structured_content
-        if not isinstance(structured, dict) or not set(structured) >= ENVELOPE_KEYS:
-            return None
-        ok, text = structured["ok"], structured["text"]
-        if isinstance(ok, bool) and isinstance(text, str):
-            return ok, text
-        return None
-
-    @staticmethod
-    def _render(raw: types.CallToolResult) -> str:
-        """Flatten a result's content blocks into text the window can carry."""
-        parts: list[str] = []
-        for block in raw.content:
-            if isinstance(block, types.TextContent):
-                parts.append(block.text)
-            else:
-                parts.append(f"[{type(block).__name__} omitted: the window carries text]")
-        if not parts and raw.structured_content is not None:
-            return json.dumps(raw.structured_content, indent=2, sort_keys=True)
-        return "\n".join(parts)
-
-    @staticmethod
-    def _summary(accepted: AcceptedCall, text: str, arguments: dict[str, Any]) -> str:
-        """Return the one-line digest the window keeps once the body is compacted."""
-        target = ""
-        for field in TARGET_FIELDS:
-            value = arguments.get(field)
-            if isinstance(value, str) and value:
-                target = value
-                break
-        where = f" {target}" if target else ""
-        lines = text.count("\n") + 1 if text else 0
-        head = text.strip().splitlines()[0][:SUMMARY_LENGTH] if text.strip() else ""
-        detail = f": {lines} lines" if lines > 1 else (f": {head}" if head else "")
-        return f"{accepted.tool.value}{where}{detail}"
 
 
 @asynccontextmanager

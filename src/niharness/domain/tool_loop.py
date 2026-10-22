@@ -43,11 +43,13 @@ from niharness.domain.loop import (
 from niharness.domain.messages import ChatResponse, ResponseFormat, ToolChoice
 from niharness.domain.roles import Role
 from niharness.domain.tools import (
+    EMPTY_CATALOG,
     AcceptedCall,
     RejectedCall,
     ToolCall,
+    ToolCatalog,
+    ToolId,
     ToolLimits,
-    ToolName,
     ToolResult,
     validate_call,
 )
@@ -88,7 +90,9 @@ class LoopConfig(BaseModel):
     stage: str
     role: Role
     model: str
-    allowlist: frozenset[ToolName]
+    allowlist: frozenset[ToolId]
+    catalog: ToolCatalog = EMPTY_CATALOG
+    """External tools this step may reach; empty unless a server is configured."""
     budgets: Budgets = Budgets()
     thresholds: LoopThresholds = LoopThresholds()
     limits: ToolLimits = ToolLimits()
@@ -406,7 +410,12 @@ def _handle_tool_call(
         name=proposal.name,
         arguments=_decode_arguments(proposal.arguments_json),
     )
-    validated = validate_call(call, state.config.allowlist, state.config.limits)
+    validated = validate_call(
+        call,
+        state.config.allowlist,
+        state.config.limits,
+        state.config.catalog,
+    )
     if isinstance(validated, RejectedCall):
         return _handle_rejection(state, call, validated)
 
@@ -414,10 +423,10 @@ def _handle_tool_call(
     # only in which defaults they spell out are the same call, and the repeat
     # detector has to see them that way.
     digest = _arguments_digest_of(validated)
-    key = f"{validated.tool.value}:{digest}"
+    key = f"{validated.tool}:{digest}"
     previous = state.results_by_arguments.get(key)
     if previous is not None:
-        text = synthetic_result(validated.tool.value, previous)
+        text = synthetic_result(validated.tool, previous)
         repeated = state.model_copy(
             update={"synthetic_for": call.call_id, "synthetic_text": text},
         )
@@ -425,7 +434,7 @@ def _handle_tool_call(
             repeated,
             CallRecord(
                 seq=repeated.next_seq,
-                tool=validated.tool.value,
+                tool=validated.tool,
                 arguments_digest=digest,
                 result_digest=Digest(previous),
             ),
@@ -442,7 +451,7 @@ def _handle_tool_call(
     accepted = state.model_copy(update={"pending_call": validated})
     called = ev.ToolCalled(
         call_id=call.call_id,
-        name=validated.tool.value,
+        name=validated.tool,
         arguments=call.arguments,
         arguments_digest=digest,
     )
@@ -552,7 +561,7 @@ def observe_tool(
             "pending_call": None,
             "results_by_arguments": {
                 **state.results_by_arguments,
-                f"{pending.tool.value}:{arguments_digest}": str(digest),
+                f"{pending.tool}:{arguments_digest}": str(digest),
             },
         },
     )
@@ -560,7 +569,7 @@ def observe_tool(
         working,
         CallRecord(
             seq=working.next_seq,
-            tool=pending.tool.value,
+            tool=pending.tool,
             arguments_digest=arguments_digest,
             result_digest=digest,
             tree_digest=tree_digest,
@@ -636,7 +645,7 @@ def _arguments_digest_of(call: AcceptedCall) -> Digest:
     """Return the digest of a pending call's arguments."""
     return ToolCall(
         call_id=call.call_id,
-        name=call.tool.value,
+        name=call.tool,
         arguments=call.args.model_dump(mode="json"),
     ).arguments_digest()
 

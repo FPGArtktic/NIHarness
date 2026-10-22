@@ -7,7 +7,7 @@
 //! event. Metrics, context fill and compaction decisions are produced by the
 //! harness, which is what keeps the two from disagreeing.
 
-use crate::event::Event;
+use crate::event::{Body, Event};
 
 /// How many samples each metric series keeps.
 pub(crate) const RING: usize = 300;
@@ -120,90 +120,26 @@ fn push_sample(series: &mut Vec<u64>, value: f64) {
 
 impl AppState {
     /// Fold one event into the state.
+    ///
+    /// One arm per scope rather than one per event type: the viewer must keep
+    /// rendering a stream that has grown an event it has never seen.
     pub(crate) fn apply(&mut self, event: &Event) {
         self.seq = event.seq;
         if self.run_id.is_empty() {
             event.run_id.clone_into(&mut self.run_id);
         }
         let body = &event.body;
-        let mut detail = String::new();
-        match body.kind.as_str() {
-            "step.started" => {
-                self.step_id.clone_from(&event.step_id);
-                body.stage
-                    .as_deref()
-                    .unwrap_or_default()
-                    .clone_into(&mut self.stage);
-                body.role
-                    .as_deref()
-                    .unwrap_or_default()
-                    .clone_into(&mut self.role);
-                detail = format!("{} as {}", self.stage, self.role);
+        let detail = match body.kind.as_str() {
+            "step.started" | "step.finished" => self.fold_step(event),
+            "tool.called" | "tool.returned" | "tool.rejected" | "tools.attached" => {
+                self.fold_tool(body)
             }
-            "step.finished" => {
-                self.step_id = None;
-                self.tokens += body.tokens_used.unwrap_or(0);
-                detail = format!("{} tokens", body.tokens_used.unwrap_or(0));
+            "gate.finished" | "vcs.committed" => self.fold_work(body),
+            "context.compacted" | "loop.intervention" | "model.reasoning" | "metrics.sampled" => {
+                self.fold_progress(body)
             }
-            "tool.called" => {
-                self.tool_calls += 1;
-                detail = body.name.clone().unwrap_or_default();
-            }
-            "tool.returned" => detail = body.summary.clone().unwrap_or_default(),
-            "tool.rejected" => {
-                self.rejected_calls += 1;
-                detail = body.name.clone().unwrap_or_default();
-            }
-            "gate.finished" => {
-                self.gate_runs += 1;
-                let passed = body.passed.unwrap_or(false);
-                if !passed {
-                    self.gate_failures += 1;
-                }
-                self.last_gate_passed = Some(passed);
-                detail = format!(
-                    "{} {}",
-                    body.tier.clone().unwrap_or_default(),
-                    if passed { "green" } else { "RED" }
-                );
-            }
-            "vcs.committed" => {
-                if let Some(sha) = &body.sha {
-                    self.commits.push(sha.clone());
-                }
-                detail = body.subject.clone().unwrap_or_default();
-            }
-            "context.compacted" => {
-                self.compactions += 1;
-                detail = format!(
-                    "{} -> {} tokens",
-                    body.before_tokens.unwrap_or(0),
-                    body.after_tokens.unwrap_or(0)
-                );
-            }
-            "loop.intervention" => {
-                let level = body.level.unwrap_or(0);
-                self.highest_intervention = self.highest_intervention.max(level);
-                detail = format!(
-                    "level {level} ({})",
-                    body.pathology.clone().unwrap_or_default()
-                );
-            }
-            "model.reasoning" => {
-                body.text
-                    .as_deref()
-                    .unwrap_or_default()
-                    .clone_into(&mut self.reasoning);
-            }
-            "metrics.sampled" => {
-                if let Some(fill) = body.context_fill {
-                    self.context_fill = fill;
-                }
-                push_sample(&mut self.generation_tps, body.generation_tps.unwrap_or(0.0));
-                push_sample(&mut self.prompt_tps, body.prompt_tps.unwrap_or(0.0));
-            }
-            _ => {}
-        }
+            _ => String::new(),
+        };
         if body.kind != "metrics.sampled" {
             self.activity.push(Activity {
                 seq: event.seq,
@@ -214,6 +150,108 @@ impl AppState {
             if self.activity.len() > RING {
                 self.activity.remove(0);
             }
+        }
+    }
+
+    /// Fold a step boundary: what the pipeline bar and the token count read.
+    fn fold_step(&mut self, event: &Event) -> String {
+        let body = &event.body;
+        if body.kind == "step.started" {
+            self.step_id.clone_from(&event.step_id);
+            body.stage
+                .as_deref()
+                .unwrap_or_default()
+                .clone_into(&mut self.stage);
+            body.role
+                .as_deref()
+                .unwrap_or_default()
+                .clone_into(&mut self.role);
+            return format!("{} as {}", self.stage, self.role);
+        }
+        self.step_id = None;
+        self.tokens += body.tokens_used.unwrap_or(0);
+        format!("{} tokens", body.tokens_used.unwrap_or(0))
+    }
+
+    /// Fold anything about tools: a call, a result, a refusal, an attachment.
+    fn fold_tool(&mut self, body: &Body) -> String {
+        match body.kind.as_str() {
+            "tool.called" => {
+                self.tool_calls += 1;
+                body.name.clone().unwrap_or_default()
+            }
+            "tool.rejected" => {
+                self.rejected_calls += 1;
+                body.name.clone().unwrap_or_default()
+            }
+            "tool.returned" => body.summary.clone().unwrap_or_default(),
+            // Worth its own line: it says this run can reach a server the
+            // harness did not write, and which of its tools.
+            "tools.attached" => format!(
+                "{}: {}",
+                body.server.clone().unwrap_or_default(),
+                body.tools.clone().unwrap_or_default().join(", ")
+            ),
+            _ => String::new(),
+        }
+    }
+
+    /// Fold the gate and the commits it let through.
+    fn fold_work(&mut self, body: &Body) -> String {
+        if body.kind == "vcs.committed" {
+            if let Some(sha) = &body.sha {
+                self.commits.push(sha.clone());
+            }
+            return body.subject.clone().unwrap_or_default();
+        }
+        self.gate_runs += 1;
+        let passed = body.passed.unwrap_or(false);
+        if !passed {
+            self.gate_failures += 1;
+        }
+        self.last_gate_passed = Some(passed);
+        format!(
+            "{} {}",
+            body.tier.clone().unwrap_or_default(),
+            if passed { "green" } else { "RED" }
+        )
+    }
+
+    /// Fold what the gauges and the reasoning pane read.
+    fn fold_progress(&mut self, body: &Body) -> String {
+        match body.kind.as_str() {
+            "context.compacted" => {
+                self.compactions += 1;
+                format!(
+                    "{} -> {} tokens",
+                    body.before_tokens.unwrap_or(0),
+                    body.after_tokens.unwrap_or(0)
+                )
+            }
+            "loop.intervention" => {
+                let level = body.level.unwrap_or(0);
+                self.highest_intervention = self.highest_intervention.max(level);
+                format!(
+                    "level {level} ({})",
+                    body.pathology.clone().unwrap_or_default()
+                )
+            }
+            "model.reasoning" => {
+                body.text
+                    .as_deref()
+                    .unwrap_or_default()
+                    .clone_into(&mut self.reasoning);
+                String::new()
+            }
+            "metrics.sampled" => {
+                if let Some(fill) = body.context_fill {
+                    self.context_fill = fill;
+                }
+                push_sample(&mut self.generation_tps, body.generation_tps.unwrap_or(0.0));
+                push_sample(&mut self.prompt_tps, body.prompt_tps.unwrap_or(0.0));
+                String::new()
+            }
+            _ => String::new(),
         }
     }
 
@@ -235,12 +273,26 @@ impl AppState {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    reason = "a test that cannot read its own fixture should fail loudly"
+)]
 mod tests {
     use super::{AppState, View};
     use crate::event::parse_lines;
 
     fn state_from(lines: &[&str]) -> AppState {
         AppState::from_events(&parse_lines(&lines.join("\n")))
+    }
+
+    #[test]
+    fn names_the_server_a_run_attached() {
+        let state = state_from(&[
+            r#"{"seq":1,"ts":"t","run_id":"r","body":{"type":"tools.attached","server":"fpga","tools":["read_report","place"],"roles":["implementer"]}}"#,
+        ]);
+        let line = state.activity.last().expect("one line");
+        assert_eq!(line.kind, "tools.attached");
+        assert_eq!(line.detail, "fpga: read_report, place");
     }
 
     #[test]

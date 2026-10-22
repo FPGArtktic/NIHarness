@@ -23,6 +23,7 @@ from niharness.cli import logging as logging_module
 from niharness.cli import plan as plan_module
 from niharness.cli import runs as runs_module
 from niharness.cli import status as status_module
+from niharness.cli import tools as tools_module
 from niharness.cli.unavailable import unavailable
 from niharness.config import HarnessConfig
 from niharness.domain.gate import GateTier
@@ -119,6 +120,22 @@ def status(
 def runs(root: ProjectRoot = Path(), json_mode: JsonOption = False) -> None:
     """List this project's runs, with what each one is doing."""
     runs_module.runs(_config(root.resolve(), None), json_mode=json_mode)
+
+
+@app.command()
+def tools(
+    root: ProjectRoot = Path(),
+    profile: Annotated[
+        str | None, typer.Option("--profile", help="Override the profile.")
+    ] = None,
+    json_mode: JsonOption = False,
+) -> None:
+    """Show the tools a run would offer, per role, including declared MCP servers.
+
+    Declared servers are started to ask them what they offer, so a server that
+    would fail during a run fails here instead.
+    """
+    tools_module.tools(_config(root.resolve(), profile), json_mode=json_mode)
 
 
 @app.command()

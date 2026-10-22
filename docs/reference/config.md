@@ -23,11 +23,12 @@ The whole configuration of one harness instance.
 | `max_revisions` | `int` | `3` |  |
 | `models` | `niharness.config.ModelsConfig` | `ModelsConfig(main=ModelConfig(name='Qwen3-Coder-30B-A3B-Instruct', base_url='http://127.0.0.1:8080', context_window=65536, supports_grammar=True, supports_reasoning=False, quantization='Q4_K_M', measured_generation_tps=0.0, measured_prompt_tps=0.0), thinking=None, utility=ModelConfig(name='BitNet-b1.58-2B-4T', base_url='http://127.0.0.1:8081', context_window=4096, supports_grammar=False, supports_reasoning=False, quantization='i2_s', measured_generation_tps=0.0, measured_prompt_tps=0.0), embeddings=None)` |  |
 | `sandbox` | `niharness.config.SandboxConfig` | `SandboxConfig(image='localhost/niharness-sandbox:latest', network='none', binary='podman', cpus=4.0, memory='8g', pids_limit=512, quick_timeout_seconds=900, full_timeout_seconds=10800)` |  |
+| `mcp` | `niharness.config.McpConfig` | `McpConfig(servers=())` |  |
 | `vector` | `niharness.config.VectorConfig` | `VectorConfig(url='http://127.0.0.1:6333', code_collection='code', run_collection_prefix='run-', embedding_dimensions=1024)` |  |
 | `gate` | `niharness.config.GateConfig` | `GateConfig(disabled_languages=(), fail_fast=True)` |  |
 | `loop` | `loop.LoopThresholds` | `LoopThresholds(exact_repeat_window=5, exact_repeat_count=2, state_cycle_revisits=1, progress_stall_calls=8, gate_thrash_repeats=3, invalid_calls_in_a_row=3, degenerate_ngram_size=8, degenerate_ngram_repeats=4)` |  |
 | `compact` | `context.CompactionPolicy` | `CompactionPolicy(context_window=65536, threshold=0.75, keep_last_tool_results=6, reserve_response_tokens=2048, summary_token_budget=1500)` |  |
-| `tools` | `tools.ToolLimits` | `ToolLimits(max_diff_bytes=64000, max_result_bytes=16000, max_read_lines=2000, max_grep_matches=200, max_commit_subject=72, max_shell_seconds=120)` |  |
+| `tools` | `tools.ToolLimits` | `ToolLimits(max_diff_bytes=64000, max_result_bytes=16000, max_argument_bytes=16000, max_read_lines=2000, max_grep_matches=200, max_commit_subject=72, max_shell_seconds=120)` |  |
 
 ## [models]
 
@@ -101,6 +102,7 @@ Caps the harness enforces on tool arguments and results.
 |---|---|---|---|
 | `max_diff_bytes` | `int` | `64000` |  |
 | `max_result_bytes` | `int` | `16000` |  |
+| `max_argument_bytes` | `int` | `16000` | Cap on an external tool's arguments, which the harness cannot model. |
 | `max_read_lines` | `int` | `2000` |  |
 | `max_grep_matches` | `int` | `200` |  |
 | `max_commit_subject` | `int` | `72` |  |

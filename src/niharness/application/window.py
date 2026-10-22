@@ -217,9 +217,9 @@ class Window:
                 role=MessageRole.TOOL,
                 content=result.content,
                 tool_call_id=result.call_id,
-                name=result.tool.value,
+                name=result.tool,
             ),
-            tool=result.tool.value,
+            tool=result.tool,
             target=result.summary.split(":")[0] if ":" in result.summary else "",
             lines=result.content.count("\n") + 1 if result.content else 0,
         )

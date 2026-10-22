@@ -326,6 +326,9 @@ async def _config_show(config: HarnessConfig) -> str:
         f"sandbox: {config.sandbox.image}, network {config.sandbox.network}, "
         f"{config.sandbox.cpus} cpus, {config.sandbox.memory}",
     ]
+    for server in config.mcp.servers:
+        granted = ", ".join(role.value for role in server.roles)
+        lines.append(f"mcp server {server.name}: {', '.join(server.tools)} for {granted}")
     return views.bounded("\n".join(lines))
 
 

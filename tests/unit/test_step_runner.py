@@ -33,7 +33,7 @@ from niharness.domain.messages import (
 from niharness.domain.roles import DEFAULT_ROLES, Role
 from niharness.domain.state import RunSnapshot
 from niharness.domain.tool_loop import LoopConfig
-from niharness.domain.tools import AcceptedCall, ToolName, ToolResult
+from niharness.domain.tools import AcceptedCall, ToolId, ToolName, ToolResult
 from niharness.ports.model_backend import BackendInfo
 from niharness.ports.vcs import Worktree
 
@@ -70,10 +70,10 @@ class FakeTools:
         self.calls: list[AcceptedCall] = []
         self._results = list(results)
 
-    async def descriptors(self, allowlist: frozenset[ToolName]) -> tuple[ToolSchema, ...]:
+    async def descriptors(self, allowlist: frozenset[ToolId]) -> tuple[ToolSchema, ...]:
         return tuple(
-            ToolSchema(name=tool.value, description=tool.value, parameters={"type": "object"})
-            for tool in sorted(allowlist, key=lambda item: item.value)
+            ToolSchema(name=tool, description=tool, parameters={"type": "object"})
+            for tool in sorted(allowlist)
         )
 
     async def call(self, accepted: AcceptedCall) -> ToolResult:

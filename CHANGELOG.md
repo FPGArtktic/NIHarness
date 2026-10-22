@@ -39,6 +39,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - `nih resume <run-id>` and `run_resume`: a run now records what it concluded
   about each task, so a cancelled run continues without redoing committed work,
   and refuses when it cannot know what it was running.
+- Declared MCP servers: `[[mcp.servers]]` in `harness.toml` names servers the
+  harness did not write, the tools to import from each and the roles granted
+  them. Tools arrive as `<server>__<tool>`, so nothing a server advertises can
+  be mistaken for a built-in one; arguments are checked against the schema the
+  server advertised; a declared server that cannot be started, or that does not
+  offer an imported tool, stops the run before it begins. `nih tools` prints
+  the whole surface per role, starting the declared servers to ask them. A run
+  records a `tools.attached` event for each, and none of them can commit.
 - Tool server (`niharness.toolserver`): an MCP server for one worktree, offering
   the harness's own tools, resolving every path against the root, and holding the
   gate - `git_commit` runs the quick tier and refuses with the failing output

@@ -35,6 +35,12 @@ The first thing a model needs is hands.
       harness knows and the role is allowed to use, sends the arguments the
       domain validated, truncates results, and turns a transport failure into a
       red result ([ADR 0012](adr/0012-mcp-is-the-tool-protocol.md)).
+- [x] Declared MCP servers: a project may name servers of its own in
+      `harness.toml`, import their tools by name, and grant them to named
+      roles. Tools arrive namespaced (`<server>__<tool>`), arguments are checked
+      against the schema the server advertised, and `nih tools` starts every
+      declared server so one that would fail during a run fails before one
+      ([ADR 0019](adr/0019-declared-mcp-servers.md)).
 - [ ] Sandbox image: `containers/Containerfile.sandbox`, layered toolchains.
 - [x] Integration tests behind the `integration` marker: run them with
       `NIH_SANDBOX_IMAGE=<image> uv run pytest -m integration`. They assert the

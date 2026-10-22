@@ -35,7 +35,7 @@ def test_accepts_a_well_formed_read() -> None:
         call("read_file", path="src/a.py", start_line=2), IMPLEMENTER, LIMITS
     )
     assert isinstance(result, AcceptedCall)
-    assert result.tool is ToolName.READ_FILE
+    assert result.tool == ToolName.READ_FILE
     assert isinstance(result.args, ReadFileArgs)
     assert result.args.start_line == 2
 

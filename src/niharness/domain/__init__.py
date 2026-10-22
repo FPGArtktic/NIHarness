@@ -33,10 +33,17 @@ from niharness.domain.pipeline import PIPELINE, Outcome, Stage, advance
 from niharness.domain.roles import DEFAULT_ROLES, Role, RoleSpec
 from niharness.domain.state import RunSnapshot, fold
 from niharness.domain.tool_loop import LoopConfig, LoopState, next_action, start
-from niharness.domain.tools import ToolName, validate_call
+from niharness.domain.tools import (
+    EMPTY_CATALOG,
+    ExternalTool,
+    ToolCatalog,
+    ToolName,
+    validate_call,
+)
 
 __all__ = [
     "DEFAULT_ROLES",
+    "EMPTY_CATALOG",
     "PIPELINE",
     "AcceptanceCriterion",
     "Answer",
@@ -47,6 +54,7 @@ __all__ = [
     "ContextSummary",
     "Decision",
     "Event",
+    "ExternalTool",
     "FinalAnswer",
     "GateResult",
     "GateTier",
@@ -72,6 +80,7 @@ __all__ = [
     "StepId",
     "StopReason",
     "Task",
+    "ToolCatalog",
     "ToolName",
     "Verdict",
     "advance",

@@ -25,6 +25,8 @@ Usage: nih [OPTIONS] COMMAND [ARGS]...
 │ gate        Show the commands the gate would run in this repository.         │
 │ status      Fold a run's event log into a snapshot.                          │
 │ runs        List this project's runs, with what each one is doing.           │
+│ tools       Show the tools a run would offer, per role, including declared   │
+│             MCP servers.                                                     │
 │ cancel      Ask a run to stop at its next step boundary.                     │
 │ mcp         Serve the management surface over stdio, for an agent to drive   │
 │             this project.                                                    │
@@ -364,6 +366,25 @@ Usage: nih status [OPTIONS] [run_id]
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
 │ --project-root  -C      <path>  The project to operate on. [default: (.)]    │
+│ --json                          Print one JSON object instead of the human   │
+│                                 form.                                        │
+│ --help                          Show this message and exit.                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+## `nih tools`
+
+```text
+Usage: nih tools [OPTIONS]                                                     
+                                                                                
+ Show the tools a run would offer, per role, including declared MCP servers.    
+                                                                                
+ Declared servers are started to ask them what they offer, so a server that     
+ would fail during a run fails here instead.                                    
+                                                                                
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --project-root  -C      <path>  The project to operate on. [default: (.)]    │
+│ --profile               <str>   Override the profile.                        │
 │ --json                          Print one JSON object instead of the human   │
 │                                 form.                                        │
 │ --help                          Show this message and exit.                  │
