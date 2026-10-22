@@ -221,6 +221,11 @@ flag on the sandbox adapter:
 ## Stage: benchmarks
 
 - [ ] `nih bench` runner and the JSONL record format.
+- [ ] Answer the ternary question with it. A natively ternary 27B-class model at
+      4-6 GB would change the profile arithmetic entirely - see
+      `docs/operations/models.md` - and nothing but an L0-L3 run on this
+      project's own suites settles whether it holds up at 64k and on a diff
+      that has to apply.
 - [ ] L0 inference, L1 tool calling, L2 steps, L3 end-to-end.
 - [ ] Vendored reference sets (SWE-bench subset, BFCL) with their licenses.
 

@@ -42,6 +42,61 @@ the same job.
 | **BitNet b1.58-2B-4T** (shipped default) | natively trained ternary, not post-quantized; MIT; `bitnet.cpp` is its reference CPU runtime, so the air-gapped host needs one binary and no CUDA | `bitnet.cpp`'s server does not offer GBNF, so the summary schema cannot be *enforced*, only validated after the fact |
 | **Falcon-E / Falcon-Edge 1B and 3B** (TII) | also natively ternary on the BitNet architecture, released with bf16, BitNet and pre-quantized variants; TII reports Llama-ecosystem compatibility, so it can be served by `llama-server` | the license is a TII Falcon licence rather than plain Apache-2.0 - read the model card before downloading - and the pre-quantized variant is what makes later fine-tuning on this project's own summaries possible |
 
+### Ternary beyond the utility slot
+
+The paragraphs above treat ternary as a way to make a *small* model cheap. A
+second use is the interesting one for this project, and it is not settled.
+
+**Ternary Bonsai** (PrismML, announced 2026-04-16) is a family of natively
+ternary models at 1.7B, 4B, 8B and 27B, weights constrained to `{-s, 0, +s}`
+with one FP16 scale per 128 weights. The reported footprints are what make it
+worth a look here: roughly 0.4 GB for the 1.7B, 1 GB for the 4B, 2 GB for the
+8B and 4-6 GB for the 27B, and the published suite includes BFCLv3, HumanEval+
+and IFEval - tool calling and instruction following, which is what this harness
+actually needs from a model.
+
+Why that matters more than a smaller utility model: **the main model is the
+binding constraint.** Qwen3-Coder-30B-A3B at Q4_K_M is about 18 GiB, which is
+why the `hybrid-small-vram` profile puts the experts on the CPU and keeps only
+attention and the KV cache on the GPU. A 27B-class model at 4-6 GB that keeps
+most of its FP16 quality would change that arithmetic completely - weights and
+a 64k KV cache in the place where only the KV cache fits today.
+
+!!! warning "The runtime is the catch, and it is decisive"
+
+    The ternary format needs **PrismML's llama.cpp fork**; upstream llama.cpp
+    has only the 1-bit variant merged, and tools that bundle a stock build
+    cannot run the ternary files at all.
+
+    For the harness that is *not* a code change - the inference port is
+    OpenAI-compatible HTTP and a fork still ships `llama-server`, so it is a
+    profile entry and nothing more (§2 of CLAUDE.md holds). It is, however, an
+    air-gap supply-chain decision: the fork has to be built and vendored, or a
+    prebuilt release trusted, and that belongs in the bundle with everything
+    else.
+
+What is not known, and matters here more than any published average:
+
+- **quality at 64k.** The window this harness builds is 64k and compaction
+  decides what stays in it; a model that degrades at long context fails at
+  exactly the job it is being hired for, and no benchmark above reports it.
+- **multi-file patch discipline.** HumanEval+ measures a function in a vacuum.
+  What a run needs is a unified diff that applies, against a tree the model has
+  only seen through tools.
+- **tool-call formatting under this project's schemas.** BFCLv3 is the right
+  family of test, and `benchmarks/suites/L1` is the local version of it.
+
+The published numbers are vendor and third-party reports, measured on different
+suites: do not compare them to each other, and do not compare them to the
+numbers in `benchmarks/results/`.
+
+So: a candidate, not a choice. The project's own rule decides it - a model
+change without an L0-L3 run in the same change is incomplete (§11) - and this
+is one of the first questions `nih bench` should be pointed at once it exists.
+Sources: [the announcement](https://prismml.com/news/ternary-bonsai),
+[the format documentation](https://docs.prismml.com/download/formats) and
+[its llama.cpp notes](https://docs.prismml.com/run/llamacpp).
+
 ### How big should it be?
 
 Bigger is cheap in memory and expensive in the only resource that is actually
