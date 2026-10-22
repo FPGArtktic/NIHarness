@@ -37,6 +37,34 @@ by probing the host; `harness.toml` overrides anything in it.
     20 GiB and up. The whole model is resident on the GPU; the utility model
     still runs on CPU so it never competes for VRAM.
 
+## Budgets follow the measurement, not the other way round
+
+A step carries three budgets: tool calls, tokens and wall time. The shipped
+numbers are a guess about a host - an implement step may spend 120k tokens in
+1800 seconds, which needs 67 tokens a second.
+
+Measured here, on a laptop i5-12500H with no GPU offload:
+
+| Model | Packing | Generation | What 1800 seconds buys |
+|---|---|---|---|
+| Ternary Bonsai 2 4B | PQ2_0 | 15.8 tok/s | ~28k tokens |
+| Ternary Bonsai 2 27B | PTQ1_0 | 1.66 tok/s | ~3k tokens |
+
+So on this host the 27B would have been stopped by the clock at a fortieth of
+its token budget - and forced finalisation watches the *tool* budget, not the
+clock, so the step would have ended with nothing written down.
+
+`[models.main] measured_generation_tps` is what fixes it. When it is set, a
+step's **token** budget is lowered to what its wall-clock budget can pay for,
+and the wall-clock budget is left alone: it is the guard against a hang, and a
+guard that moves with the thing it guards is not a guard. The step then ends
+the way it is designed to - the budget runs out on time, finalisation fires,
+and the state is written to `NOTES.md`.
+
+When the value is zero the shipped budgets are used unchanged, because a guess
+is not improved by scaling it with another guess. `nih implement` says which of
+the two it is doing.
+
 ## Sizing the context window
 
 `nih init` does not pick 32k for a CPU host because CPU hosts are small. It

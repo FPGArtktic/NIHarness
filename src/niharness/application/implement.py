@@ -23,6 +23,7 @@ from niharness.application.summarizer import Summarizer
 from niharness.application.window import Window
 from niharness.domain import events as ev
 from niharness.domain.artifacts import Decision, FinalAnswer, Plan, Task, Verdict
+from niharness.domain.budgets import fit_to_host
 from niharness.domain.context import CompactionPolicy
 from niharness.domain.control import AnswerQuestions, ApprovePlan, CancelRun
 from niharness.domain.events import RunOutcome, StopReason
@@ -160,6 +161,7 @@ class ImplementationRun:
         summarizer: Summarizer | None = None,
         control: ControlChannel | None = None,
         catalog: ToolCatalog | None = None,
+        generation_tps: float = 0.0,
         max_revisions: int = DEFAULT_MAX_REVISIONS,
     ) -> None:
         """Wire what a run needs beyond the step executor.
@@ -181,6 +183,10 @@ class ImplementationRun:
             catalog: the external MCP tools this run reached, and the roles
                 they were granted to; empty unless the project declared a
                 server.
+            generation_tps: measured generation throughput of the main model.
+                A step's token budget is fitted to what its wall-clock budget
+                can pay for at this speed; zero means unmeasured and leaves
+                the shipped budgets alone.
             max_revisions: how many fix rounds a task gets before it goes back
                 to the human.
         """
@@ -196,6 +202,7 @@ class ImplementationRun:
         self._worktree = worktree
         self._control = control
         self._catalog = catalog or EMPTY_CATALOG
+        self._generation_tps = generation_tps
         self._max_revisions = max_revisions
         self._cancelled: str | None = None
 
@@ -455,7 +462,7 @@ class ImplementationRun:
             model=self._model,
             allowlist=spec.allowlist | self._catalog.allowlist_for(role.value),
             catalog=self._catalog,
-            budgets=definition.budgets,
+            budgets=fit_to_host(definition.budgets, self._generation_tps),
             thresholds=self._thresholds,
             limits=self._limits,
             task_id=task.id,

@@ -171,6 +171,13 @@ async def execute(
         typer.echo(f"  worktree: {worktree.path} ({worktree.branch})")
         typer.echo(f"  model: {config.models.main.name} at {config.models.main.base_url}")
         typer.echo(f"  tools: {mode}")
+        measured = config.models.main.measured_generation_tps
+        if measured > 0:
+            typer.echo(
+                f"  measured: {measured:g} tok/s, so step token budgets are fitted to it"
+            )
+        else:
+            typer.echo("  measured: unknown, so the shipped step budgets are used as they are")
         for server in config.mcp.servers:
             granted = ", ".join(role.value for role in server.roles)
             typer.echo(f"  mcp: {server.name} -> {', '.join(server.tools)} ({granted})")
@@ -207,6 +214,7 @@ async def execute(
             worktree=worktree,
             control=control,
             catalog=tools.catalog,
+            generation_tps=config.models.main.measured_generation_tps,
             max_revisions=config.max_revisions,
         )
         with pid_file(config.runs_dir, run_id):

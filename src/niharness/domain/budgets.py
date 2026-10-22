@@ -20,6 +20,14 @@ from niharness.domain.events import StopReason
 FINALIZATION_MARGIN = 2
 """How many tool calls before the limit the harness stops offering tools."""
 
+MIN_FITTED_TOKENS = 2_000
+"""The smallest token budget a fitted step keeps.
+
+Below this a step cannot read a window and write an answer, so the honest
+outcome is a step that runs and fails on its budget - with its reason in the
+log - rather than one quietly reduced to nothing.
+"""
+
 
 class Budgets(BaseModel):
     """The limits of one step."""
@@ -30,6 +38,40 @@ class Budgets(BaseModel):
     max_tokens: int = Field(default=120_000, ge=0)
     max_wall_seconds: int = Field(default=1_800, ge=0)
     finalization_margin: int = Field(default=FINALIZATION_MARGIN, ge=0)
+
+
+def fit_to_host(budgets: Budgets, generation_tps: float) -> Budgets:
+    """Return `budgets` with the token cap the wall-clock budget can actually pay for.
+
+    The shipped budgets are a guess about a host. Tokens are the real resource
+    and wall time is tokens divided by throughput, so on a measured host the
+    two have to agree. They did not: an implement step is allowed 120k tokens
+    in 1800 seconds, which needs 67 tokens a second. Measured on a laptop CPU,
+    Bonsai 2 27B generates 1.66 - so the step would have been cut off by the
+    clock at about one fortieth of its token budget, with nothing written down,
+    because forced finalisation watches the tool budget and not the clock.
+
+    Lowering the token cap to what the clock can pay for makes the step end the
+    way it is designed to end: the tool budget runs out on time, finalisation
+    fires, and the step writes its state. The wall-clock budget is left alone -
+    it is the guard against a hang, and a guard that moves with the thing it
+    guards is not a guard.
+
+    Args:
+        budgets: the step's shipped budgets.
+        generation_tps: measured generation throughput, from the L0 benchmark.
+            Zero or negative means unmeasured, and then nothing is changed:
+            a guess is not improved by scaling it with another guess.
+
+    Returns:
+        The budgets this host can keep.
+    """
+    if generation_tps <= 0 or budgets.max_wall_seconds <= 0:
+        return budgets
+    affordable = int(budgets.max_wall_seconds * generation_tps)
+    if affordable >= budgets.max_tokens:
+        return budgets
+    return budgets.model_copy(update={"max_tokens": max(MIN_FITTED_TOKENS, affordable)})
 
 
 class BudgetState(BaseModel):
