@@ -136,7 +136,10 @@ def test_a_result_is_folded_and_the_budget_is_spent() -> None:
     step = observe_tool(dispatched, result(), tree_digest=Digest("tree-1"), wall_seconds=0.4)
     assert kinds(step.events) == ["ToolReturned"]
     assert step.state.budget.tool_calls_used == 1
-    assert step.state.budget.tokens_used == 120
+    # The budget counts what the model wrote, not the 100-token prompt it was
+    # shown: the window is re-sent every turn, so counting it would shrink the
+    # budget as the conversation grew.
+    assert step.state.budget.tokens_used == 20
     assert step.state.pending_call is None
     assert isinstance(next_action(step.state), CallModel)
 
@@ -309,7 +312,7 @@ def test_an_exhausted_tool_budget_stops_the_step() -> None:
 
 
 def test_an_exhausted_token_budget_stops_the_step() -> None:
-    current = start(config(budgets=Budgets(max_tool_calls=10, max_tokens=100))).state
+    current = start(config(budgets=Budgets(max_tool_calls=10, max_tokens=15))).state
     step = observe_model(current, proposes("read_file", {"path": "src/a.py"}))
     assert step.state.pending_call is not None, "the dispatched call still runs"
     after = observe_tool(step.state, result(), tree_digest=Digest("tree-1"))
@@ -402,3 +405,16 @@ def test_a_reviewing_step_refuses_a_final_answer_shaped_reply() -> None:
     action = next_action(step.state)
     assert isinstance(action, CallModel)
     assert "Verdict schema" in action.instruction
+
+
+def test_the_token_budget_is_not_spent_by_reading() -> None:
+    # Measured on a live run: a 27B exhausted its token budget on four file
+    # reads, because each turn re-sent a 3000-token window and the budget
+    # counted it. A step that reads is not a step that is working.
+    big_prompt = proposes("read_file", {"path": "src/a.py"}).model_copy(
+        update={"usage": Usage(prompt_tokens=30_000, completion_tokens=40)},
+    )
+    current = start(config(budgets=Budgets(max_tool_calls=10, max_tokens=500))).state
+    step = observe_model(current, big_prompt)
+    assert step.state.budget.tokens_used == 40
+    assert step.state.stop_reason is None, "30k of window is not 30k of work"

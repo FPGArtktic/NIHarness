@@ -6,6 +6,16 @@ Budgets are enforced by the harness, never requested from the model. A step
 carries a tool-call budget, a token budget and a wall-time budget; when any of
 them runs out the step stops with a recorded reason.
 
+Three resources, three bounds, no double counting:
+
+* what the model **writes** is the token budget - completion tokens only,
+* what it **spends** is the wall-clock budget,
+* what it **reads** is the context window and the compaction policy (§8).
+
+Counting prompt tokens in the token budget would make the third bound pay for
+the first: the window is re-sent every turn, so the budget would shrink as the
+conversation grew and a step would be punished for having context.
+
 Shortly before the tool-call budget runs out the harness forces finalisation:
 the next model call is made with `tool_choice: none`, so the step ends with a
 written state in NOTES.md instead of a truncated tool call.

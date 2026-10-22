@@ -367,7 +367,13 @@ def observe_model(state: LoopState, response: ChatResponse) -> Step:
     if response.reasoning_content:
         emitted.append(ev.ModelReasoning(text=response.reasoning_content))
 
-    working = _spent(state, tokens=response.usage.total)
+    # What the model *wrote*, not what it was shown. The prompt is re-sent
+    # every turn, so counting it would shrink the budget as the conversation
+    # grows - punishing a step for having context, and exhausting the budget on
+    # reading rather than on work. Measured on a live run: a 27B spent its
+    # whole token budget on four file reads. The window is bounded by the
+    # context window and compaction, and the compute is bounded by the clock.
+    working = _spent(state, tokens=response.usage.completion_tokens)
     working = working.model_copy(
         update={"pending_instruction": "", "pending_tool_choice": ToolChoice.AUTO},
     )
