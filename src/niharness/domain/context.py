@@ -68,7 +68,7 @@ TURN_KINDS: frozenset[ItemKind] = frozenset({ItemKind.TURN, ItemKind.INSTRUCTION
 """Kinds that a ContextSummary may replace: the conversation, not the artefacts."""
 
 LATEST_ONLY_TOOLS: frozenset[str] = frozenset(
-    {"run_build", "run_tests", "run_lint", "list_tree", "git_commit"},
+    {"run_build", "run_tests", "run_lint", "list_tree", "file_outline", "git_commit"},
 )
 """Tools whose older results are superseded: only the latest outcome matters."""
 

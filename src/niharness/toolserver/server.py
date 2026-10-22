@@ -24,6 +24,7 @@ from mcp.server import MCPServer
 from pydantic import BaseModel, ConfigDict
 
 from niharness.domain.gate import GateKind, GateTier
+from niharness.toolserver.lsp import LanguageServers
 from niharness.toolserver.workspace import Workspace, WorkspaceError
 
 SERVER_NAME = "niharness-tools"
@@ -87,6 +88,35 @@ def build_server(workspace: Workspace, *, name: str = SERVER_NAME) -> MCPServer:
         return await guarded(workspace.grep(pattern, path, glob, max_matches))
 
     @server.tool()
+    async def find_symbol(name: str, language: str = "") -> Outcome:
+        """Find where a symbol is defined, by name, using the language servers.
+
+        Prefer this over `grep` for a definition: a language server knows a
+        definition from a string that merely matches, and the answer is a few
+        lines instead of a page. `language` narrows the search when more than
+        one language could answer.
+        """
+        return await guarded(workspace.find_symbol(name, language))
+
+    @server.tool()
+    async def find_references(name: str, max_results: int = 30, language: str = "") -> Outcome:
+        """Find who uses a symbol, by name, with the line at each use.
+
+        This is what to use before changing a signature. `grep` finds the name
+        in comments and strings too; this finds the uses.
+        """
+        return await guarded(workspace.find_references(name, max_results, language))
+
+    @server.tool()
+    async def file_outline(path: str) -> Outcome:
+        """List what is in a file - classes, functions, their lines - without reading it.
+
+        A cheap way to decide whether a file is worth reading, and where in it
+        to start.
+        """
+        return await guarded(workspace.file_outline(path))
+
+    @server.tool()
     async def apply_patch(diff: str) -> Outcome:
         """Apply a unified diff. There is no write_file: every change is a reviewable diff."""
         return await guarded(workspace.apply_patch(diff))
@@ -133,6 +163,11 @@ def build_server(workspace: Workspace, *, name: str = SERVER_NAME) -> MCPServer:
     return server
 
 
+def workspace_for(root: Path, *, servers: LanguageServers | None = None) -> Workspace:
+    """Build the worktree the tools act on, with language servers when enabled."""
+    return Workspace(root, servers=servers)
+
+
 def server_for(root: Path, **kwargs: object) -> MCPServer:
-    """Build a server for the worktree at `root`."""
+    """Build a server for the worktree at `root`, without language servers."""
     return build_server(Workspace(root), **kwargs)  # type: ignore[arg-type]

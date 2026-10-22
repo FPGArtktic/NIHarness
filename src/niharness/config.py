@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from niharness.domain.context import CompactionPolicy
+from niharness.domain.gate import Language
 from niharness.domain.loop import LoopThresholds
 from niharness.domain.pipeline import DEFAULT_MAX_REVISIONS
 from niharness.domain.roles import Role
@@ -86,6 +87,33 @@ class SandboxConfig(BaseModel):
     )
     quick_timeout_seconds: int = Field(default=900, ge=1)
     full_timeout_seconds: int = Field(default=10_800, ge=1)
+
+
+class LspServerConfig(BaseModel):
+    """A language server command, overriding the shipped candidates."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    command: str = Field(min_length=1)
+    args: tuple[str, ...] = ()
+
+
+class LspConfig(BaseModel):
+    """Language servers: how the symbol tools answer, and whether they do.
+
+    The table of who serves what is in the domain
+    (`niharness.domain.language_servers`); this is the project's say over it -
+    a different command, a language it does not want served, and the timeouts
+    an index warm-up is allowed to spend.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    enabled: bool = True
+    disabled_languages: tuple[Language, ...] = ()
+    servers: dict[Language, LspServerConfig] = Field(default_factory=dict)
+    start_timeout_seconds: float = Field(default=30.0, gt=0)
+    request_timeout_seconds: float = Field(default=20.0, gt=0)
 
 
 class McpServerConfig(BaseModel):
@@ -165,6 +193,7 @@ class HarnessConfig(BaseSettings):
     models: ModelsConfig = ModelsConfig()
     sandbox: SandboxConfig = SandboxConfig()
     mcp: McpConfig = McpConfig()
+    lsp: LspConfig = LspConfig()
     vector: VectorConfig = VectorConfig()
     gate: GateConfig = GateConfig()
     loop: LoopThresholds = LoopThresholds()

@@ -11,6 +11,7 @@ being tested.
 
 import shutil
 import subprocess
+import sys
 from collections.abc import AsyncIterator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
@@ -21,11 +22,16 @@ from mcp import ClientSession
 from mcp.shared.memory import create_client_server_memory_streams
 
 from niharness.adapters.mcp import McpToolProvider
+from niharness.domain.gate import Language
 from niharness.domain.identity import CallId
+from niharness.domain.language_servers import ServerCandidate
 from niharness.domain.roles import DEFAULT_ROLES, Role
 from niharness.domain.tools import (
     AcceptedCall,
     ApplyPatchArgs,
+    FileOutlineArgs,
+    FindReferencesArgs,
+    FindSymbolArgs,
     GitCommitArgs,
     GrepArgs,
     ListTreeArgs,
@@ -35,6 +41,7 @@ from niharness.domain.tools import (
     ToolResult,
 )
 from niharness.ports.sandbox import ProcessResult
+from niharness.toolserver.lsp import LanguageServers
 from niharness.toolserver.server import build_server
 from niharness.toolserver.workspace import Workspace, subprocess_runner
 
@@ -91,9 +98,18 @@ def gate_runner(*, green: bool) -> object:
 
 
 @asynccontextmanager
-async def connected(worktree: Path, *, green: bool = True) -> AsyncIterator[McpToolProvider]:
+async def connected(
+    worktree: Path,
+    *,
+    green: bool = True,
+    servers: LanguageServers | None = None,
+) -> AsyncIterator[McpToolProvider]:
     """Run the project's own tool server and yield the harness's client for it."""
-    workspace = Workspace(worktree, runner=gate_runner(green=green))  # type: ignore[arg-type]
+    workspace = Workspace(
+        worktree,
+        runner=gate_runner(green=green),  # type: ignore[arg-type]
+        servers=servers,
+    )
     server = build_server(workspace)
     inner = server._lowlevel_server  # noqa: SLF001 - the SDK's own in-process pattern
     async with AsyncExitStack() as stack:
@@ -127,6 +143,9 @@ async def test_the_server_offers_exactly_the_tools_the_role_may_use(worktree: Pa
         "read_file",
         "list_tree",
         "grep",
+        "find_symbol",
+        "find_references",
+        "file_outline",
         "apply_patch",
         "run_lint",
         "run_build",
@@ -254,3 +273,110 @@ async def test_running_tests_reports_the_gate(worktree: Path) -> None:
     assert not result.ok
     assert "does not narrow the gate yet" in result.content
     assert "RED" in result.content
+
+
+# -------------------------------------------------------------- symbol tools
+
+FAKE_SERVER = Path(__file__).with_name("fake_language_server.py")
+
+
+def language_session(worktree: Path) -> LanguageServers:
+    """A session whose Python server is the fake one from `test_lsp.py`."""
+    return LanguageServers(
+        worktree,
+        overrides={
+            Language.PYTHON: ServerCandidate(
+                command=sys.executable,
+                args=(
+                    str(FAKE_SERVER),
+                    "--root",
+                    str(worktree),
+                    "--record",
+                    str(worktree / "record.jsonl"),
+                ),
+            ),
+        },
+        request_timeout=10.0,
+        start_timeout=10.0,
+    )
+
+
+APP = (
+    '"""The module under test."""\n\n\n'
+    "def build(name):\n    return name\n\n\n"
+    'def caller():\n    return build("x")\n'
+)
+"""`build` on line 4 and used on line 9, which is what the fake reports."""
+
+
+async def test_a_symbol_is_found_through_the_protocol(worktree: Path) -> None:
+    # What is under test is the whole path: the harness's validation, the MCP
+    # call, the tool server, the language server, and the answer coming back
+    # through the envelope.
+    (worktree / "src" / "app.py").write_text(APP, encoding="utf-8")
+    session = language_session(worktree)
+    try:
+        async with connected(worktree, servers=session) as provider:
+            result = await call(provider, ToolName.FIND_SYMBOL, FindSymbolArgs(name="build"))
+    finally:
+        await session.aclose()
+    assert result.ok
+    assert "src/app.py:4  function build" in result.content
+    assert "def build(name) -> str" in result.content
+
+
+async def test_references_come_back_through_the_protocol(worktree: Path) -> None:
+    (worktree / "src" / "app.py").write_text(APP, encoding="utf-8")
+    session = language_session(worktree)
+    try:
+        async with connected(worktree, servers=session) as provider:
+            result = await call(
+                provider,
+                ToolName.FIND_REFERENCES,
+                FindReferencesArgs(name="build", max_results=5),
+            )
+    finally:
+        await session.aclose()
+    assert result.ok
+    assert "is defined at src/app.py:4 and used:" in result.content
+    assert 'src/app.py:9  return build("x")' in result.content
+
+
+async def test_an_outline_comes_back_through_the_protocol(worktree: Path) -> None:
+    (worktree / "src" / "app.py").write_text(APP, encoding="utf-8")
+    session = language_session(worktree)
+    try:
+        async with connected(worktree, servers=session) as provider:
+            result = await call(
+                provider,
+                ToolName.FILE_OUTLINE,
+                FileOutlineArgs(path="src/app.py"),
+            )
+    finally:
+        await session.aclose()
+    assert result.ok
+    assert "function build" in result.content
+    assert "function caller" in result.content
+
+
+async def test_a_symbol_tool_without_language_servers_says_so(worktree: Path) -> None:
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.FIND_SYMBOL, FindSymbolArgs(name="add"))
+    assert not result.ok
+    assert "language servers are not enabled" in result.content
+    assert "grep" in result.content, "a refusal that names the alternative"
+
+
+async def test_an_outline_outside_the_worktree_is_refused(worktree: Path) -> None:
+    session = language_session(worktree)
+    try:
+        async with connected(worktree, servers=session) as provider:
+            result = await call(
+                provider,
+                ToolName.FILE_OUTLINE,
+                FileOutlineArgs(path="../../etc/passwd"),
+            )
+    finally:
+        await session.aclose()
+    assert not result.ok
+    assert "path_escape" in result.content or "not a file" in result.content

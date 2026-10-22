@@ -65,6 +65,10 @@ suggestion. See [Architecture](concepts/architecture.md) and
   tools and grant them to roles. They arrive namespaced, go through the same
   validation, and cannot commit. See
   [declared MCP servers](operations/mcp-servers.md).
+- Language servers: `find_symbol`, `find_references` and `file_outline` ask a
+  real language server inside the sandbox, by name, so navigation costs a line
+  instead of a page. Verified against `clangd`. See
+  [language servers](operations/language-servers.md).
 
 ## What does not work yet
 

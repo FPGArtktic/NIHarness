@@ -41,6 +41,20 @@ The first thing a model needs is hands.
       against the schema the server advertised, and `nih tools` starts every
       declared server so one that would fail during a run fails before one
       ([ADR 0019](adr/0019-declared-mcp-servers.md)).
+- [x] Language servers in the sandbox: `find_symbol`, `find_references` and
+      `file_outline`, addressed by name so a model never has to count columns.
+      One resident server per language, started on demand, with the table of
+      who serves what in the domain beside the gate matrix. Verified against a
+      real `clangd` - which is how two things got fixed: a cold index answers
+      nothing, so the files that mention a name are asked directly, and a miss
+      costs a second rather than a whole warm-up
+      ([ADR 0020](adr/0020-language-servers-in-the-sandbox.md)).
+- [ ] A `diagnostics` tool. The client already collects `publishDiagnostics`;
+      nothing exposes them, because "is this code good" is the gate's question
+      and deciding when a diagnostics stream has settled is its own problem.
+- [ ] Language servers for Rust and Go in the image: both come from toolchain
+      tarballs rather than distribution packages, so the wheelhouse recipe does
+      not cover them yet.
 - [ ] Sandbox image: `containers/Containerfile.sandbox`, layered toolchains.
 - [x] Integration tests behind the `integration` marker: run them with
       `NIH_SANDBOX_IMAGE=<image> uv run pytest -m integration`. They assert the

@@ -58,6 +58,9 @@ class ToolName(StrEnum):
     READ_FILE = "read_file"
     LIST_TREE = "list_tree"
     GREP = "grep"
+    FIND_SYMBOL = "find_symbol"
+    FIND_REFERENCES = "find_references"
+    FILE_OUTLINE = "file_outline"
     RAG_QUERY = "rag_query"
     APPLY_PATCH = "apply_patch"
     RUN_LINT = "run_lint"
@@ -69,7 +72,15 @@ class ToolName(StrEnum):
 
 
 READ_ONLY_TOOLS: frozenset[ToolName] = frozenset(
-    {ToolName.READ_FILE, ToolName.LIST_TREE, ToolName.GREP, ToolName.RAG_QUERY},
+    {
+        ToolName.READ_FILE,
+        ToolName.LIST_TREE,
+        ToolName.GREP,
+        ToolName.FIND_SYMBOL,
+        ToolName.FIND_REFERENCES,
+        ToolName.FILE_OUTLINE,
+        ToolName.RAG_QUERY,
+    },
 )
 """Tools that cannot change the worktree; the researcher and brainstormer get only these."""
 
@@ -136,6 +147,35 @@ class GrepArgs(ToolArgs):
     path: RelPath = "."
     glob: str = ""
     max_matches: int = Field(default=50, ge=1)
+
+
+class FindSymbolArgs(ToolArgs):
+    """Ask a language server where a symbol is defined, by name.
+
+    By name and not by position: a model that has to count columns before it
+    can ask a question has already read the file, which is the cost the tool
+    exists to avoid.
+    """
+
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
+    language: str = Field(
+        default="",
+        description="Narrow the search to one language, when more than one could answer.",
+    )
+
+
+class FindReferencesArgs(ToolArgs):
+    """Ask a language server who uses a symbol, by name."""
+
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
+    max_results: int = Field(default=30, ge=1, le=200)
+    language: str = ""
+
+
+class FileOutlineArgs(ToolArgs):
+    """Ask a language server what is in a file, without reading the file."""
+
+    path: RelPath
 
 
 class RagQueryArgs(ToolArgs):
@@ -207,6 +247,9 @@ TOOL_ARGUMENTS: dict[ToolName, type[ToolArgs]] = {
     ToolName.READ_FILE: ReadFileArgs,
     ToolName.LIST_TREE: ListTreeArgs,
     ToolName.GREP: GrepArgs,
+    ToolName.FIND_SYMBOL: FindSymbolArgs,
+    ToolName.FIND_REFERENCES: FindReferencesArgs,
+    ToolName.FILE_OUTLINE: FileOutlineArgs,
     ToolName.RAG_QUERY: RagQueryArgs,
     ToolName.APPLY_PATCH: ApplyPatchArgs,
     ToolName.RUN_LINT: RunLintArgs,

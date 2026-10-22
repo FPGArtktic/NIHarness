@@ -25,6 +25,7 @@ FROM base AS cxx
 RUN apt-get update && apt-get install --no-install-recommends -y \
       build-essential cmake ninja-build ccache \
       clang clang-format clang-tidy cppcheck gdb valgrind \
+      clangd \
     && rm -rf /var/lib/apt/lists/*
 
 # ----------------------------------------------------------------- scripting
@@ -39,8 +40,27 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
       verilator ghdl iverilog \
     && rm -rf /var/lib/apt/lists/*
 
+# ------------------------------------------------------- language servers
+#
+# `find_symbol`, `find_references` and `file_outline` ask a language server,
+# which is why the servers belong in the image rather than on the host: a
+# sandboxed run cannot see the host's. Which server serves which language is
+# the table in `niharness.domain.language_servers`; the names below are the
+# first candidate of each.
+#
+# This is the layer that costs disk - clangd alone is a few hundred megabytes.
+# A project that does not want it can drop this stage and set
+# `[lsp] enabled = false`, and the symbol tools will say so instead of failing.
+# Each server is installed from this distribution's packages so the build stays
+# index-free; a language whose server is not packaged here (Rust, Go) gets it
+# from the toolchain tarball the respective stage already unpacks.
+FROM hdl AS lsp
+RUN apt-get update && apt-get install --no-install-recommends -y \
+      bash-language-server \
+    && rm -rf /var/lib/apt/lists/*
+
 # ------------------------------------------------------------- the tool server
-FROM hdl AS final
+FROM lsp AS final
 
 # The server is this project's own package, installed from a local wheelhouse so
 # the build needs no index. Prepare the context on a networked machine first:
@@ -55,6 +75,14 @@ RUN python3 -m venv /opt/nih \
     && /opt/nih/bin/pip install --no-index --find-links=/tmp/wheelhouse niharness \
     && rm -rf /tmp/wheelhouse /root/.cache
 ENV PATH=/opt/nih/bin:$PATH
+
+# The Python language server comes from the same wheelhouse, so it is pinned
+# with everything else rather than pulled at build time. Add it to the
+# wheelhouse with:
+#
+#   uv pip download basedpyright -d wheelhouse
+#
+# and it is found on PATH as basedpyright-langserver.
 
 # The sandbox runs as a non-root user with the worktree bind-mounted at /work.
 RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin agent

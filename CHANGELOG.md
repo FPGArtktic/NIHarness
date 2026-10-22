@@ -47,6 +47,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   offer an imported tool, stops the run before it begins. `nih tools` prints
   the whole surface per role, starting the declared servers to ask them. A run
   records a `tools.attached` event for each, and none of them can commit.
+- Language servers in the sandbox: `find_symbol`, `find_references` and
+  `file_outline`, addressed by name rather than by line and column, so a model
+  never has to read a file in order to ask about it. One resident server per
+  language, started on demand; the table of which server serves which language
+  is domain data beside the gate matrix, overridable under `[lsp]`. When a
+  server's index is cold - which is what a real clangd does - the files that
+  mention the name are asked directly, so an answer does not depend on a
+  background index. `apply_patch` tells the servers what it changed.
 - Tool server (`niharness.toolserver`): an MCP server for one worktree, offering
   the harness's own tools, resolving every path against the root, and holding the
   gate - `git_commit` runs the quick tier and refuses with the failing output

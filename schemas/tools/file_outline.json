@@ -1,0 +1,17 @@
+{
+  "additionalProperties": false,
+  "description": "Ask a language server what is in a file, without reading the file.",
+  "properties": {
+    "path": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "title": "Path",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "FileOutlineArgs",
+  "type": "object"
+}

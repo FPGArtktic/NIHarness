@@ -1,0 +1,23 @@
+{
+  "additionalProperties": false,
+  "description": "Ask a language server where a symbol is defined, by name.\n\nBy name and not by position: a model that has to count columns before it\ncan ask a question has already read the file, which is the cost the tool\nexists to avoid.",
+  "properties": {
+    "language": {
+      "default": "",
+      "description": "Narrow the search to one language, when more than one could answer.",
+      "title": "Language",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "FindSymbolArgs",
+  "type": "object"
+}

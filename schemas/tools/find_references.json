@@ -1,0 +1,29 @@
+{
+  "additionalProperties": false,
+  "description": "Ask a language server who uses a symbol, by name.",
+  "properties": {
+    "language": {
+      "default": "",
+      "title": "Language",
+      "type": "string"
+    },
+    "max_results": {
+      "default": 30,
+      "maximum": 200,
+      "minimum": 1,
+      "title": "Max Results",
+      "type": "integer"
+    },
+    "name": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "FindReferencesArgs",
+  "type": "object"
+}

@@ -24,6 +24,7 @@ from niharness.domain.gate import (
     GateResult,
     GateStepResult,
     GateTier,
+    Language,
     detect_languages,
     plan_gate,
 )
@@ -35,6 +36,7 @@ from niharness.domain.tools import (
     validate_commit_message,
 )
 from niharness.ports.sandbox import ProcessResult
+from niharness.toolserver.lsp import LanguageServers, LspError
 
 CommandRunner = Callable[[Sequence[str], Path, int], Awaitable[ProcessResult]]
 """Runs an argv in a directory with a timeout. Injected so tests need no toolchain."""
@@ -95,6 +97,7 @@ class Workspace:
         runner: CommandRunner | None = None,
         limits: ToolLimits | None = None,
         command_timeout: int = 900,
+        servers: LanguageServers | None = None,
     ) -> None:
         """Bind to a worktree.
 
@@ -103,11 +106,15 @@ class Workspace:
             runner: how commands are executed; the default runs them here.
             limits: caps on results, diffs and commit messages.
             command_timeout: seconds a gate command may take.
+            servers: the language servers this worktree may reach; without them
+                the three symbol tools say so instead of pretending.
         """
         self._root = root.resolve()
         self._runner: CommandRunner = runner or subprocess_runner
         self._limits = limits or ToolLimits()
         self._timeout = command_timeout
+        self._servers = servers
+        self._languages: frozenset[Language] | None = None
 
     @property
     def root(self) -> Path:
@@ -135,6 +142,96 @@ class Workspace:
         if resolved != self._root and self._root not in resolved.parents:
             raise WorkspaceError(f"path_escape: {candidate!r} resolves outside the worktree")
         return resolved
+
+    # ------------------------------------------------------ language servers
+
+    async def languages(self) -> frozenset[Language]:
+        """Return the languages this worktree has, detected once.
+
+        The detection is a `git ls-files` away and a run does not change which
+        toolchains a project uses, so it is computed on first use and kept.
+        """
+        if self._languages is None:
+            self._languages = detect_languages(await self.tracked_files())
+        return self._languages
+
+    def _ask(self, hint: str) -> LanguageServers:
+        """Return the session, or refuse clearly.
+
+        Raises:
+            WorkspaceError: when this server was started without language
+                servers, or the hint names a language that does not exist.
+        """
+        if self._servers is None:
+            raise WorkspaceError(
+                "language servers are not enabled for this run; use grep instead",
+            )
+        if hint and hint not in set(Language):
+            known = ", ".join(sorted(language.value for language in Language))
+            raise WorkspaceError(f"no such language {hint!r}; known: {known}")
+        return self._servers
+
+    async def _targets(self, hint: str) -> tuple[Language, ...]:
+        """Return which languages to ask, narrowed by the hint when there is one."""
+        detected = await self.languages()
+        if hint:
+            return (Language(hint),) if Language(hint) in detected else ()
+        return tuple(sorted(detected))
+
+    async def find_symbol(self, name: str, language: str = "") -> str:
+        """Return where a symbol is defined, asking the language servers.
+
+        Raises:
+            WorkspaceError: when no server can be asked, or one failed in a way
+                the model should hear about.
+        """
+        servers = self._ask(language)
+        try:
+            return await servers.find_symbol(name, await self._targets(language))
+        except LspError as error:
+            raise WorkspaceError(str(error)) from error
+
+    async def find_references(
+        self,
+        name: str,
+        max_results: int = 30,
+        language: str = "",
+    ) -> str:
+        """Return who uses a symbol, asking the language servers.
+
+        Raises:
+            WorkspaceError: when no server can be asked, or one failed.
+        """
+        servers = self._ask(language)
+        try:
+            return await servers.find_references(
+                name,
+                await self._targets(language),
+                max_results=max_results,
+            )
+        except LspError as error:
+            raise WorkspaceError(str(error)) from error
+
+    async def file_outline(self, path: str) -> str:
+        """Return what is in a file, without reading the file.
+
+        Raises:
+            WorkspaceError: when the path escapes, is not there, or no server
+                owns its suffix.
+        """
+        servers = self._ask("")
+        target = self.resolve(path)
+        if not target.is_file():
+            raise WorkspaceError(f"{path}: not a file")
+        try:
+            return await servers.outline(str(target.relative_to(self._root)))
+        except LspError as error:
+            raise WorkspaceError(str(error)) from error
+
+    async def aclose(self) -> None:
+        """Stop any language server this worktree started."""
+        if self._servers is not None:
+            await self._servers.aclose()
 
     # ------------------------------------------------------------- read-only
 
@@ -249,6 +346,10 @@ class Workspace:
         if not applied.ok:
             raise WorkspaceError(f"applying the diff failed:\n{applied.output.strip()}")
         changed = await self._git(("status", "--porcelain"))
+        # The only writer in the harness is this method, which makes it the one
+        # place a language server's view of the tree can be kept honest.
+        if self._servers is not None:
+            await self._servers.changed(_porcelain_paths(changed.stdout))
         return f"applied.\nworktree now:\n{changed.stdout.strip() or '(clean)'}"
 
     async def _git(self, args: Sequence[str], stdin: str | None = None) -> ProcessResult:
@@ -358,3 +459,19 @@ class Workspace:
         head = await self._git(("rev-parse", "--short", "HEAD"))
         _log.info("gate.green", subject=subject, sha=head.stdout.strip())
         return f"committed {head.stdout.strip()}: {subject}\n\n{self.render_gate(result)}"
+
+
+def _porcelain_paths(output: str) -> tuple[str, ...]:
+    """Return the paths in `git status --porcelain` output.
+
+    A rename is reported as `old -> new`; the new name is the one a language
+    server needs to hear about.
+    """
+    paths: list[str] = []
+    for line in output.splitlines():
+        if len(line) < 4:
+            continue
+        candidate = line[3:].strip().strip('"')
+        _, arrow, renamed = candidate.partition(" -> ")
+        paths.append(renamed.strip('"') if arrow else candidate)
+    return tuple(dict.fromkeys(paths))
