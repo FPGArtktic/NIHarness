@@ -1,0 +1,68 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# llama-server from the PrismML fork, for the ternary Bonsai packings.
+#
+# Why a second image: `PQ2_0` and `PTQ1_0` are new quantization types whose
+# kernels are not in mainline llama.cpp, and the weights are stored in a
+# Hadamard-rotated basis that the runtime has to undo. Mainline refuses the
+# packed files outright, and loads the `F16` file while producing nonsense,
+# because it ignores the `prism.hadamard.*` metadata. So the choice is this
+# fork or nothing - and the harness does not care, because the inference port
+# is OpenAI-compatible HTTP and a fork still serves it (ADR 0004).
+#
+# Models are bind-mounted, never baked in: this repository redistributes no
+# weights. Build here, `podman save` for the air-gapped host.
+#
+#   podman build -t localhost/niharness-llama-prism:latest \
+#     --build-arg GGML_NATIVE=ON \
+#     -f containers/Containerfile.llama-server-prism .
+#
+# GGML_NATIVE=ON compiles for the CPU of the build machine, which is what you
+# want when that is also the host that will run it. Leave it OFF for an image
+# that is exported to a machine with a different CPU.
+
+FROM docker.io/library/debian:trixie-slim AS build
+
+# A tag, not a branch: an air-gap bundle has to be reproducible. The tags are
+# named `prism-b<upstream build>-<sha>`, and the number is what orders them -
+# an older tag refuses the current model files outright ("invalid ggml type
+# 142"), because the ternary packings are still gaining type numbers.
+ARG PRISM_REF=prism-b10787-73bfe6c
+ARG GGML_NATIVE=OFF
+
+RUN apt-get update && apt-get install --no-install-recommends -y \
+      build-essential cmake git ca-certificates libcurl4-openssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 --branch "${PRISM_REF}" \
+      https://github.com/PrismML-Eng/llama.cpp /src
+RUN cmake -S /src -B /build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DLLAMA_CURL=OFF \
+      -DGGML_NATIVE="${GGML_NATIVE}" \
+    && cmake --build /build --target llama-server llama-bench -j
+
+FROM docker.io/library/debian:trixie-slim
+RUN apt-get update && apt-get install --no-install-recommends -y libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 1000 --shell /usr/sbin/nologin llama
+
+# The whole output directory, not just the binaries: this build links against
+# its own shared libraries (libllama-server-impl.so and the ggml backends), and
+# a copy of the binary alone starts with "cannot open shared object file".
+COPY --from=build /build/bin/ /usr/local/lib/llama/
+RUN ln -s /usr/local/lib/llama/llama-server /usr/local/bin/llama-server \
+    && ln -s /usr/local/lib/llama/llama-bench /usr/local/bin/llama-bench
+ENV LD_LIBRARY_PATH=/usr/local/lib/llama
+
+USER llama
+EXPOSE 8080
+# Run with --network=host so the port is the host's own loopback, which is the
+# only address the harness will talk to. Models arrive by bind mount:
+#
+#   podman run --rm --network=host \
+#     --volume /srv/models:/models:ro,Z \
+#     localhost/niharness-llama-prism:latest \
+#     -m /models/Ternary-Bonsai-2-4B-PQ2_0.gguf -c 65536 -n 16384
+ENTRYPOINT ["/usr/local/bin/llama-server", "--host", "127.0.0.1", "--port", "8080"]

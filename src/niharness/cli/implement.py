@@ -128,6 +128,7 @@ def _backend(model: ModelConfig) -> OpenAiCompatBackend:
         context_window=model.context_window,
         supports_grammar=model.supports_grammar,
         supports_reasoning=model.supports_reasoning,
+        reasoning_effort=model.reasoning_effort,
     )
 
 

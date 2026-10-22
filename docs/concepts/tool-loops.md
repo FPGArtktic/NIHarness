@@ -50,6 +50,55 @@ advertised standing in for the argument model the harness does not have. The
 rules, and what such a server still cannot do, are in
 [declared MCP servers](../operations/mcp-servers.md).
 
+## The artifact's schema belongs to the closing turn
+
+A step declares the artifact that ends it - a `FinalAnswer`, a `Verdict` - and
+that declaration is a constraint on the model's output. It is applied only on a
+turn that cannot call a tool.
+
+Demanding it while tools are offered is a contradiction: a tool call does not
+satisfy the artifact's schema, so the model is told to produce something it is
+simultaneously forbidden to produce. A real backend makes the contradiction
+loud - llama.cpp installs one grammar for the tool-call syntax and another for
+the schema, and refuses the request with `failed to parse grammar` - but the
+contradiction was the harness's, which is why this is a rule and not a
+workaround for a backend.
+
+The closing turn already exists: it is the one forced finalisation produces,
+with `tool_choice: none`. That is where the artifact is demanded.
+
+## Diffs a model actually writes
+
+`apply_patch` is the only way anything changes, and a model writes a diff by
+hand. It gets the *change* right far more often than the paperwork, and three
+clerical mistakes account for nearly all of the failures:
+
+| What the model writes | What git wants | What the harness does |
+|---|---|---|
+| `--- src/a.py` (no `a/`) | one component to strip | retries with `-p0` |
+| `@@ -1,9 +1,9 @@` over a two-line hunk | counts that match | retries with `--recount` |
+| `--- src/new.py` for a new file | `--- /dev/null` | rewrites the header, and says so |
+
+None of that changes what a diff may do: the content still has to match the
+file, so a diff whose context is not in the worktree is still refused, and the
+file is still created where the diff says - a repaired header has to agree with
+the strip level, or the file lands one directory too high.
+
+The refusals say what was wrong rather than quoting git. `corrupt patch at line
+8` becomes the line itself and the rule it breaks, because the model is the one
+that has to fix it:
+
+```text
+the diff does not apply:
+[as written] error: corrupt patch at <stdin>:8
+line 8 is 'from . import greet': inside a hunk every line must start with a
+space, a '+' or a '-'. Text with no prefix ends the hunk and makes the rest
+unreadable.
+```
+
+A tool that silently repaired its caller would teach it nothing, so a repair is
+reported in the successful result too.
+
 ## Stop conditions
 
 - a final answer with the Definition of Done checklist filled,

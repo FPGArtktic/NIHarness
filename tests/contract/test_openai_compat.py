@@ -33,6 +33,7 @@ def backend(
     *,
     supports_grammar: bool = False,
     supports_reasoning: bool = False,
+    reasoning_effort: str = "",
 ) -> OpenAiCompatBackend:
     return OpenAiCompatBackend(
         BASE,
@@ -40,6 +41,7 @@ def backend(
         context_window=65_536,
         supports_grammar=supports_grammar,
         supports_reasoning=supports_reasoning,
+        reasoning_effort=reasoning_effort,
     )
 
 
@@ -218,3 +220,37 @@ async def test_a_tokenizer_without_tokens_is_reported() -> None:
     respx.post(f"{BASE}/tokenize").mock(return_value=httpx.Response(200, json={}))
     with pytest.raises(BackendProtocolError, match="token list"):
         await backend().count_text("x")
+
+
+@respx.mock
+async def test_the_reasoning_effort_is_sent_only_when_it_is_configured() -> None:
+    # On a reasoning model the thinking is paid for out of the output budget,
+    # so a step can end with an empty answer; the effort is how that is
+    # bounded. Empty means "whatever the server defaults to", which is the
+    # right behaviour for a model that does not reason at all.
+    route = respx.post(f"{BASE}/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=cassette("chat_tool_call.json")),
+    )
+    await backend(reasoning_effort="medium").chat(request())
+    assert json.loads(route.calls[0].request.content)["reasoning_effort"] == "medium"
+
+    await backend().chat(request())
+    assert "reasoning_effort" not in json.loads(route.calls[1].request.content)
+
+
+@respx.mock
+async def test_a_refusal_carries_the_servers_own_explanation() -> None:
+    # `raise_for_status` reports the status and throws away the body, which is
+    # where the server says what it objected to. A live backend refused a
+    # request with "failed to parse grammar" and the harness reported only
+    # "400 Bad Request", which is a fact nobody can act on.
+    respx.post(f"{BASE}/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            400,
+            json={
+                "error": {"message": "Failed to initialize samplers: failed to parse grammar"}
+            },
+        ),
+    )
+    with pytest.raises(httpx.HTTPStatusError, match="failed to parse grammar"):
+        await backend().chat(request())

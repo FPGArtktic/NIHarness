@@ -21,7 +21,7 @@ The whole configuration of one harness instance.
 | `project_root` | `pathlib.Path` | `PosixPath('.')` |  |
 | `profile` | `str` | `'hybrid-small-vram'` |  |
 | `max_revisions` | `int` | `3` |  |
-| `models` | `niharness.config.ModelsConfig` | `ModelsConfig(main=ModelConfig(name='Qwen3-Coder-30B-A3B-Instruct', base_url='http://127.0.0.1:8080', context_window=65536, supports_grammar=True, supports_reasoning=False, quantization='Q4_K_M', measured_generation_tps=0.0, measured_prompt_tps=0.0), thinking=None, utility=ModelConfig(name='BitNet-b1.58-2B-4T', base_url='http://127.0.0.1:8081', context_window=4096, supports_grammar=False, supports_reasoning=False, quantization='i2_s', measured_generation_tps=0.0, measured_prompt_tps=0.0), embeddings=None)` |  |
+| `models` | `niharness.config.ModelsConfig` | `ModelsConfig(main=ModelConfig(name='Qwen3-Coder-30B-A3B-Instruct', base_url='http://127.0.0.1:8080', context_window=65536, supports_grammar=True, supports_reasoning=False, reasoning_effort='', quantization='Q4_K_M', measured_generation_tps=0.0, measured_prompt_tps=0.0), thinking=None, utility=ModelConfig(name='BitNet-b1.58-2B-4T', base_url='http://127.0.0.1:8081', context_window=4096, supports_grammar=False, supports_reasoning=False, reasoning_effort='', quantization='i2_s', measured_generation_tps=0.0, measured_prompt_tps=0.0), embeddings=None)` |  |
 | `sandbox` | `niharness.config.SandboxConfig` | `SandboxConfig(image='localhost/niharness-sandbox:latest', network='none', binary='podman', cpus=4.0, memory='8g', pids_limit=512, quick_timeout_seconds=900, full_timeout_seconds=10800)` |  |
 | `mcp` | `niharness.config.McpConfig` | `McpConfig(servers=())` |  |
 | `lsp` | `niharness.config.LspConfig` | `LspConfig(enabled=True, disabled_languages=(), servers={}, start_timeout_seconds=30.0, request_timeout_seconds=20.0)` |  |
@@ -37,9 +37,9 @@ The models of a profile. One main model per run, no swaps inside a run.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `main` | `niharness.config.ModelConfig` | `ModelConfig(name='Qwen3-Coder-30B-A3B-Instruct', base_url='http://127.0.0.1:8080', context_window=65536, supports_grammar=True, supports_reasoning=False, quantization='Q4_K_M', measured_generation_tps=0.0, measured_prompt_tps=0.0)` |  |
+| `main` | `niharness.config.ModelConfig` | `ModelConfig(name='Qwen3-Coder-30B-A3B-Instruct', base_url='http://127.0.0.1:8080', context_window=65536, supports_grammar=True, supports_reasoning=False, reasoning_effort='', quantization='Q4_K_M', measured_generation_tps=0.0, measured_prompt_tps=0.0)` |  |
 | `thinking` | `niharness.config.ModelConfig | None` | `None` |  |
-| `utility` | `niharness.config.ModelConfig` | `ModelConfig(name='BitNet-b1.58-2B-4T', base_url='http://127.0.0.1:8081', context_window=4096, supports_grammar=False, supports_reasoning=False, quantization='i2_s', measured_generation_tps=0.0, measured_prompt_tps=0.0)` |  |
+| `utility` | `niharness.config.ModelConfig` | `ModelConfig(name='BitNet-b1.58-2B-4T', base_url='http://127.0.0.1:8081', context_window=4096, supports_grammar=False, supports_reasoning=False, reasoning_effort='', quantization='i2_s', measured_generation_tps=0.0, measured_prompt_tps=0.0)` |  |
 | `embeddings` | `niharness.config.ModelConfig | None` | `None` |  |
 
 ## [sandbox]

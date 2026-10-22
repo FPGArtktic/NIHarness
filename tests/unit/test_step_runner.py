@@ -25,6 +25,7 @@ from niharness.domain.messages import (
     ChatResponse,
     Message,
     MessageRole,
+    ResponseFormat,
     ToolCallRequest,
     ToolChoice,
     ToolSchema,
@@ -321,6 +322,33 @@ async def test_a_red_gate_result_carries_a_signature_into_the_detectors() -> Non
     interventions = [b for b in sink.bodies if isinstance(b, ev.LoopIntervention)]
     assert interventions
     assert interventions[0].pathology == "gate_thrash"
+
+
+async def test_the_artifact_schema_is_demanded_only_when_no_tool_may_be_called() -> None:
+    # Demanding the artifact's schema while tools are offered tells the model
+    # to produce something it is at the same time forbidden to produce, and a
+    # real backend says so: llama.cpp installs a grammar for the tool calls and
+    # another for the schema, and refuses with "failed to parse grammar".
+    schema = ResponseFormat(name="FinalAnswer", json_schema={"type": "object"})
+
+    with_tools = FakeBackend(proposes("read_file", {"path": "src/a.py"}), final_answer())
+    await runner(with_tools, FakeTools(), FakeSink()).run(
+        config(budgets=Budgets(max_tool_calls=6, max_tokens=10_000), response_format=schema),
+        await seeded_window(),
+    )
+    assert with_tools.requests[0].tools, "the budget allows a call, so tools are offered"
+    assert with_tools.requests[0].response_format is None
+
+    # The closing turn is the one that cannot call anything, and that is where
+    # the step's artifact is actually demanded.
+    closing = FakeBackend(final_answer())
+    await runner(closing, FakeTools(), FakeSink()).run(
+        config(budgets=Budgets(max_tool_calls=1, max_tokens=10_000), response_format=schema),
+        await seeded_window(),
+    )
+    assert closing.requests[0].tool_choice is ToolChoice.NONE
+    assert closing.requests[0].tools == ()
+    assert closing.requests[0].response_format is schema
 
 
 async def test_forced_finalisation_withholds_the_tools() -> None:

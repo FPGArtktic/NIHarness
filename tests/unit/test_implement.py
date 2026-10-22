@@ -404,8 +404,10 @@ async def test_the_reviewer_starts_from_the_diff() -> None:
     text = "\n".join(message.content for message in review_request.messages)
     assert "```diff" in text
     assert "+x = 1" in text
-    assert review_request.response_format is not None
-    assert review_request.response_format.name == "Verdict"
+    # The reviewer's turn offers tools, so it is not constrained to the
+    # Verdict schema: a tool call would not satisfy it. The step declares the
+    # artifact, and the constraint is applied on the turn that ends the step.
+    assert review_request.response_format is None
 
 
 async def test_the_run_stops_at_the_first_unfinished_task() -> None:
@@ -438,8 +440,7 @@ async def test_the_task_reaches_the_model_as_the_window_task() -> None:
     assert any("Task 1 of 1" in content for content in contents)
     assert any("do thing 1" in content for content in contents)
     assert any("NOTES.md" in content for content in contents)
-    assert backend.requests[0].response_format is not None
-    assert backend.requests[0].response_format.name == "FinalAnswer"
+    assert backend.requests[0].response_format is None, "this turn may call a tool"
 
 
 async def test_a_committing_task_goes_through_the_tool() -> None:

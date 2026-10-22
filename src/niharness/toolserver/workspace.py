@@ -19,6 +19,7 @@ from pathlib import Path
 
 import structlog
 
+from niharness.domain.diffs import repair_new_file_headers
 from niharness.domain.gate import (
     GateKind,
     GateResult,
@@ -47,6 +48,23 @@ SKIP_DIRECTORIES: frozenset[str] = frozenset({".git", ".nih", "__pycache__", "no
 
 MAX_SEARCH_BYTES = 2_000_000
 """Files larger than this are not searched; they are not source."""
+
+APPLY_VARIANTS: tuple[tuple[str, ...], ...] = (
+    (),
+    ("--recount",),
+    ("-p0",),
+    ("-p0", "--recount"),
+)
+"""How a hand-written diff is read, in order of how strictly it is taken.
+
+`-p0` is for a diff whose paths carry no `a/` and `b/` prefix, which is what a
+model writes when it has only seen the file's real path. `--recount` is for a
+hunk header whose line counts do not match the hunk, which is what a model
+writes when it has counted by eye. Neither changes what the diff may do.
+"""
+
+DIFF_LINE_PREFIXES: frozenset[str] = frozenset({" ", "+", "-", "\\"})
+"""What a line inside a hunk may start with."""
 
 _log = structlog.get_logger(__name__)
 
@@ -334,24 +352,55 @@ class Workspace:
     # ----------------------------------------------------------------- write
 
     async def apply_patch(self, diff: str) -> str:
-        """Apply a unified diff. There is no write_file: every change is reviewable."""
+        """Apply a unified diff. There is no write_file: every change is reviewable.
+
+        A model writes a diff by hand, and it gets two things wrong far more
+        often than it gets the *change* wrong: the path prefixes (`a/` and
+        `b/`, which `git apply` strips by default) and the line counts in the
+        hunk header. Both are clerical, so each option set below is tried until
+        one applies - the change still has to match the file's real content,
+        which is the part that matters.
+
+        Raises:
+            WorkspaceError: when the diff is too large, or when no variant
+                applies. The message then carries git's own output and, when
+                git names a line, that line - because "corrupt patch at line 8"
+                is not something a model can act on.
+        """
         size = len(diff.encode("utf-8"))
         if size > self._limits.max_diff_bytes:
             raise WorkspaceError(
                 f"diff is {size} bytes, limit is {self._limits.max_diff_bytes}"
             )
-        check = await self._git(("apply", "--check", "-"), stdin=diff)
-        if not check.ok:
-            raise WorkspaceError(f"the diff does not apply:\n{check.output.strip()}")
-        applied = await self._git(("apply", "-"), stdin=diff)
-        if not applied.ok:
-            raise WorkspaceError(f"applying the diff failed:\n{applied.output.strip()}")
+        # A new file announced as `--- path` instead of `--- /dev/null` is the
+        # one clerical mistake no git option forgives, so it is repaired here
+        # and reported back, because a tool that silently fixes its caller
+        # teaches it nothing.
+        diff, created = repair_new_file_headers(diff, self._is_file)
+        failures: list[str] = []
+        for options in APPLY_VARIANTS:
+            check = await self._git(("apply", "--check", *options, "-"), stdin=diff)
+            if check.ok:
+                applied = await self._git(("apply", *options, "-"), stdin=diff)
+                if applied.ok:
+                    break
+                failures.append(_variant_failure(options, applied.output))
+            else:
+                failures.append(_variant_failure(options, check.output))
+        else:
+            raise WorkspaceError(_apply_refusal(diff, failures))
+        note = ""
+        if created:
+            note = (
+                f"note: {', '.join(created)} did not exist, so the `---` line was read as "
+                f"`--- {'/dev/null'}`. Announce a new file that way next time.\n"
+            )
         changed = await self._git(("status", "--porcelain"))
         # The only writer in the harness is this method, which makes it the one
         # place a language server's view of the tree can be kept honest.
         if self._servers is not None:
             await self._servers.changed(_porcelain_paths(changed.stdout))
-        return f"applied.\nworktree now:\n{changed.stdout.strip() or '(clean)'}"
+        return f"{note}applied.\nworktree now:\n{changed.stdout.strip() or '(clean)'}"
 
     async def _git(self, args: Sequence[str], stdin: str | None = None) -> ProcessResult:
         """Run a git command in the worktree."""
@@ -379,6 +428,13 @@ class Workspace:
         )
 
     # ------------------------------------------------------------------ gate
+
+    def _is_file(self, relative: str) -> bool:
+        """Return whether a worktree-relative path is an existing file."""
+        try:
+            return self.resolve(relative).is_file()
+        except WorkspaceError:
+            return False
 
     def _pyproject(self) -> str:
         """Return this worktree's `pyproject.toml`, or nothing when there is none."""
@@ -488,3 +544,38 @@ def _porcelain_paths(output: str) -> tuple[str, ...]:
         _, arrow, renamed = candidate.partition(" -> ")
         paths.append(renamed.strip('"') if arrow else candidate)
     return tuple(dict.fromkeys(paths))
+
+
+def _variant_failure(options: Sequence[str], output: str) -> str:
+    """Return one variant's refusal, labelled with the options it used."""
+    label = " ".join(options) or "as written"
+    return f"[{label}] {output.strip()}"
+
+
+def _apply_refusal(diff: str, failures: Sequence[str]) -> str:
+    """Return a refusal a model can act on.
+
+    git reports a line number and calls the patch corrupt. The line itself is
+    what explains it, so it is quoted, with the rule it breaks.
+    """
+    lines = diff.splitlines()
+    detail = failures[0] if failures else "the diff does not apply"
+    numbers = re.findall(r"patch at .*?:(\d+)", " ".join(failures))
+    hint = ""
+    if numbers:
+        index = int(numbers[0]) - 1
+        if 0 <= index < len(lines):
+            offender = lines[index]
+            prefix = offender[:1]
+            if prefix not in DIFF_LINE_PREFIXES:
+                hint = (
+                    f"\nline {index + 1} is {offender[:80]!r}: inside a hunk every line "
+                    "must start with a space, a '+' or a '-'. Text with no prefix ends "
+                    "the hunk and makes the rest unreadable."
+                )
+    return (
+        f"the diff does not apply:\n{detail}{hint}\n"
+        "Write one hunk per change, with the file's real path on the --- and +++ "
+        "lines, three lines of context above and below, and nothing after the last "
+        "hunk line."
+    )

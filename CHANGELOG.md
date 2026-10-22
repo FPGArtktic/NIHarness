@@ -39,6 +39,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - `nih resume <run-id>` and `run_resume`: a run now records what it concluded
   about each task, so a cancelled run continues without redoing committed work,
   and refuses when it cannot know what it was running.
+- The first live model run, against a real `llama-server`, found four things
+  that fakes could not. Each is fixed with a test that fails without the fix:
+  the artifact's schema was demanded on turns that also offered tools, which is
+  a contradiction a model cannot satisfy and a backend refuses outright;
+  `apply_patch` rejected diffs over clerical mistakes a model makes constantly
+  (missing `a/`/`b/` prefixes, hunk counts counted by eye, a new file announced
+  without `--- /dev/null`) and reported git's "corrupt patch at line 8" instead
+  of the line and the rule; a backend's refusal reached the operator as "400
+  Bad Request" with the server's explanation thrown away; and a reasoning model
+  spends the output budget on thinking, with no way to bound it - `[models.*]
+  reasoning_effort` now sets the standard field.
 - Declared MCP servers: `[[mcp.servers]]` in `harness.toml` names servers the
   harness did not write, the tools to import from each and the roles granted
   them. Tools arrive as `<server>__<tool>`, so nothing a server advertises can

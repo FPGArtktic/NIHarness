@@ -202,7 +202,16 @@ class StepRunner:
             temperature=config.temperature,
             max_tokens=config.max_tokens,
             seed=config.seed,
-            response_format=config.response_format,
+            # The artifact's schema is demanded only on a turn that cannot call
+            # a tool. Demanding it while tools are offered is a contradiction:
+            # a tool call does not satisfy the artifact's schema, so the model
+            # is told to produce something it is simultaneously forbidden to
+            # produce. A real backend makes the contradiction loud - llama.cpp
+            # installs a grammar for tool calls and another for the schema, and
+            # refuses the request with "failed to parse grammar" - but the
+            # contradiction was ours, and it is the reason this is a condition
+            # rather than a workaround.
+            response_format=None if offers_tools else config.response_format,
         )
         await self._events.append(
             ev.ModelRequest(

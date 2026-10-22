@@ -45,6 +45,34 @@ class BackendProtocolError(RuntimeError):
     """Raised when the backend answers something the harness cannot interpret."""
 
 
+MAX_ERROR_BODY = 2_000
+"""How much of a refusal's body is carried into the exception."""
+
+
+def _checked(response: httpx.Response) -> None:
+    """Raise with the server's own explanation when a request was refused.
+
+    `raise_for_status` reports the status and the URL, and throws away the
+    body - which is where a server says *what* it objected to. A backend that
+    refuses a request is not a mystery to be guessed at from the status code:
+    the body goes into the message, truncated, so the operator reads the reason
+    instead of rediscovering it with curl.
+
+    Raises:
+        httpx.HTTPStatusError: when the response is an error, with the body.
+    """
+    if not response.is_error:
+        return
+    body = response.text.strip()
+    if len(body) > MAX_ERROR_BODY:
+        body = f"{body[:MAX_ERROR_BODY]}... [truncated]"
+    message = (
+        f"{response.status_code} from {response.request.method} {response.request.url}: "
+        f"{body or '(no body)'}"
+    )
+    raise httpx.HTTPStatusError(message, request=response.request, response=response)
+
+
 def require_local(base_url: str) -> str:
     """Return `base_url` unchanged, or refuse it.
 
@@ -81,6 +109,7 @@ class OpenAiCompatBackend:
         context_window: int,
         supports_grammar: bool = False,
         supports_reasoning: bool = False,
+        reasoning_effort: str = "",
         timeout_seconds: float = 600.0,
         client: httpx.AsyncClient | None = None,
     ) -> None:
@@ -92,6 +121,11 @@ class OpenAiCompatBackend:
             context_window: the window the backend was started with.
             supports_grammar: whether GBNF may be sent for structured output.
             supports_reasoning: whether responses may carry reasoning content.
+            reasoning_effort: how long a reasoning model may think, when it
+                takes the standard field. Empty leaves the server's default,
+                which on a reasoning model is usually its longest setting -
+                and the reasoning counts against the output budget, so a step
+                can end with an empty answer and no explanation.
             timeout_seconds: request timeout; local generation can be slow.
             client: an injected HTTP client, which is how contract tests
                 serve recorded responses.
@@ -101,6 +135,7 @@ class OpenAiCompatBackend:
         self._context_window = context_window
         self._supports_grammar = supports_grammar
         self._supports_reasoning = supports_reasoning
+        self._reasoning_effort = reasoning_effort
         self._client = client or httpx.AsyncClient(
             base_url=self._base_url,
             timeout=timeout_seconds,
@@ -124,7 +159,7 @@ class OpenAiCompatBackend:
         """Run one completion and return the parsed response."""
         payload = self._request_payload(request)
         response = await self._client.post(CHAT_PATH, json=payload)
-        response.raise_for_status()
+        _checked(response)
         parsed = self._parse_response(response.json())
         _log.debug(
             "model.response",
@@ -138,7 +173,7 @@ class OpenAiCompatBackend:
     async def count_text(self, text: str) -> int:
         """Return the backend's own token count for `text`."""
         response = await self._client.post(TOKENIZE_PATH, json={"content": text})
-        response.raise_for_status()
+        _checked(response)
         body = response.json()
         tokens = body.get("tokens")
         if not isinstance(tokens, list):
@@ -163,7 +198,7 @@ class OpenAiCompatBackend:
         response = await self._client.post(TEMPLATE_PATH, json=payload)
         if response.status_code == httpx.codes.NOT_FOUND:
             return "\n".join(f"{m.role.value}: {m.content}" for m in messages)
-        response.raise_for_status()
+        _checked(response)
         prompt = response.json().get("prompt")
         if not isinstance(prompt, str):
             msg = f"{TEMPLATE_PATH} returned no prompt"
@@ -213,6 +248,11 @@ class OpenAiCompatBackend:
             "max_tokens": request.max_tokens,
             "stream": False,
         }
+        if self._reasoning_effort:
+            # A reasoning model spends the output budget on thinking before it
+            # answers, so on a slow host the effort is a real setting and not
+            # a preference. `reasoning_effort` is the standard field for it.
+            payload["reasoning_effort"] = self._reasoning_effort
         if request.stop:
             payload["stop"] = list(request.stop)
         if request.seed is not None:

@@ -44,6 +44,10 @@ class ModelConfig(BaseModel):
     context_window: int = Field(default=65_536, ge=4_096)
     supports_grammar: bool = True
     supports_reasoning: bool = False
+    reasoning_effort: str = Field(
+        default="",
+        description="Standard `reasoning_effort`; empty leaves the server's default.",
+    )
     quantization: str = Field(default="Q4_K_M", description="The floor is Q4_K_M.")
     measured_generation_tps: float = Field(
         default=0.0,

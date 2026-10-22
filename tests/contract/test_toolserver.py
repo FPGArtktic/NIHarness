@@ -380,3 +380,81 @@ async def test_an_outline_outside_the_worktree_is_refused(worktree: Path) -> Non
         await session.aclose()
     assert not result.ok
     assert "path_escape" in result.content or "not a file" in result.content
+
+
+# ------------------------------------------- the diffs a model actually writes
+
+
+async def test_a_diff_without_the_a_and_b_prefixes_still_applies(worktree: Path) -> None:
+    # A model writes the path it was shown. `git apply` strips one component by
+    # default, so the path it was shown is the one that does not resolve.
+    diff = (
+        "--- src/a.py\n+++ src/a.py\n@@ -1,2 +1,3 @@\n"
+        " def add(x, y):\n     return x + y  # TODO: types\n+VALUE = 1\n"
+    )
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=diff))
+    assert result.ok, result.content
+    assert "VALUE = 1" in (worktree / "src" / "a.py").read_text(encoding="utf-8")
+
+
+async def test_a_hunk_header_counted_by_eye_still_applies(worktree: Path) -> None:
+    diff = (
+        "--- a/src/a.py\n+++ b/src/a.py\n@@ -1,9 +1,9 @@\n"
+        " def add(x, y):\n     return x + y  # TODO: types\n+VALUE = 2\n"
+    )
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=diff))
+    assert result.ok, result.content
+    assert "VALUE = 2" in (worktree / "src" / "a.py").read_text(encoding="utf-8")
+
+
+async def test_a_stray_line_is_refused_with_the_line_and_the_rule(worktree: Path) -> None:
+    # What a live 4B produced on the first run: text after the hunk, with no
+    # prefix. git calls the patch corrupt and names a line number, which on its
+    # own tells a model nothing.
+    diff = (
+        "--- src/a.py\n+++ src/a.py\n@@ -1,2 +1,4 @@\n"
+        " def add(x, y):\n     return x + y  # TODO: types\n\nVALUE = 3\n"
+    )
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=diff))
+    assert not result.ok
+    assert "VALUE = 3" in result.content, "the offending line is quoted"
+    assert "must start with a space" in result.content, "and the rule it breaks"
+    assert "VALUE = 3" not in (worktree / "src" / "a.py").read_text(encoding="utf-8")
+
+
+async def test_a_diff_against_content_that_is_not_there_is_still_refused(
+    worktree: Path,
+) -> None:
+    # The tolerances are clerical only: a diff whose context does not match the
+    # file is a wrong diff, and no option set makes it right.
+    diff = (
+        "--- a/src/a.py\n+++ b/src/a.py\n@@ -1,2 +1,3 @@\n"
+        " def subtract(x, y):\n     return x - y\n+VALUE = 4\n"
+    )
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=diff))
+    assert not result.ok
+    assert "VALUE = 4" not in (worktree / "src" / "a.py").read_text(encoding="utf-8")
+
+
+async def test_a_new_file_a_model_announced_wrongly_still_lands(worktree: Path) -> None:
+    # What the live 4B wrote on its second run: a creation with the real path
+    # on the `---` line, where git insists on /dev/null. The repair has to put
+    # the file where the diff says, not one directory above it.
+    diff = (
+        "--- src/greeter/greet.py\n"
+        "+++ src/greeter/greet.py\n"
+        "@@ -0,0 +1,3 @@\n"
+        '+"""Greeting."""\n'
+        "+\n"
+        "+VALUE = 5\n"
+    )
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=diff))
+    assert result.ok, result.content
+    assert "did not exist" in result.content, "the model is told what it got wrong"
+    assert (worktree / "src" / "greeter" / "greet.py").is_file()
+    assert not (worktree / "greeter").exists(), "not one directory too high"
