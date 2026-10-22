@@ -58,6 +58,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   offer an imported tool, stops the run before it begins. `nih tools` prints
   the whole surface per role, starting the declared servers to ask them. A run
   records a `tools.attached` event for each, and none of them can commit.
+- Reading documents: `nih ingest` turns a PDF into chunks that cite their
+  pages, reading the text layer where there is one and OCRing the pages where
+  there is not - `pdftotext`, `pdftoppm` and `tesseract`, no new Python
+  dependency. When a page needs OCR is pure policy with two thresholds, and
+  OCR has to beat the text layer to replace it. One `Chunk` now carries lines
+  (code), pages (documents) or neither (compacted run context), with the
+  inapplicable fields absent rather than faked. Verified against a typeset PDF
+  and the same document rasterised into an image-only scan.
 - `format_code`: the gate's `format` commands in their writing form. A live run
   was refused a correct, typed, documented function for one missing blank line,
   and a model with only `apply_patch` has to guess a formatter's output by

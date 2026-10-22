@@ -201,7 +201,21 @@ stop the step.
 
 ## Stage: retrieval
 
-- [ ] `VectorStore` adapter (Qdrant) and the embedding backends.
+- [x] Reading documents: `nih ingest` reads a PDF's text layer where it has
+      one and OCRs the pages where it does not, and turns the result into
+      chunks that cite their pages (`manual.pdf pp. 12-13`, marked when the
+      text came off a rendering). Verified against a typeset PDF and the same
+      document rasterised into an image-only scan. The chunks land in
+      `.nih/corpus/` until there is a store to put them in.
+- [ ] `VectorStore` adapter (Qdrant) and the embedding backends. Both are
+      reachable over HTTP with what the harness already depends on - Qdrant has
+      a REST API, and `/v1/embeddings` is the same OpenAI-compatible surface
+      the inference port already speaks - so this needs no new dependency.
+      bge-m3 is the embedding model the profiles name, and its 1024 dimensions
+      are what `[vector] embedding_dimensions` already expects.
+- [ ] `rag_query` in the tool server. It is in every role's allowlist already
+      and answers nothing, which is the last link in the chain: ingest, index,
+      retrieve, cite.
 - [ ] tree-sitter chunking, re-index by file hash.
 - [ ] Compacted run context indexed under the run's collection, recoverable
       with `rag_query`. Until this lands, folded-away turns live only in the

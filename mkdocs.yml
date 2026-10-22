@@ -109,6 +109,7 @@ nav:
       - concepts/gate.md
       - concepts/prompts.md
       - concepts/context.md
+      - concepts/documents.md
       - concepts/events.md
       - concepts/tool-loops.md
   - Reference:

@@ -25,6 +25,8 @@ Usage: nih [OPTIONS] COMMAND [ARGS]...
 │ gate        Show the commands the gate would run in this repository.         │
 │ status      Fold a run's event log into a snapshot.                          │
 │ runs        List this project's runs, with what each one is doing.           │
+│ ingest      Read documents into citable chunks, with OCR where there is no   │
+│             text layer.                                                      │
 │ tools       Show the tools a run would offer, per role, including declared   │
 │             MCP servers.                                                     │
 │ cancel      Ask a run to stop at its next step boundary.                     │
@@ -184,6 +186,28 @@ Usage: nih implement [OPTIONS]
 │ --json                                Print one JSON object instead of the   │
 │                                       human form.                            │
 │ --help                                Show this message and exit.            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+## `nih ingest`
+
+```text
+Usage: nih ingest [OPTIONS] {documents}...                                     
+                                                                                
+ Read documents into citable chunks, with OCR where there is no text layer.     
+                                                                                
+╭─ Arguments ──────────────────────────────────────────────────────────────────╮
+│ *    documents      <path>  Documents to read. [required]                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --project-root   -C      <path>  The project to operate on. [default: (.)]   │
+│ --ocr-languages          <str>   OCR languages, the engine's way: pol+eng.   │
+│                                  [default: eng]                              │
+│ --dpi                    <int>   Rendering resolution for OCR.               │
+│                                  [default: 300]                              │
+│ --json                           Print one JSON object instead of the human  │
+│                                  form.                                       │
+│ --help                           Show this message and exit.                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 

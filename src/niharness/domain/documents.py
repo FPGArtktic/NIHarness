@@ -30,7 +30,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from niharness.domain.identity import Digest, digest_text
+from niharness.domain.identity import Digest
+from niharness.domain.rag import Chunk, ChunkKind
 
 
 class TextSource(StrEnum):
@@ -123,40 +124,13 @@ class ChunkPolicy(BaseModel):
     """A chunk this size embeds well and still carries its context."""
 
     min_characters: int = Field(default=200, ge=0)
-    """A chunk smaller than this is merged with the next page when there is one."""
-
-
-class Chunk(BaseModel):
-    """A citable passage of a document."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    document: str = Field(description="How the document is named in a citation.")
-    ordinal: int = Field(ge=0, description="Position in the document, from zero.")
-    first_page: int = Field(ge=1)
-    last_page: int = Field(ge=1)
-    text: str
-    sources: tuple[TextSource, ...] = ()
-    """How each contributing page was read, so an OCR'd passage is recognisable."""
-
-    @property
-    def citation(self) -> str:
-        """Return the passage's reference, the way a person would write it."""
-        pages = (
-            f"p. {self.first_page}"
-            if self.first_page == self.last_page
-            else f"pp. {self.first_page}-{self.last_page}"
-        )
-        return f"{self.document} {pages}"
-
-    def digest(self) -> Digest:
-        """Return a digest of the passage, for deduplication and re-indexing."""
-        return digest_text(f"{self.document}:{self.first_page}:{self.ordinal}:{self.text}")
+    """A chunk smaller than this takes the next page with it, when there is one."""
 
 
 def chunk_pages(
     document: str,
     pages: Iterable[PageText],
+    file_digest: Digest,
     policy: ChunkPolicy | None = None,
 ) -> tuple[Chunk, ...]:
     """Pack pages into citable chunks.
@@ -167,14 +141,14 @@ def chunk_pages(
     the next best boundary after a page break.
 
     Args:
-        document: how the document is named in a citation.
+        document: the document's path, as a citation names it.
         pages: the pages, in order.
+        file_digest: digest of the whole document, which drives re-indexing.
         policy: sizes; the shipped defaults when omitted.
 
     Returns:
-        The chunks, in reading order. Every page's text appears in exactly one
-        chunk, and a page with no text still contributes its page number, so a
-        gap in a document is visible rather than invented away.
+        Chunks in reading order, each carrying the pages it came from and
+        whether any of that text was read by OCR.
     """
     rules = policy or ChunkPolicy()
     chunks: list[Chunk] = []
@@ -185,14 +159,17 @@ def chunk_pages(
         if not pending:
             return
         text = "\n\n".join(page.text.strip() for page in pending if page.text.strip())
+        sources = {page.source for page in pending}
         chunks.append(
             Chunk(
-                document=document,
-                ordinal=len(chunks),
+                id=f"{file_digest}:{len(chunks)}",
+                kind=ChunkKind.DOC,
+                path=document,
                 first_page=pending[0].number,
                 last_page=pending[-1].number,
                 text=text,
-                sources=tuple(dict.fromkeys(page.source for page in pending)),
+                file_digest=file_digest,
+                provenance=TextSource.OCR.value if TextSource.OCR in sources else "",
             ),
         )
         pending.clear()

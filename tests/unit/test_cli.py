@@ -302,3 +302,42 @@ def test_resuming_a_finished_run_says_there_is_nothing_to_do(tmp_path: Path) -> 
     result = runner.invoke(app, ["resume", run_id, "-C", str(tmp_path), "--json"])
     assert result.exit_code == 1
     assert "nothing to continue" in json.loads(result.stdout)["error"]
+
+
+def test_ingest_refuses_a_document_that_is_not_there(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["ingest", str(tmp_path / "absent.pdf"), "-C", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "no such document" in result.output
+
+
+def test_ingest_writes_chunks_a_retriever_can_cite(tmp_path: Path) -> None:
+    import shutil
+    import subprocess
+
+    if shutil.which("ps2pdf") is None or shutil.which("pdftotext") is None:
+        pytest.skip("ghostscript or poppler is not installed")
+    source = tmp_path / "doc.ps"
+    source.write_text(
+        "%!PS\n/Helvetica findfont 14 scalefont setfont\n"
+        "72 700 moveto (The loop bandwidth is programmable between 1 and 16 kHz.) show\n"
+        "72 680 moveto (The default is four kilohertz, which suits most receivers.) show\n"
+        "showpage\n",
+        encoding="utf-8",
+    )
+    document = tmp_path / "manual.pdf"
+    subprocess.run(["ps2pdf", str(source), str(document)], check=True, capture_output=True)
+
+    result = runner.invoke(app, ["ingest", str(document), "-C", str(tmp_path), "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    entry = payload["documents"][0]
+    assert entry["chunks"] >= 1
+    assert "p. 1" in entry["citations"][0], "a chunk cites the page it came from"
+    corpus = Path(entry["corpus"])
+    assert corpus.is_file()
+    first = json.loads(corpus.read_text(encoding="utf-8").splitlines()[0])
+    assert first["kind"] == "doc"
+    assert first["first_page"] == 1
+    assert first["start_line"] is None, "a page is not a line"
+    assert "loop bandwidth" in first["text"]

@@ -18,6 +18,7 @@ from niharness import __version__
 from niharness.cli import docs as docs_module
 from niharness.cli import gate as gate_module
 from niharness.cli import implement as implement_module
+from niharness.cli import ingest as ingest_module
 from niharness.cli import init as init_module
 from niharness.cli import logging as logging_module
 from niharness.cli import plan as plan_module
@@ -120,6 +121,27 @@ def status(
 def runs(root: ProjectRoot = Path(), json_mode: JsonOption = False) -> None:
     """List this project's runs, with what each one is doing."""
     runs_module.runs(_config(root.resolve(), None), json_mode=json_mode)
+
+
+@app.command()
+def ingest(
+    documents: Annotated[list[Path], typer.Argument(help="Documents to read.")],
+    root: ProjectRoot = Path(),
+    languages: Annotated[
+        str,
+        typer.Option("--ocr-languages", help="OCR languages, the engine's way: pol+eng."),
+    ] = "eng",
+    dpi: Annotated[int, typer.Option("--dpi", help="Rendering resolution for OCR.")] = 300,
+    json_mode: JsonOption = False,
+) -> None:
+    """Read documents into citable chunks, with OCR where there is no text layer."""
+    ingest_module.ingest(
+        _config(root.resolve(), None),
+        documents,
+        languages=languages,
+        dpi=dpi,
+        json_mode=json_mode,
+    )
 
 
 @app.command()
