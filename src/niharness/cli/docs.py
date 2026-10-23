@@ -10,12 +10,14 @@ so nobody hand-edits a generated page.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import typer
 from pydantic import BaseModel
+from typer import rich_utils
 from typer.testing import CliRunner
 
 from niharness.config import HarnessConfig, ModelsConfig, SandboxConfig, VectorConfig
@@ -163,20 +165,40 @@ def render_config_page() -> str:
 HELP_WIDTH = 80
 """The width `--help` is rendered at for the generated reference page.
 
-Click wraps to the terminal, so without pinning this the page depends on
-whoever ran `nih docs generate` - and the staleness check that guards it can
-never agree between two machines. It did not: CI regenerated a different
-`cli.md` on its first run and failed, correctly.
+A user sees their own terminal's width; a committed page has to see one width
+or it is not reproducible, and the staleness check guarding it cannot agree
+between two machines. It did not: CI regenerated a different `cli.md` on its
+first run and failed, correctly.
 """
 
 
-def _help_text(app: typer.Typer, args: Sequence[str]) -> str:
-    """Return the help output of a command, at a fixed width.
+@contextmanager
+def _pinned_width(columns: int) -> Iterator[None]:
+    """Render Typer's help at `columns`, whatever the environment thinks.
 
-    A user sees their own terminal's width; a committed page has to see one
-    width, or it is not reproducible.
+    Typer formats help through rich and takes the width from its own
+    `rich_utils.MAX_WIDTH`, read from `TERMINAL_WIDTH` **at import time**.
+    `COLUMNS` is not consulted at all - which is worth stating, because the
+    first attempt at fixing this set `COLUMNS` and was a no-op that passed
+    locally only because the default already happened to be 80. On a CI
+    runner rich picks its own, much wider, default and the page came out at
+    188 columns.
+
+    So the module attribute is set directly and restored. Blunt, but it is the
+    value that decides, and nothing else here can be relied on to reach it.
     """
-    result = CliRunner().invoke(app, [*args, "--help"], env={"COLUMNS": str(HELP_WIDTH)})
+    previous = rich_utils.MAX_WIDTH
+    rich_utils.MAX_WIDTH = columns
+    try:
+        yield
+    finally:
+        rich_utils.MAX_WIDTH = previous
+
+
+def _help_text(app: typer.Typer, args: Sequence[str]) -> str:
+    """Return the help output of a command, at a fixed width."""
+    with _pinned_width(HELP_WIDTH):
+        result = CliRunner().invoke(app, [*args, "--help"])
     return result.output.strip()
 
 

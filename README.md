@@ -23,13 +23,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 > This is a working notebook with a quality gate, not a product. Specifically, and
 > because "under development" is too vague to be useful:
 >
-> - **The sandbox is young.** The image builds, and the tool server and the language
->   servers start inside it under `--network=none`. But every number in
->   `benchmarks/results/` so far was taken with `--unsafe-local-tools`, which runs the
->   model's tools on the host, and the container's hardening - read-only root, no
->   capabilities, one writable mount - is asserted by tests over its argument vector
->   rather than by having withstood anything. Treat it as a reasonable default, not as
->   a boundary you have audited.
+> - **The sandbox is young.** The image builds, and L1 has been run through it with
+>   the tool server, the gate and the language servers all inside the container under
+>   `--network=none` - same result as on the host, which is what you want isolation to
+>   do. But its hardening beyond that - read-only root, no capabilities, one writable
+>   mount - is asserted by tests over the container's argument vector rather than by
+>   having withstood anything. Treat it as a reasonable default, not as a boundary you
+>   have audited.
 > - **One of three entry points works.** You can bring a finished `PLAN.md` and
 >   execute it. `nih brainstorm` and `nih plan spec` are stubs that exit 69 and say so.
 > - **The central question is unanswered.** L1 (tool calling) has numbers as of

@@ -454,19 +454,38 @@ def test_a_record_calls_the_tree_dirty_for_the_code_not_for_its_own_output(
 def test_the_generated_cli_page_does_not_depend_on_the_terminal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Click wraps `--help` to the terminal, so the page has to pin a width.
+    """The page pins its width, whatever the environment thinks it is.
 
-    Without that, the page depends on whoever ran `nih docs generate` and the
-    staleness check guarding it can never agree between two machines. It did
-    not: CI regenerated a different `cli.md` on its first run and failed,
-    correctly.
+    Typer formats help through rich and takes the width from its own
+    `rich_utils.MAX_WIDTH`; `COLUMNS` is never consulted. The first attempt at
+    fixing this set `COLUMNS` and was a no-op that passed locally because the
+    default already happened to be 80 - while a CI runner, where rich picks a
+    much wider default of its own, produced 188 columns and a page that could
+    never match the committed one.
+
+    So the hostile value is set where it is actually read.
     """
+    from typer import rich_utils
+
     from niharness.cli.docs import HELP_WIDTH, render_cli_page
     from niharness.cli.main import app as real_app
 
     rendered = []
-    for columns in ("40", "250"):
-        monkeypatch.setenv("COLUMNS", columns)
+    for width in (40, 250):
+        monkeypatch.setattr(rich_utils, "MAX_WIDTH", width)
+        monkeypatch.setenv("COLUMNS", str(width))
         rendered.append(render_cli_page(real_app))
-    assert rendered[0] == rendered[1]
+    assert rendered[0] == rendered[1], "the page must not move with the terminal"
     assert max(len(line) for line in rendered[0].splitlines()) <= HELP_WIDTH
+
+
+def test_the_width_is_put_back_after_generating() -> None:
+    """A user's own `--help` must not inherit the page's width."""
+    from typer import rich_utils
+
+    from niharness.cli.docs import render_cli_page
+    from niharness.cli.main import app as real_app
+
+    before = rich_utils.MAX_WIDTH
+    render_cli_page(real_app)
+    assert before == rich_utils.MAX_WIDTH
