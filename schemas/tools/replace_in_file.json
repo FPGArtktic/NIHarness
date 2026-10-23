@@ -1,0 +1,30 @@
+{
+  "additionalProperties": false,
+  "description": "Replace one exact passage of a file with another.\n\nThe passage is located by its own text, not by a line number, for the same\nreason the symbol tools take a name: a model that has to count lines has\nalready read the file, and will still count wrong. `find` has to occur\nexactly once, which is what makes the edit unambiguous without a position.\n\nAn empty `replace` deletes the passage. There is no option to replace every\noccurrence: a change that means five places is five edits, each of which\ncan be refused on its own.",
+  "properties": {
+    "find": {
+      "description": "The exact text to replace, copied from the file.",
+      "minLength": 1,
+      "title": "Find",
+      "type": "string"
+    },
+    "path": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "title": "Path",
+      "type": "string"
+    },
+    "replace": {
+      "description": "What to put in its place; empty deletes it.",
+      "title": "Replace",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "find",
+    "replace"
+  ],
+  "title": "ReplaceInFileArgs",
+  "type": "object"
+}

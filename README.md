@@ -92,10 +92,17 @@ L3's - and **no runner to execute any of them**, so no data. Until there is, eve
 claim here about model behaviour is an observation from roughly ten live runs, which
 is an anecdote and not a measurement, and is labelled as one wherever it appears.
 
-The honest headline, stated plainly: **no model has yet produced a green commit
-unattended.** The closest was a 27B that wrote a module and a passing test and was
-blocked by one missing blank line - which is why `format_code` exists now. That gap is
-the project's own benchmark, and it is open.
+One result is worth stating against that, with its limits. A **4B** has now produced
+a green commit unattended: `rag_query` to read a value out of an ingested datasheet
+whose erratum contradicted the obvious answer, `replace_in_file` to write it,
+`format_code` when the linter objected, then the gate - `ruff format`, `ruff check`,
+`mypy --strict`, `pytest` - green, and a commit whose body cites the erratum and what
+ignoring it destroys. Verified by re-running the gate on the commit by hand.
+
+The limits matter as much as the result: one task, one file, one constant, and a
+sample of three runs of which two finished inside the time limit and both committed.
+It says the pipeline closes. It does not say how often, on what size of task, or for
+which models - which is what L1 to L3 are for, and they have no runner yet.
 
 ## Pipeline
 

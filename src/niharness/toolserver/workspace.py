@@ -20,12 +20,16 @@ from pathlib import Path
 import structlog
 
 from niharness.domain.diffs import (
+    DEV_NULL,
     changes_nothing,
     ensure_terminated,
+    header_path,
     is_not_a_diff,
     repair_new_file_headers,
     strip_line_numbers,
+    strip_prefix,
 )
+from niharness.domain.edits import EditOutcome, plan_edit
 from niharness.domain.gate import (
     GateKind,
     GateResult,
@@ -358,6 +362,52 @@ class Workspace:
 
     # ----------------------------------------------------------------- write
 
+    async def replace_in_file(self, path: str, find: str, replace: str) -> str:
+        """Replace one exact passage of a file, and report the diff that made.
+
+        The passage is located by its own text and has to occur exactly once.
+        Nothing about the result differs from `apply_patch`: the file is
+        written, the language servers are told, and what the reviewer and the
+        commit see is a diff. The difference is who had to write the diff -
+        here the harness does, from a change the model expressed as the text
+        it wanted replaced, so the diff cannot be malformed.
+
+        Raises:
+            WorkspaceError: when the path is outside the worktree or not a
+                file, when the passage is absent, when it occurs more than
+                once, or when the edit would change nothing. Each refusal says
+                which of those it is, and an absent passage is told where the
+                near miss is.
+        """
+        target = self.resolve(path)
+        if not target.is_file():
+            raise WorkspaceError(f"not a file: {path}")
+        before = await asyncio.to_thread(target.read_text, "utf-8", "replace")
+        plan = plan_edit(before, find, replace)
+        if plan.outcome is not EditOutcome.UNIQUE:
+            raise WorkspaceError(f"{path}: {plan.detail}")
+        await asyncio.to_thread(target.write_text, plan.updated, encoding="utf-8")
+        if self._servers is not None:
+            await self._servers.changed((path,))
+        return f"replaced one passage in {path}.\n{await self._shown_diff(path)}"
+
+    async def _shown_diff(self, path: str) -> str:
+        """Return the diff of one path, so a model sees the change it caused.
+
+        An edit the harness wrote still has to be reviewable by whoever reads
+        the step, and showing it back is also the cheapest answer to "what is
+        in the file now" - which is otherwise a `read_file` the model pays for.
+        """
+        shown = await self._git(("diff", "--", path))
+        body = shown.stdout.strip()
+        if body:
+            content, _ = truncate_result(body, self._limits)
+            return content
+        staged = await self._git(("diff", "--cached", "--", path))
+        if staged.stdout.strip():
+            return "the change is already staged; nothing further to show"
+        return "the file is not tracked by git yet, so there is no diff to show"
+
     async def apply_patch(self, diff: str) -> str:
         """Apply a unified diff. There is no write_file: every change is reviewable.
 
@@ -388,7 +438,7 @@ class Workspace:
         diff, terminated = ensure_terminated(diff)
         malformed = _malformed(diff)
         if malformed is not None:
-            raise WorkspaceError(malformed)
+            raise WorkspaceError(malformed + self._instead(diff))
         diff, created = repair_new_file_headers(diff, self._is_file)
         applied, failures = await self._apply_variants(diff)
         numbered = False
@@ -414,7 +464,7 @@ class Workspace:
                     "already applied: the worktree already contains this change, so "
                     "nothing was done. Read the file if you are unsure what is in it."
                 )
-            raise WorkspaceError(_apply_refusal(diff, failures))
+            raise WorkspaceError(_apply_refusal(diff, failures) + self._instead(diff))
         note = _repair_notes(terminated=terminated, created=created, numbered=numbered)
         changed = await self._git(("status", "--porcelain"))
         # The only writer in the harness is this method, which makes it the one
@@ -422,6 +472,31 @@ class Workspace:
         if self._servers is not None:
             await self._servers.changed(_porcelain_paths(changed.stdout))
         return f"{note}applied.\nworktree now:\n{changed.stdout.strip() or '(clean)'}"
+
+    def _instead(self, diff: str) -> str:
+        """Point a refused edit at `replace_in_file`, when that is the better tool.
+
+        Only for a diff against a file that exists, because creating one is
+        still `apply_patch`'s job. Saying this matters more than it looks:
+        across live runs the same model sometimes found the other tool after a
+        refusal and sometimes repeated the diff until the detectors stopped
+        the step. The prompt already prefers `replace_in_file`; a model that
+        has just been refused is reading this message, not the prompt.
+        """
+        targets = [
+            path
+            for line in diff.splitlines()
+            if line.startswith("+++ ")
+            for path in (strip_prefix(header_path(line)),)
+            if path and path != DEV_NULL and self._is_file(path)
+        ]
+        if not targets:
+            return ""
+        return (
+            f"\n\nTo change {targets[0]}, `replace_in_file` is the shorter road: give it "
+            "`find`, copied out of the file, and `replace`. It has no hunk headers and "
+            "no line counts, and it shows you the diff it wrote."
+        )
 
     async def _apply_variants(self, diff: str) -> tuple[bool, list[str]]:
         """Try each option set until one applies, and return what the rest said.
@@ -565,7 +640,7 @@ class Workspace:
             )
             if not result.ok:
                 break
-        return GateResult(tier=tier, steps=tuple(steps))
+        return GateResult(tier=tier, steps=tuple(steps), planned=len(commands))
 
     async def changed_paths(self) -> tuple[str, ...]:
         """Return what changed since HEAD."""
@@ -575,7 +650,27 @@ class Workspace:
         )
 
     def render_gate(self, result: GateResult) -> str:
-        """Render a gate result for the model: the failure, not the whole log."""
+        """Render a gate result for the model: the failure, not the whole log.
+
+        A gate that ran nothing is reported as such rather than as red. "RED"
+        with no failing command underneath it is a wall with no door, and a
+        model told that will keep knocking.
+        """
+        if result.unconfigured:
+            return (
+                f"gate {result.tier.value}: nothing to run. No language was detected in "
+                "this worktree, so the gate has no commands and cannot verify anything. "
+                "This is a setup problem rather than something to fix in the code: the "
+                "project needs its marker file - pyproject.toml, Cargo.toml, go.mod, "
+                "CMakeLists.txt - or a [gate] section naming its commands. Write that to "
+                "NOTES.md and stop; running the checks again will return this."
+            )
+        if result.nothing_selected:
+            return (
+                f"gate {result.tier.value}: nothing of this kind to run. The project has "
+                "a gate, but none of its commands answer this particular check for the "
+                "languages here. The other checks, and the commit, still apply."
+            )
         lines = [f"gate {result.tier.value}: {'green' if result.passed else 'RED'}"]
         for step in result.steps:
             lines.append(
@@ -602,6 +697,15 @@ class Workspace:
         if not await self.changed_paths():
             raise WorkspaceError("nothing to commit; the worktree is clean")
         result = await self.run_gate(GateTier.QUICK)
+        if result.unconfigured:
+            # Still no commit - a gate that verified nothing cannot authorise
+            # one - but the reason is not the code, and the message says so
+            # rather than inviting a fix that does not exist.
+            _log.warning("gate.unconfigured", root=str(self._root))
+            raise WorkspaceError(
+                f"there is no commit, and the code is not the reason.\n\n"
+                f"{self.render_gate(result)}",
+            )
         if not result.passed:
             _log.warning("gate.red", signature=result.failure_signature())
             raise WorkspaceError(

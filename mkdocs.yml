@@ -156,3 +156,4 @@ nav:
       - adr/0019-declared-mcp-servers.md
       - adr/0020-language-servers-in-the-sandbox.md
       - adr/0021-retrieval-runs-in-the-harness.md
+      - adr/0022-an-edit-located-by-its-own-text.md

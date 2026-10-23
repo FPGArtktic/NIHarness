@@ -511,11 +511,39 @@ class GateResult(BaseModel):
 
     tier: GateTier
     steps: tuple[GateStepResult, ...]
+    planned: int = Field(
+        default=0,
+        ge=0,
+        description="Commands this tier planned before any kind filter; see `unconfigured`.",
+    )
 
     @property
     def passed(self) -> bool:
         """True when every command passed. An empty gate does not pass."""
         return bool(self.steps) and all(step.passed for step in self.steps)
+
+    @property
+    def unconfigured(self) -> bool:
+        """True when this project has no gate at all, so nothing was verified.
+
+        Not the same as red, and the difference matters to whoever is told. A
+        red gate has a cause in its output and somebody can fix it; a gate
+        with no commands has refused for a reason no amount of editing the
+        code will address, and saying "RED" to that is how a model ends up
+        running the same three checks until the detectors stop it. Observed on
+        a live run against a project with `.py` files and no `pyproject.toml`.
+        """
+        return not self.steps and self.planned == 0
+
+    @property
+    def nothing_selected(self) -> bool:
+        """True when the project has a gate, but nothing in it answers this request.
+
+        A Yocto tree asked to lint, say. Different from `unconfigured`,
+        because the project is set up and the answer is only that this
+        particular check does not apply - so the advice is different too.
+        """
+        return not self.steps and self.planned > 0
 
     @property
     def failures(self) -> tuple[GateStepResult, ...]:

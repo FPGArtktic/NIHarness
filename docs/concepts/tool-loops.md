@@ -67,10 +67,29 @@ workaround for a backend.
 The closing turn already exists: it is the one forced finalisation produces,
 with `tool_choice: none`. That is where the artifact is demanded.
 
+## Two ways to change a file
+
+`replace_in_file` is the one to reach for: `find` is text copied out of the
+file, `replace` is what goes in its place, and the passage has to occur exactly
+once. The harness locates it, writes the file, and **computes the diff**, which
+is what the reviewer and the commit see. There are no hunk headers to count,
+so they cannot be counted wrong ([ADR 0022](../adr/0022-an-edit-located-by-its-own-text.md)).
+
+Its refusals are about the passage, and each has an answer:
+
+| What happened | What the model is told |
+|---|---|
+| the passage differs only in whitespace | the exact bytes from the file, to copy |
+| the passage is not there at all | the closest line in the file, and that `read_file`'s numbers are not in it |
+| it occurs more than once | how many times, and to include a unique line around it |
+| `find` equals `replace` | that the edit would change nothing |
+
+`apply_patch` remains for creating a file and for a change spread over several
+places at once. It takes a unified diff, which a model writes by hand.
+
 ## Diffs a model actually writes
 
-`apply_patch` is the only way anything changes, and a model writes a diff by
-hand. It gets the *change* right far more often than the paperwork, and a
+A model gets the *change* right far more often than the paperwork, and a
 handful of clerical mistakes account for nearly all of the failures. Every row
 below is a diff a live model actually produced:
 
@@ -85,6 +104,7 @@ below is a diff a live model actually produced:
 | every line prefixed with a space | `+` for the lines being added | refuses: it would apply cleanly and change nothing |
 | `+ VALUE = 1` on its own | headers and a hunk | refuses, naming the three lines that are missing |
 | the same patch twice | - | answers "already applied", because the worktree is in the state that was asked for |
+| a diff against a file that exists | - | names `replace_in_file` and how to call it, because that is the shorter road |
 
 Two of those are the harness's own fault and the last is its own doing.
 `read_file` numbers its answer, which is what makes it readable; a model that

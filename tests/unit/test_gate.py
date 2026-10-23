@@ -230,3 +230,34 @@ def test_a_formatter_for_a_check_the_project_does_not_configure_is_left_out() ->
     # convention this project has not adopted.
     docs_only = format_commands([Language.DOCS], ["mkdocs.yml"])
     assert docs_only == (), "there is no formatter for prose in the matrix"
+
+
+def test_a_gate_with_no_commands_is_unconfigured_rather_than_red() -> None:
+    """Red has a cause in its output; this has none, and the two differ.
+
+    Observed on a live run against a project with `.py` files and no
+    `pyproject.toml`: the model was told RED with no failing command, ran the
+    three checks again, and was stopped by the detectors. Nothing it could
+    have done to the code would have changed the answer.
+    """
+    empty = GateResult(tier=GateTier.QUICK, steps=())
+    assert empty.unconfigured
+    assert empty.passed is False, "a gate that verified nothing cannot authorise a commit"
+    assert empty.failures == ()
+    assert empty.failure_signature() != "", "the thrash detector still has something to count"
+
+
+def test_a_gate_that_ran_something_is_never_unconfigured() -> None:
+    for exit_code in (0, 1):
+        result = GateResult(
+            tier=GateTier.QUICK,
+            steps=(
+                GateStepResult(
+                    command="ruff check",
+                    exit_code=exit_code,
+                    duration_seconds=0.1,
+                    output="",
+                ),
+            ),
+        )
+        assert result.unconfigured is False

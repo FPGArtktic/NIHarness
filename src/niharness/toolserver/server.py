@@ -23,7 +23,7 @@ import structlog
 from mcp.server import MCPServer
 from pydantic import BaseModel, ConfigDict
 
-from niharness.domain.gate import GateKind, GateTier
+from niharness.domain.gate import GateKind, GateResult, GateTier
 from niharness.toolserver.lsp import LanguageServers
 from niharness.toolserver.workspace import Workspace, WorkspaceError
 
@@ -132,8 +132,28 @@ def _register_writing(server: MCPServer, workspace: Workspace) -> None:
     """Register the tools that change the worktree, and the gate that lets one out."""
 
     @server.tool()
+    async def replace_in_file(path: str, find: str, replace: str) -> Outcome:
+        """Replace one exact passage of a file with another. Prefer this to apply_patch.
+
+        `find` is text copied out of the file and has to occur exactly once;
+        `replace` is what goes in its place, and empty deletes it. The harness
+        locates the passage and writes the diff itself, so there are no hunk
+        headers to count and no line numbers to get right - and the answer
+        shows you the diff it produced.
+
+        Use `apply_patch` for a new file, or for a change spread over several
+        places at once.
+        """
+        return await guarded(workspace.replace_in_file(path, find, replace))
+
+    @server.tool()
     async def apply_patch(diff: str) -> Outcome:
-        """Apply a unified diff. There is no write_file: every change is a reviewable diff."""
+        """Apply a unified diff. Prefer replace_in_file for editing a file in place.
+
+        This is the right tool for creating a file, and for a change that
+        touches several places at once. For a single passage it asks you to
+        count hunk lines, which is work that `replace_in_file` does for you.
+        """
         return await guarded(workspace.apply_patch(diff))
 
     @server.tool()
@@ -156,6 +176,19 @@ def _register_writing(server: MCPServer, workspace: Workspace) -> None:
         return await guarded(workspace.git_commit(message))
 
 
+def _answered(result: GateResult) -> bool:
+    """Whether a check tool reports success.
+
+    Green is success. Red is not. A gate that had nothing to run is neither,
+    and reporting it as a failure is what makes a model run the same three
+    checks until the detectors stop the step - there is no failing command for
+    it to read, and nothing in the code to change. So it is not a failure, and
+    the text says plainly that nothing ran. The commit is still refused, by
+    `git_commit`, with a message that names the real cause.
+    """
+    return result.passed or result.unconfigured or result.nothing_selected
+
+
 def _register_checks(server: MCPServer, workspace: Workspace) -> None:
     """Register the tools that run the toolchain without changing anything."""
 
@@ -172,21 +205,21 @@ def _register_checks(server: MCPServer, workspace: Workspace) -> None:
             GateTier.QUICK,
             frozenset({GateKind.FORMAT, GateKind.LINT}),
         )
-        return Outcome(ok=result.passed, text=note + workspace.render_gate(result))
+        return Outcome(ok=_answered(result), text=note + workspace.render_gate(result))
 
     @server.tool()
     async def run_build(target: str = "") -> Outcome:
         """Run the configured build for the detected languages."""
         note = "" if not target else f"(target {target!r} does not narrow the gate yet)\n"
         result = await workspace.run_gate(GateTier.QUICK, frozenset({GateKind.BUILD}))
-        return Outcome(ok=result.passed, text=note + workspace.render_gate(result))
+        return Outcome(ok=_answered(result), text=note + workspace.render_gate(result))
 
     @server.tool()
     async def run_tests(selector: str = "") -> Outcome:
         """Run the configured test suites for the detected languages."""
         note = "" if not selector else f"(selector {selector!r} does not narrow the gate yet)\n"
         result = await workspace.run_gate(GateTier.QUICK, frozenset({GateKind.TEST}))
-        return Outcome(ok=result.passed, text=note + workspace.render_gate(result))
+        return Outcome(ok=_answered(result), text=note + workspace.render_gate(result))
 
 
 def workspace_for(root: Path, *, servers: LanguageServers | None = None) -> Workspace:

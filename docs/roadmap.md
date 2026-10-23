@@ -174,14 +174,28 @@ flag on the sandbox adapter:
 - [ ] Forced finalisation two calls before the budget ends.
 - [ ] `nih run`: plan and implement without stopping for approval.
 
-## What four live runs showed, and what is still open
+## What the live runs showed, and what is still open
 
-The harness now runs end to end against a real model: plan, worktree, tool
-loop, patches that apply, the gate, the detectors, and a handoff with
-diagnostics. What it has not done yet is reach a **green commit**, and the
-reason is the model rather than the plumbing - a 9B keeps writing a test whose
-body is missing, then re-sends work it has already done until the detectors
-stop the step.
+The harness runs end to end against a real model: plan, worktree, tool loop,
+the edit, the formatter, the gate, the detectors, and either a commit or a
+handoff with diagnostics.
+
+It has now reached a **green commit**, unattended, on a 4B: retrieval to read
+a value out of an ingested datasheet, `replace_in_file` to write it,
+`format_code` when the linter objected, and the gate green on `ruff format`,
+`ruff check`, `mypy --strict` and `pytest`. Verified by re-running the gate on
+the commit by hand.
+
+That is one task, one constant, and a sample of three runs. It says the
+pipeline closes; it does not say how often, on what size of task, or for which
+models. Those are L1 to L3 questions and the runner does not exist, so
+everything below about model behaviour is observation rather than measurement.
+
+Every earlier run was lost to the same thing: the model knew the change and
+could not express it as a unified diff. That is what `replace_in_file`
+addresses ([ADR 0022](adr/0022-an-edit-located-by-its-own-text.md)) - and
+across the three runs since, the model reached for it first every time and
+never attempted a diff.
 
 - [ ] A worked diff example in the implementer's prompt. Three runs were lost
       to diff paperwork, and most of it is now repaired by the tool server -

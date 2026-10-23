@@ -37,6 +37,8 @@ from niharness.domain.tools import (
     GrepArgs,
     ListTreeArgs,
     ReadFileArgs,
+    ReplaceInFileArgs,
+    RunLintArgs,
     RunTestsArgs,
     ToolName,
     ToolResult,
@@ -163,6 +165,7 @@ async def test_the_server_offers_exactly_the_tools_the_role_may_use(worktree: Pa
         "find_symbol",
         "find_references",
         "file_outline",
+        "replace_in_file",
         "apply_patch",
         "format_code",
         "run_lint",
@@ -478,6 +481,114 @@ async def test_a_new_file_a_model_announced_wrongly_still_lands(worktree: Path) 
     assert not (worktree / "greeter").exists(), "not one directory too high"
 
 
+async def test_a_worktree_with_no_gate_says_so_instead_of_saying_red(
+    tmp_path: Path,
+) -> None:
+    """A gate that ran nothing is a wall with no door, if it is called red.
+
+    Observed on a live run against a project with `.py` files and no
+    `pyproject.toml`: told "RED" with no failing command, the model ran the
+    three checks again and the detectors stopped the step. The commit is
+    still refused - a gate that verified nothing cannot authorise one - but
+    the message has to name a cause that exists.
+    """
+    root = tmp_path / "plain"
+    (root / "src").mkdir(parents=True)
+    (root / "src" / "notes.txt").write_text("no language here\n", encoding="utf-8")
+    git(root, "init", "-q", ".")
+    git(root, "config", "user.email", "t@example.com")
+    git(root, "config", "user.name", "T")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "init")
+
+    async with connected(root) as provider:
+        checked = await call(provider, ToolName.RUN_LINT, RunLintArgs(path="."))
+        (root / "src" / "notes.txt").write_text("changed\n", encoding="utf-8")
+        committed = await call(
+            provider,
+            ToolName.GIT_COMMIT,
+            GitCommitArgs(message="feat(x): a change\n\nbody"),
+        )
+    assert checked.ok, "asking an unconfigured gate is not itself a failure"
+    assert "nothing to run" in checked.content
+    assert "RED" not in checked.content
+    assert "marker file" in checked.content, "name the fix that exists"
+    assert "NOTES.md" in checked.content, "and what to do when it is not yours to make"
+    assert not committed.ok, "a gate that verified nothing cannot authorise a commit"
+    assert "the code is not the reason" in committed.content
+
+
+async def test_replace_in_file_writes_the_change_and_shows_the_diff_it_made(
+    worktree: Path,
+) -> None:
+    """The point of the tool: the model says what, the harness writes the diff.
+
+    What reaches the reviewer and the commit is still a diff - it is just not
+    one the model had to type, so it cannot arrive malformed.
+    """
+    async with connected(worktree) as provider:
+        result = await call(
+            provider,
+            ToolName.REPLACE_IN_FILE,
+            ReplaceInFileArgs(
+                path="src/a.py",
+                find="    return x + y  # TODO: types",
+                replace="    return x + y",
+            ),
+        )
+    assert result.ok, result.content
+    assert "replaced one passage in src/a.py" in result.content
+    assert "@@" in result.content, "the diff the harness produced comes back"
+    assert "-    return x + y  # TODO: types" in result.content
+    body = (worktree / "src" / "a.py").read_text(encoding="utf-8")
+    assert body == "def add(x, y):\n    return x + y\n"
+
+
+async def test_replace_in_file_refuses_a_passage_that_is_not_unique(worktree: Path) -> None:
+    """Two matches do not say which one, and guessing would be a silent wrong edit."""
+    (worktree / "src" / "dup.py").write_text("a = 1\nb = 1\n", encoding="utf-8")
+    async with connected(worktree) as provider:
+        result = await call(
+            provider,
+            ToolName.REPLACE_IN_FILE,
+            ReplaceInFileArgs(path="src/dup.py", find="= 1", replace="= 2"),
+        )
+    assert not result.ok
+    assert "occurs 2 times" in result.content
+    assert (worktree / "src" / "dup.py").read_text(encoding="utf-8") == "a = 1\nb = 1\n"
+
+
+async def test_replace_in_file_quotes_back_a_passage_whose_indentation_is_wrong(
+    worktree: Path,
+) -> None:
+    """The commonest near miss, and the one with an exact answer available."""
+    async with connected(worktree) as provider:
+        result = await call(
+            provider,
+            ToolName.REPLACE_IN_FILE,
+            ReplaceInFileArgs(
+                path="src/a.py",
+                find="def add(x, y):\nreturn x + y  # TODO: types",
+                replace="x",
+            ),
+        )
+    assert not result.ok
+    assert "differs only in whitespace" in result.content
+    assert "    return x + y  # TODO: types" in result.content
+
+
+async def test_replace_in_file_is_confined_to_the_worktree(worktree: Path) -> None:
+    """A write tool that is not a diff still cannot reach outside."""
+    async with connected(worktree) as provider:
+        result = await call(
+            provider,
+            ToolName.REPLACE_IN_FILE,
+            ReplaceInFileArgs(path="src/absent.py", find="x", replace="y"),
+        )
+    assert not result.ok
+    assert "not a file" in result.content
+
+
 async def test_a_diff_written_from_read_files_numbered_output_still_lands(
     worktree: Path,
 ) -> None:
@@ -501,6 +612,32 @@ async def test_a_diff_written_from_read_files_numbered_output_still_lands(
     body = (worktree / "src" / "a.py").read_text(encoding="utf-8")
     assert "VALUE = 7" in body
     assert "1  def add" not in body, "the margin is not written into the file"
+
+
+async def test_a_refused_diff_against_an_existing_file_names_the_better_tool(
+    worktree: Path,
+) -> None:
+    """A model that has just been refused is reading this, not the prompt.
+
+    Across live runs the same 4B sometimes reached for `replace_in_file` after
+    a refusal and sometimes re-sent the diff until the detectors stopped the
+    step. The message is where that variance can be removed.
+    """
+    wrong_context = (
+        "--- a/src/a.py\n+++ b/src/a.py\n@@ -1,2 +1,3 @@\n"
+        " def subtract(x, y):\n     return x - y\n+VALUE = 9\n"
+    )
+    creating = "--- /dev/null\n+++ b/src/new.py\n@@ -0,0 +1 @@\n+VALUE = 9\n"
+    async with connected(worktree) as provider:
+        refused = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=wrong_context))
+        made = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=creating))
+    assert not refused.ok
+    assert "replace_in_file" in refused.content
+    assert "copied out of the file" in refused.content, "say how to call it"
+    assert made.ok, "a creation is unaffected"
+    assert "replace_in_file" not in made.content, (
+        "creating a file is still apply_patch's job, so do not send it elsewhere"
+    )
 
 
 async def test_a_diff_of_nothing_but_context_is_refused_rather_than_applied(

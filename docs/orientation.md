@@ -72,6 +72,10 @@ suggestion. See [Architecture](concepts/architecture.md) and
   real language server inside the sandbox, by name, so navigation costs a line
   instead of a page. Verified against `clangd`. See
   [language servers](operations/language-servers.md).
+- `replace_in_file`: an edit named by the text it replaces, with the harness
+  computing the diff - so there are no hunk headers for a model to count
+  wrong. This is what carried the project's first green commit, unattended, on
+  a 4B. See [ADR 0022](adr/0022-an-edit-located-by-its-own-text.md).
 - Documents and retrieval: `nih ingest` reads a PDF - its text layer where
   there is one, OCR where there is not - and indexes chunks that cite their
   pages; `rag_query` searches them, the code index and the run's own context,

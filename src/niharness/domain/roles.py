@@ -79,6 +79,7 @@ def _layers(role: Role, *, dod: bool = True) -> tuple[str, ...]:
 
 
 _IMPLEMENTER_TOOLS: frozenset[ToolName] = READ_ONLY_TOOLS | {
+    ToolName.REPLACE_IN_FILE,
     ToolName.APPLY_PATCH,
     ToolName.FORMAT_CODE,
     ToolName.RUN_LINT,

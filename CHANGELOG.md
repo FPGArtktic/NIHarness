@@ -13,6 +13,40 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `replace_in_file`: an edit located by the text it replaces, with the harness
+  computing the diff. `find` is copied out of the file and has to occur exactly
+  once, `replace` goes in its place, and an empty `replace` deletes it. The
+  rule in the tool table relaxes from "unified diff only" to what was always
+  the property worth having: every change is a diff by the time anything else
+  sees it - and one the harness wrote is well-formed by construction, which the
+  hand-written one was not (ADR 0022). `apply_patch` stays for creating a file
+  and for a change in several places at once, and when it refuses a diff
+  against a file that exists it now names the other tool and how to call it.
+  Its refusals are about the passage, and each has an answer: the exact bytes
+  when the only difference is whitespace, the closest line when there is none,
+  the count when it occurs twice, and "this would change nothing" when `find`
+  equals `replace`.
+- **The first green commit.** A 4B, unattended: `rag_query` to read a supply
+  voltage out of an ingested datasheet whose erratum contradicted the obvious
+  answer, `replace_in_file` to write the constant, `format_code` when the
+  linter objected, then the gate - `ruff format`, `ruff check`, `mypy --strict`,
+  `pytest` - green, and a commit whose body cites the erratum and what ignoring
+  it destroys. Verified by re-running the gate on the commit by hand. One task,
+  one constant, three runs of which two finished inside the time limit and both
+  committed: it says the pipeline closes, not how often or on what size of task.
+- An over-long commit subject is told the overshoot and offered one that fits,
+  cut at a word boundary and never left ending on "the" or "from". Counting
+  characters is the same task as counting hunk lines: a 4B with everything else
+  about the step green was told the 72-character limit three times and answered
+  99, then 78, then 78. The suggestion is checked against the Conventional
+  Commits pattern too, so it cannot fix one rule by breaking another.
+- A gate with no commands reports "nothing to run" rather than RED, and names
+  the marker file that would configure one. The commit is still refused - a
+  gate that verified nothing cannot authorise one - but with a cause that
+  exists. Observed on a live run against a project with `.py` files and no
+  `pyproject.toml`: told RED with no failing command, the model ran the same
+  three checks until the detectors stopped the step. A project that *has* a
+  gate but nothing of the requested kind is a third case and says so.
 - Retrieval, end to end: a `VectorStore` adapter over Qdrant's REST API, an
   `Embedder` port over the same OpenAI-compatible `/v1/embeddings` the
   inference port already speaks, and `rag_query` answering with chunks that

@@ -62,6 +62,7 @@ class ToolName(StrEnum):
     FIND_REFERENCES = "find_references"
     FILE_OUTLINE = "file_outline"
     RAG_QUERY = "rag_query"
+    REPLACE_IN_FILE = "replace_in_file"
     APPLY_PATCH = "apply_patch"
     FORMAT_CODE = "format_code"
     RUN_LINT = "run_lint"
@@ -187,6 +188,26 @@ class RagQueryArgs(ToolArgs):
     collection: str = ""
 
 
+class ReplaceInFileArgs(ToolArgs):
+    """Replace one exact passage of a file with another.
+
+    The passage is located by its own text, not by a line number, for the same
+    reason the symbol tools take a name: a model that has to count lines has
+    already read the file, and will still count wrong. `find` has to occur
+    exactly once, which is what makes the edit unambiguous without a position.
+
+    An empty `replace` deletes the passage. There is no option to replace every
+    occurrence: a change that means five places is five edits, each of which
+    can be refused on its own.
+    """
+
+    path: RelPath
+    find: Annotated[str, StringConstraints(min_length=1)] = Field(
+        description="The exact text to replace, copied from the file.",
+    )
+    replace: str = Field(description="What to put in its place; empty deletes it.")
+
+
 class ApplyPatchArgs(ToolArgs):
     """Apply a unified diff. There is no write_file: every change is a reviewable diff."""
 
@@ -258,6 +279,7 @@ TOOL_ARGUMENTS: dict[ToolName, type[ToolArgs]] = {
     ToolName.FIND_REFERENCES: FindReferencesArgs,
     ToolName.FILE_OUTLINE: FileOutlineArgs,
     ToolName.RAG_QUERY: RagQueryArgs,
+    ToolName.REPLACE_IN_FILE: ReplaceInFileArgs,
     ToolName.APPLY_PATCH: ApplyPatchArgs,
     ToolName.FORMAT_CODE: FormatCodeArgs,
     ToolName.RUN_LINT: RunLintArgs,
@@ -617,13 +639,90 @@ def validate_commit_message(message: str, limits: ToolLimits) -> str:
         msg = f"subject is not Conventional Commits: {subject!r}"
         raise ValueError(msg)
     if len(subject) > limits.max_commit_subject:
-        msg = f"subject is {len(subject)} characters, limit is {limits.max_commit_subject}"
-        raise ValueError(msg)
+        raise ValueError(_too_long(subject, limits.max_commit_subject))
     body = "\n".join(lines[1:]).strip()
     if not body:
         msg = "commit message has no body; the body explains why the change is made"
         raise ValueError(msg)
     return subject
+
+
+DANGLING_WORDS: frozenset[str] = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "as",
+        "at",
+        "by",
+        "for",
+        "from",
+        "in",
+        "into",
+        "of",
+        "on",
+        "or",
+        "taken",
+        "that",
+        "the",
+        "to",
+        "using",
+        "which",
+        "with",
+    },
+)
+"""Words a subject must not end on, so a truncation reads as a phrase.
+
+Cutting at a word boundary alone produces "... the core supply taken from the",
+which a model will copy verbatim. English only, which is the rule for
+everything written in this repository anyway.
+"""
+
+
+def shortened_subject(subject: str, limit: int) -> str:
+    """Return `subject` cut to `limit` at a word boundary, ending on a real word.
+
+    Returns the subject unchanged when it already fits, and the hard
+    truncation when there is no word boundary to use - a single token longer
+    than the limit has nowhere better to break.
+    """
+    if len(subject) <= limit:
+        return subject
+    hard = subject[:limit]
+    head = subject[: limit + 1]
+    cut = head.rfind(" ")
+    if cut <= 0:
+        return hard
+    words = head[:cut].rstrip(" ,;:-").split(" ")
+    while len(words) > 1 and words[-1].lower().strip(",;:-") in DANGLING_WORDS:
+        words.pop()
+    candidate = " ".join(words).rstrip(" ,;:-")
+    # Trimming must not cost the subject its Conventional Commits form - on
+    # `fix: <one very long token>` the only word boundary is the one after
+    # `fix:`, and stripping that colon offers something the next check would
+    # refuse. A suggestion has to pass every rule, not just the one it is for.
+    return candidate if COMMIT_SUBJECT.match(candidate) else hard
+
+
+def _too_long(subject: str, limit: int) -> str:
+    """Explain an over-long subject by showing one that fits, and by how much.
+
+    Counting characters is the same kind of task as counting the lines in a
+    hunk header, and a small model is no better at one than the other:
+    observed on a live run, a 4B was told the limit three times and answered
+    99, then 78, then 78 characters, with everything else about the step
+    green. So the limit is not merely restated. The overshoot is given as a
+    number, because "drop fifteen characters" is actionable where "the limit
+    is 72" is arithmetic, and a subject that does fit is offered outright.
+    The body is untouched and has no limit, so a shorter first line loses
+    nothing.
+    """
+    over = len(subject) - limit
+    return (
+        f"subject is {len(subject)} characters, which is {over} too many. Use this, or "
+        f"something shorter:\n{shortened_subject(subject, limit)}\n"
+        "Keep the explanation in the body, which has no limit."
+    )
 
 
 def validate_call(
@@ -691,6 +790,24 @@ def validate_call(
                 detail=f"{field}={raw!r} is outside the worktree",
             )
 
+    refused = _argument_rules(call, args, limits)
+    if refused is not None:
+        return refused
+
+    return AcceptedCall(call_id=call.call_id, tool=tool, args=args)
+
+
+def _argument_rules(
+    call: ToolCall,
+    args: ToolArgs,
+    limits: ToolLimits,
+) -> RejectedCall | None:
+    """Apply the per-tool argument rules, or return None when all of them pass.
+
+    Separate from :func:`validate_call` so that the order of the general
+    checks - exists, allowed, schema, path - stays readable as one list, and
+    so a new tool's rule is added in one place.
+    """
     if isinstance(args, ApplyPatchArgs):
         size = len(args.diff.encode("utf-8"))
         if size > limits.max_diff_bytes:
@@ -699,6 +816,21 @@ def validate_call(
                 name=call.name,
                 violation=Violation.DIFF_TOO_LARGE,
                 detail=f"diff is {size} bytes, limit is {limits.max_diff_bytes}",
+            )
+
+    if isinstance(args, ReplaceInFileArgs):
+        # The same cap as a diff, because it bounds the same thing: how much
+        # of a file one call may rewrite without the step being reviewed.
+        size = len((args.find + args.replace).encode("utf-8"))
+        if size > limits.max_diff_bytes:
+            return RejectedCall(
+                call_id=call.call_id,
+                name=call.name,
+                violation=Violation.DIFF_TOO_LARGE,
+                detail=(
+                    f"find and replace are {size} bytes together, limit is "
+                    f"{limits.max_diff_bytes}"
+                ),
             )
 
     if isinstance(args, GitCommitArgs):
@@ -712,7 +844,7 @@ def validate_call(
                 detail=str(error),
             )
 
-    return AcceptedCall(call_id=call.call_id, tool=tool, args=args)
+    return None
 
 
 def _offered(allowlist: frozenset[ToolId]) -> str:

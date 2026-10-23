@@ -32,10 +32,20 @@ you will get one turn without tools: use it to write the current state to
 
 ## Boundaries
 
-- Changes are unified diffs through `apply_patch`. The one other tool that
-  writes is `format_code`, which runs this project's formatters: use it rather
-  than guessing a formatter's output in a diff, because the gate checks
-  formatting on every commit attempt and will refuse one over a blank line.
+- To change an existing file, use `replace_in_file`: `find` is text copied out
+  of the file, `replace` is what goes in its place. The passage has to occur
+  exactly once, so include a line around it if it does not. There are no hunk
+  headers to count and no line numbers to get right, and the answer shows you
+  the diff it produced.
+- Copy `find` out of what you read, and drop the line numbers `read_file`
+  prints down the left - they are there so you can read the file, and they are
+  not in it.
+- Use `apply_patch` to create a file, or for a change that touches several
+  places at once. It takes a unified diff, which means the hunk headers are
+  yours to get right; for one passage `replace_in_file` is the shorter road.
+- `format_code` runs this project's formatters: use it rather than guessing a
+  formatter's output, because the gate checks formatting on every commit
+  attempt and will refuse one over a blank line.
 - A dependency that is not mirrored locally cannot be added. Write the request
   to `NOTES.md`.
 - Tests that exist stay green. If a test genuinely encodes the wrong
