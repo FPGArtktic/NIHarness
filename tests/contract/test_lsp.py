@@ -192,6 +192,31 @@ async def test_an_outline_refuses_a_suffix_no_server_owns(worktree: Path) -> Non
         await session.aclose()
 
 
+async def test_an_outline_that_cannot_be_answered_names_the_fallback(
+    worktree: Path,
+) -> None:
+    """The cheap answer is gone; the expensive one is still there.
+
+    Observed on a live run: a 4B spent a call on `file_outline` for a language
+    with no server installed, was told only that, and went looking elsewhere.
+    `find_symbol` already says "grep still works"; this said nothing.
+    """
+    owned = servers(worktree)
+    try:
+        with pytest.raises(Exception, match="read notes.tcl instead"):
+            await owned.outline("notes.tcl")
+    finally:
+        await owned.aclose()
+
+    # The other branch: a suffix a server *would* own, with none to run.
+    absent = LanguageServers(worktree, disabled=frozenset({Language.PYTHON}))
+    try:
+        with pytest.raises(Exception, match="read src/app.py instead"):
+            await absent.outline("src/app.py")
+    finally:
+        await absent.aclose()
+
+
 # ------------------------------------------------------------- synchronisation
 
 

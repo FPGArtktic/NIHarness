@@ -49,6 +49,7 @@ from niharness.adapters.mcp.provider import (
 )
 from niharness.domain.messages import ToolSchema
 from niharness.domain.tools import (
+    HARNESS_SERVED_TOOLS,
     NAMESPACE,
     AcceptedCall,
     ExternalTool,
@@ -274,6 +275,13 @@ class CompositeToolProvider:
         """Execute a validated call on whichever server owns its name."""
         if accepted.tool in self._served and self._local is not None:
             return await self._local.call(accepted)
+        if accepted.tool in _HARNESS_NAMES:
+            # Allowlisted, and nothing is serving it. Sending it to the
+            # sandbox would come back as "the tool server failed to run
+            # rag_query", which blames the tool server for a fact about this
+            # run's configuration - and the prompts tell the model the tool
+            # exists, so this is reachable whenever retrieval is off.
+            return _not_configured(accepted)
         if not is_external(accepted.tool):
             return await self._primary.call(accepted)
         server = accepted.tool.split(NAMESPACE, 1)[0]
@@ -281,6 +289,29 @@ class CompositeToolProvider:
         if tools is None:  # pragma: no cover - validation refuses an unknown name first
             return transport_failure(accepted, f"no server {server!r} is attached")
         return await tools.call(accepted)
+
+
+_HARNESS_NAMES: frozenset[ToolId] = frozenset(
+    ToolId(tool.value) for tool in HARNESS_SERVED_TOOLS
+)
+"""The same set as the domain's, as tool ids, for routing."""
+
+
+def _not_configured(accepted: AcceptedCall) -> ToolResult:
+    """Return the refusal for a tool this run has nothing to serve with."""
+    _log.info("tool.not_configured", tool=accepted.tool)
+    return ToolResult(
+        call_id=accepted.call_id,
+        tool=accepted.tool,
+        ok=False,
+        content=(
+            f"{accepted.tool} is not available in this run. It is served by the harness "
+            "rather than the sandbox, and this run has no vector store or no embedding "
+            "model configured, so there is nothing to search. Use `grep` for exact text "
+            "and `read_file` for a file; `nih tools` says what is configured."
+        ),
+        summary=f"{accepted.tool}: not configured for this run",
+    )
 
 
 @asynccontextmanager

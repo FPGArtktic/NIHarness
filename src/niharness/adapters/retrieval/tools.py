@@ -29,6 +29,7 @@ import structlog
 from niharness.domain.messages import ToolSchema
 from niharness.domain.rag import Hit, collections_for, merge_hits, render_hits
 from niharness.domain.tools import (
+    HARNESS_SERVED_TOOLS,
     AcceptedCall,
     RagQueryArgs,
     ToolId,
@@ -87,8 +88,13 @@ class RetrievalTools:
 
     @property
     def served(self) -> frozenset[ToolId]:
-        """The tools this provider answers, for the router."""
-        return frozenset({RAG_QUERY})
+        """The tools this provider answers, for the router.
+
+        Taken from the domain's set rather than restated, so the router's
+        answer when this provider is absent cannot drift from what it serves
+        when present.
+        """
+        return frozenset(ToolId(tool.value) for tool in HARNESS_SERVED_TOOLS)
 
     async def descriptors(self, allowlist: frozenset[ToolId]) -> tuple[ToolSchema, ...]:
         """Return `rag_query`'s schema when the role may call it, nothing otherwise."""

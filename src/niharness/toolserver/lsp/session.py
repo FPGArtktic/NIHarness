@@ -502,11 +502,18 @@ class LanguageServers:
         language = language_of(relative)
         if language is None:
             raise LspError(
-                f"no language server owns {Path(relative).suffix or 'this suffix'!r}"
+                f"no language server owns {Path(relative).suffix or 'this suffix'!r}; "
+                f"read {relative} instead"
             )
         client = await self.client_for(language)
         if client is None:
-            raise LspError(f"no language server for {language.value} is installed here")
+            # Naming the fallback matters as much as naming the cause: the
+            # answer this tool exists to give cheaply is still available, it
+            # just costs a read now. `find_symbol` says the same for `grep`.
+            raise LspError(
+                f"no language server for {language.value} is installed here; "
+                f"read {relative} instead"
+            )
         if not await self._open(client, language, relative):
             raise LspError(f"{relative} could not be opened for {language.value}")
         answer = await client.request(

@@ -73,6 +73,18 @@ class ToolName(StrEnum):
     SHELL = "shell"
 
 
+HARNESS_SERVED_TOOLS: frozenset[ToolName] = frozenset({ToolName.RAG_QUERY})
+"""Tools the harness serves in its own process, which the sandbox never holds.
+
+The sandbox runs `--network=none` and these need a service on the host, so
+routing one into the container reaches nothing (ADR 0021). Naming the set here
+rather than in an adapter is what lets the router say so precisely: a tool in
+a role's allowlist that nothing is serving has to be refused with the reason -
+retrieval is not configured - and not with a transport error blaming the tool
+server for a configuration fact.
+"""
+
+
 READ_ONLY_TOOLS: frozenset[ToolName] = frozenset(
     {
         ToolName.READ_FILE,

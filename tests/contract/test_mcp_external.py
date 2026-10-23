@@ -283,6 +283,33 @@ async def test_a_tool_the_harness_serves_itself_never_reaches_the_sandbox() -> N
     assert read.content == "in"
 
 
+async def test_a_harness_tool_with_nothing_serving_it_says_why(
+    worktree_free: None = None,
+) -> None:
+    """Allowlisted, not offered, and called anyway - which the prompts invite.
+
+    `rag_query` is in every role's allowlist and the prompts name it, so a
+    model will reach for it even in a run where retrieval is off. Routed to
+    the sandbox it comes back as "the tool server failed to run rag_query",
+    which blames the tool server for a fact about this run's configuration.
+    """
+    sandbox = FakeSandbox()
+    router = CompositeToolProvider(sandbox, {}, EMPTY_CATALOG)
+    result = await router.call(
+        AcceptedCall(
+            call_id=CallId("c0"),
+            tool=ToolName.RAG_QUERY,
+            args=RagQueryArgs(query="what voltage"),
+        ),
+    )
+    assert result.ok is False
+    assert "not available in this run" in result.content
+    assert "no vector store or no embedding model" in result.content
+    assert "grep" in result.content, "name the fallback"
+    assert sandbox.calls == [], "it never reaches the container, which has no network"
+    assert result.summary.endswith("not configured for this run")
+
+
 async def test_without_a_local_provider_its_tools_are_not_offered() -> None:
     """A store that is not running means no `rag_query`, not a broken one.
 
