@@ -133,7 +133,7 @@ def _register_writing(server: MCPServer, workspace: Workspace) -> None:
 
     @server.tool()
     async def replace_in_file(path: str, find: str, replace: str) -> Outcome:
-        """Replace one exact passage of a file with another. Prefer this to apply_patch.
+        """Replace one exact passage of a file, or create a file. Prefer this to apply_patch.
 
         `find` is text copied out of the file and has to occur exactly once;
         `replace` is what goes in its place, and empty deletes it. The harness
@@ -141,18 +141,19 @@ def _register_writing(server: MCPServer, workspace: Workspace) -> None:
         headers to count and no line numbers to get right - and the answer
         shows you the diff it produced.
 
-        Use `apply_patch` for a new file, or for a change spread over several
-        places at once.
+        To **create** a file, leave `find` empty and send the whole content as
+        `replace`. Use `apply_patch` for a change spread over several places at
+        once.
         """
         return await guarded(workspace.replace_in_file(path, find, replace))
 
     @server.tool()
     async def apply_patch(diff: str) -> Outcome:
-        """Apply a unified diff. Prefer replace_in_file for editing a file in place.
+        """Apply a unified diff. Prefer replace_in_file for one file at a time.
 
-        This is the right tool for creating a file, and for a change that
-        touches several places at once. For a single passage it asks you to
-        count hunk lines, which is work that `replace_in_file` does for you.
+        This is the right tool for a change that touches several places at
+        once. For a single passage, or for creating a file, `replace_in_file`
+        does the hunk arithmetic for you.
         """
         return await guarded(workspace.apply_patch(diff))
 

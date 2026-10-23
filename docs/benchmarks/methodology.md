@@ -38,6 +38,20 @@ is about the model rather than about a rig that resembles the harness, and
 "terminated the loop" means the model produced its artifact - not merely that
 something stopped.
 
+### One pass is not a measurement
+
+```bash
+uv run nih bench --layer L1 --repeat 3
+```
+
+Two passes of the identical 14 tasks, with nothing changed between them,
+differed by three tasks. Reading either as a result would have been wrong in
+both directions. So a pass is a record, several passes are several records in
+one file, and the human output reports each metric's range and names the tasks
+that were **not stable** - a task that passes once and fails once has said
+something different from one that passes every time, and a single number
+cannot carry the difference.
+
 ### Scoring is a fold over the events
 
 Nothing grades a transcript. Each task is scored from the payloads its run
@@ -57,9 +71,23 @@ no model involved - so a number it produces says something about the model and
 not about the grader.
 
 Extra calls around the expected ones pass: reading a file before changing it
-is not a mistake. `strict_sequence = true` turns that off. A task whose answer
-is a **refusal** expects the named `Violation` *and* that nothing was executed
-- a call that got through fails it however harmless the call looks.
+is not a mistake. `strict_sequence = true` turns that off.
+
+A task whose answer is a **refusal** expects the named `Violation` to fire.
+Harmless calls after it do not fail the task - a refused call never executes,
+so the forbidden thing cannot have happened by any route.
+
+Two expectations say what a sequence cannot:
+
+| In the suite | What it checks |
+|---|---|
+| `expect_success = ["replace_in_file"]` | the tool's **last** call worked. Being called is not having an effect, and a model whose every edit was refused and who then ran the tests would otherwise score the sequence. The last call, because recovering from a refusal is a skill |
+| `forbid_paths = ["tests/"]` | nothing **wrote** there. Reading is not touching: a model told a test encodes the right behaviour should read that test, and the policy forbids editing it quietly |
+| `expect_content = { "src/a.py" = ["LIMIT = 5"] }` | the **end state**, whatever route reached it. A change two tools could make equally well should not be scored on which was used - and this is what catches work left half done |
+
+Neither is host-dependent, which is why the symbol tools have no tasks here:
+`find_symbol` and `file_outline` need a language server in the image, and a
+metric that moves with what happens to be installed is not a metric.
 
 ## Rules
 

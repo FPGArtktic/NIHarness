@@ -26,7 +26,7 @@ import shutil
 import subprocess
 import time
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from pathlib import Path
@@ -235,7 +235,25 @@ async def run_task(
             window,
             step_id=StepId(task.id),
         )
-    return score_task(task, await payloads_of(sink, run_id))
+    return score_task(
+        task,
+        await payloads_of(sink, run_id),
+        read_back(Path(worktree.path), task.expect_content),
+    )
+
+
+def read_back(root: Path, wanted: Mapping[str, tuple[str, ...]]) -> dict[str, str]:
+    """Return the content of each path the task declares an end state for.
+
+    Only those paths: reading the worktree wholesale would make a record
+    depend on what else happens to be in it.
+    """
+    found: dict[str, str] = {}
+    for path in wanted:
+        target = root / path
+        if target.is_file():
+            found[path] = target.read_text(encoding="utf-8", errors="replace")
+    return found
 
 
 def record(
@@ -245,6 +263,8 @@ def record(
     model: ModelConfig,
     metrics: Sequence[str],
     seconds: float,
+    attempt: int = 1,
+    of: int = 1,
 ) -> dict[str, object]:
     """Return the JSONL record for one suite run."""
     declared = {name: score.metrics()[name] for name in metrics if name in score.metrics()}
@@ -257,6 +277,8 @@ def record(
         "profile": config.profile,
         "base_url": model.base_url,
         "tasks": len(score.tasks),
+        "pass": attempt,
+        "of_passes": of,
         **declared,
         "passed_ratio": score.passed_ratio,
         "violations": score.violations(),
@@ -325,10 +347,17 @@ def bench(
     config: HarnessConfig,
     *,
     layer: str,
+    repeat: int,
     local_tools: bool,
     json_mode: bool,
 ) -> None:
-    """Run a benchmark layer and append its record.
+    """Run a benchmark layer `repeat` times and append one record per pass.
+
+    One pass cannot tell a change from the model's own variance. Two runs of
+    the same 14 tasks differed by three tasks with nothing changed in between,
+    and reading either as a result would have been wrong in both directions.
+    So a pass is a record, several passes are several records in one file, and
+    the spread is visible rather than averaged into silence.
 
     Raises:
         typer.Exit: when the layer has no runner, the suite cannot be read, or
@@ -350,25 +379,43 @@ def bench(
 
     model = config.models.main
     backend = backend_for(model)
-    started = time.monotonic()
-    scores: list[TaskScore] = []
+    passes: list[tuple[dict[str, object], SuiteScore]] = []
+    written: list[Path] = []
 
     async def drive() -> None:
         try:
-            for task in tasks:
-                with TemporaryDirectory(prefix=f"nih-bench-{task.id}-") as scratch:
-                    if not json_mode:
-                        typer.echo(f"  {task.id} ...", err=True)
-                    scores.append(
-                        await run_task(
-                            config,
-                            task,
-                            model=model,
-                            backend=backend,
-                            scratch=Path(scratch),
-                            local_tools=local_tools,
-                        ),
-                    )
+            for attempt in range(1, max(1, repeat) + 1):
+                started = time.monotonic()
+                scores: list[TaskScore] = []
+                for task in tasks:
+                    with TemporaryDirectory(prefix=f"nih-bench-{task.id}-") as scratch:
+                        if not json_mode:
+                            typer.echo(f"  [{attempt}/{repeat}] {task.id} ...", err=True)
+                        scores.append(
+                            await run_task(
+                                config,
+                                task,
+                                model=model,
+                                backend=backend,
+                                scratch=Path(scratch),
+                                local_tools=local_tools,
+                            ),
+                        )
+                score = score_suite(scores)
+                entry = record(
+                    config,
+                    score,
+                    model=model,
+                    metrics=metrics,
+                    seconds=time.monotonic() - started,
+                    attempt=attempt,
+                    of=max(1, repeat),
+                )
+                # Written as the pass completes rather than at the end: three
+                # passes are twelve minutes of model time, and an interrupted
+                # run should keep what it already measured.
+                written.append(write_record(config.project_root, entry))
+                passes.append((entry, score))
         finally:
             await backend.aclose()
 
@@ -378,17 +425,50 @@ def bench(
         fail(str(error), json_mode=json_mode)
         raise typer.Exit(1) from error
 
-    score = score_suite(scores)
-    entry = record(
-        config,
-        score,
-        model=model,
-        metrics=metrics,
-        seconds=time.monotonic() - started,
-    )
-    target = write_record(config.project_root, entry)
+    target = written[-1] if written else config.project_root / RESULTS
     emit(
-        {"ok": True, "record": str(target), **entry},
+        {
+            "ok": True,
+            "record": str(target),
+            "passes": [entry for entry, _ in passes],
+        },
         json_mode=json_mode,
-        human=f"{human(entry, score)}\n\nrecorded in {target}",
+        human=f"{_rendered(passes)}\n\nrecorded in {target}",
     )
+
+
+def _rendered(passes: Sequence[tuple[dict[str, object], SuiteScore]]) -> str:
+    """Render every pass, and the spread when there is more than one."""
+    parts = [human(entry, score) for entry, score in passes]
+    if len(passes) < 2:
+        return "\n\n".join(parts)
+    return "\n\n".join([*parts, _spread([score for _, score in passes])])
+
+
+def _spread(scores: Sequence[SuiteScore]) -> str:
+    """Report each metric's range across passes, and which tasks were not stable.
+
+    The point of repeating: a task that passes once and fails once has said
+    something different from one that passes every time, and a single number
+    cannot carry the difference.
+    """
+    lines = [f"across {len(scores)} pass(es):"]
+    names = scores[0].metrics()
+    for name in names:
+        values = [score.metrics()[name] for score in scores]
+        lines.append(f"  {name:<26} {min(values)} - {max(values)}")
+    outcomes: dict[str, list[bool]] = {}
+    for score in scores:
+        for task in score.tasks:
+            outcomes.setdefault(task.task_id, []).append(task.passed)
+    flaky = {name: runs for name, runs in outcomes.items() if len(set(runs)) > 1}
+    always = sorted(name for name, runs in outcomes.items() if not any(runs))
+    if flaky:
+        lines.append("  not stable across passes:")
+        lines += [
+            f"    {name}: {sum(runs)}/{len(runs)} passed"
+            for name, runs in sorted(flaky.items())
+        ]
+    if always:
+        lines.append(f"  failed every pass: {', '.join(always)}")
+    return "\n".join(lines)

@@ -173,15 +173,21 @@ def test_an_empty_replacement_is_a_deletion_and_is_allowed() -> None:
     assert isinstance(result, AcceptedCall)
 
 
-def test_a_replacement_with_nothing_to_find_is_rejected() -> None:
-    """Without `find` there is no passage, and no way to locate one."""
+def test_a_replacement_with_nothing_to_find_is_a_creation() -> None:
+    """An empty `find` creates the file; whether it exists is the server's to know.
+
+    The schema cannot express "empty only when the path is absent", because
+    that is I/O. So it validates, and the tool server refuses an empty `find`
+    against a file that is there.
+    """
     result = validate_call(
-        call("replace_in_file", path="src/a.py", find="", replace="new"),
+        call("replace_in_file", path="src/new.py", find="", replace='"""New."""\n'),
         IMPLEMENTER,
         LIMITS,
     )
-    assert result.accepted is False
-    assert result.violation is Violation.INVALID_ARGUMENTS
+    assert isinstance(result, AcceptedCall)
+    assert isinstance(result.args, ReplaceInFileArgs)
+    assert result.args.find == ""
 
 
 def test_a_replacement_is_path_confined_like_every_other_file_tool() -> None:

@@ -71,7 +71,10 @@ with `tool_choice: none`. That is where the artifact is demanded.
 
 `replace_in_file` is the one to reach for: `find` is text copied out of the
 file, `replace` is what goes in its place, and the passage has to occur exactly
-once. The harness locates it, writes the file, and **computes the diff**, which
+once. An **empty** `find` creates the file, with `replace` as its whole
+content ([ADR 0025](../adr/0025-creation-is-an-edit-with-nothing-to-find.md)) -
+measured, because the one writing task a 4B failed on the L1 suite was the one
+where creation forced it into a hand-written diff. The harness locates it, writes the file, and **computes the diff**, which
 is what the reviewer and the commit see. There are no hunk headers to count,
 so they cannot be counted wrong ([ADR 0022](../adr/0022-an-edit-located-by-its-own-text.md)).
 
@@ -83,6 +86,7 @@ Its refusals are about the passage, and each has an answer:
 | the passage is not there at all | the closest line in the file, and that `read_file`'s numbers are not in it |
 | it occurs more than once | how many times, and to include a unique line around it |
 | `find` equals `replace` | that the edit would change nothing |
+| an empty `find` on a file that exists | that it does not say what to change; overwriting is what the size cap exists to bound |
 
 `apply_patch` remains for creating a file and for a change spread over several
 places at once. It takes a unified diff, which a model writes by hand.

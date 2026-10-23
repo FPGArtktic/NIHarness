@@ -211,11 +211,17 @@ class ReplaceInFileArgs(ToolArgs):
     An empty `replace` deletes the passage. There is no option to replace every
     occurrence: a change that means five places is five edits, each of which
     can be refused on its own.
+
+    An empty `find` **creates** the file, with `replace` as its whole content.
+    The schema cannot say "empty only when the path does not exist", because
+    whether it exists is I/O; the tool server refuses an empty `find` against
+    a file that is there, since it would not say what to change (ADR 0025).
     """
 
     path: RelPath
-    find: Annotated[str, StringConstraints(min_length=1)] = Field(
-        description="The exact text to replace, copied from the file.",
+    find: str = Field(
+        description="The exact text to replace, copied from the file. "
+        "Empty creates the file instead, with `replace` as its content.",
     )
     replace: str = Field(description="What to put in its place; empty deletes it.")
 

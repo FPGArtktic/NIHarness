@@ -159,3 +159,4 @@ nav:
       - adr/0022-an-edit-located-by-its-own-text.md
       - adr/0023-the-sandbox-network-is-a-deployment-choice.md
       - adr/0024-a-benchmark-layer-is-scored-by-folding-the-event-log.md
+      - adr/0025-creation-is-an-edit-with-nothing-to-find.md

@@ -317,6 +317,16 @@ def bench(
     profile: Annotated[
         str | None, typer.Option("--profile", help="Override the profile.")
     ] = None,
+    repeat: Annotated[
+        int,
+        typer.Option(
+            "--repeat",
+            min=1,
+            max=20,
+            help="Run the suite this many times; one record per pass, so the "
+            "model's own variance is visible rather than averaged away.",
+        ),
+    ] = 1,
     local_tools: Annotated[
         bool,
         typer.Option(
@@ -335,6 +345,7 @@ def bench(
     bench_module.bench(
         _config(root.resolve(), profile),
         layer=layer,
+        repeat=repeat,
         local_tools=local_tools,
         json_mode=json_mode,
     )

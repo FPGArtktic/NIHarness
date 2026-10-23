@@ -13,6 +13,39 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `replace_in_file` creates a file: an empty `find` writes `replace` as the
+  whole content, parent directories included, inside the worktree. Measured
+  rather than decided - on the first 14-task L1 run a 4B passed every writing
+  task except creating a file, where the harness was pushing it into a
+  hand-written creating diff, the format earlier runs had already shown it
+  worst at. ADR 0022's objection to a whole-file write does not cover this:
+  what it protects is the bound on how much one call may change, and for a
+  file that does not exist there is nothing being replaced - the content *is*
+  the change and the size cap bounds it. An empty `find` against a file that
+  *does* exist is refused, because that would be overwriting (ADR 0025).
+  `apply_patch` is now for a change across several places at once, the one
+  thing `replace_in_file` cannot do.
+- `nih bench --repeat N` runs the suite N times, writes a record per pass as
+  it completes, and reports each metric's range plus the tasks that were not
+  stable. Two passes of the identical 14 tasks, nothing changed between them,
+  differed by three tasks: reading either as a result would have been wrong in
+  both directions, including claiming a regression from a change that provably
+  fixed the task it targeted.
+- L1 grew to 14 tasks and three new expectations, each closing a hole the runs
+  exposed. `expect_success` checks that a tool's last call **worked** - being
+  called is not having an effect, and a model whose every edit was refused and
+  who then ran the tests used to score the sequence; it is what caught the
+  creation failure. `forbid_paths` checks that nothing *wrote* where the task
+  puts out of bounds, for the policy rule that sends a wrong test to NOTES.md
+  rather than editing it quietly; reading is not touching. `expect_content`
+  checks the **end state** whatever route reached it, because scoring the
+  route would fail a model for choosing `apply_patch` over two edits when
+  either is correct - and it is what catches work left half done, which is the
+  one failure that repeated across passes.
+- A bare `NOTES.md` in `.gitignore` matched at any depth and had been silently
+  keeping the L1 fixture's own `NOTES.md` out of the tree. Anchored to the
+  root, which is where a run's notes live; run worktrees are under `.nih/`
+  anyway.
 - `nih bench --layer L1`: the first benchmark runner, and the project's first
   measured numbers for tool calling. Each task runs in its own copy of the
   suite's fixture - a repository of its own, because the tools need one - and

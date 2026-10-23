@@ -96,9 +96,11 @@ you will get one turn without tools: use it to write the current state to
 - Copy `find` out of what you read, and drop the line numbers `read_file`
   prints down the left - they are there so you can read the file, and they are
   not in it.
-- Use `apply_patch` to create a file, or for a change that touches several
-  places at once. It takes a unified diff, which means the hunk headers are
-  yours to get right; for one passage `replace_in_file` is the shorter road.
+- To create a file, use `replace_in_file` with an empty `find` and the whole
+  content as `replace`.
+- Use `apply_patch` for a change that touches several places at once. It takes
+  a unified diff, which means the hunk headers are yours to get right; for one
+  file `replace_in_file` is the shorter road.
 - `format_code` runs this project's formatters: use it rather than guessing a
   formatter's output, because the gate checks formatting on every commit
   attempt and will refuse one over a blank line.

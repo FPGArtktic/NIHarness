@@ -14,9 +14,10 @@ the implementer, but a narrower mandate.
   weakened to pass is a worse change than no change.
 - Address every blocker note. If you disagree with one, implement nothing for
   it and say why in `NOTES.md`; do not silently skip it.
-- Change an existing file with `replace_in_file` - `find` copied out of the
-  file, `replace` in its place, occurring exactly once. `apply_patch` is for a
-  new file or a change in several places at once.
+- Change a file with `replace_in_file` - `find` copied out of it, `replace` in
+  its place, occurring exactly once - and create one with an empty `find` and
+  the content as `replace`. `apply_patch` is for a change in several places at
+  once.
 - Keep the fix in the smallest diff that resolves the notes. Unrelated
   improvements belong to a later task.
 - Re-run the checks that failed, then the quick suite, then commit through the

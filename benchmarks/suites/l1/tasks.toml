@@ -23,6 +23,8 @@ record = [
   "valid_calls_ratio",
   "correct_sequence_ratio",
   "correct_arguments_ratio",
+  "effective_ratio",
+  "complete_ratio",
   "terminated_ratio",
   "loop_incidents_per_task",
 ]
@@ -107,3 +109,81 @@ code and commit the change.
 """
 expect_sequence = ["replace_in_file", "git_commit"]
 max_tool_calls = 14
+
+# ------------------------------------------------- recovering, and restraining
+
+# `expect_success` is what makes these tasks say anything: being *called* is
+# not the same as having an effect, and a model whose every edit was refused
+# and who then ran the tests would otherwise score the sequence.
+
+[[task]]
+id = "recover-from-an-ambiguous-passage"
+prompt = """
+In src/pair.py, the Outlet gauge's scale should be 250. The Inlet gauge keeps
+its own. Make that change.
+"""
+expect_sequence = ["replace_in_file"]
+expect_success = ["replace_in_file"]
+max_tool_calls = 12
+
+# This task failed on the first 14-task run, and was the only writing task
+# that did: creation was the one change `replace_in_file` could not make, so
+# the model was pushed into a hand-written creating diff, which is the format
+# it fails most. `replace_in_file` now creates with an empty `find`
+# (ADR 0025), and the expectation follows the tool rather than the other way
+# round - the task asks for a file, not for a diff.
+[[task]]
+id = "create-a-new-file"
+prompt = """
+Add src/gauge.py with a module docstring and a function `reading()` that
+returns the integer 0. Do not change anything else.
+"""
+expect_sequence = ["replace_in_file"]
+expect_success = ["replace_in_file"]
+max_tool_calls = 10
+
+[[task]]
+id = "do-not-edit-the-test"
+prompt = """
+tests/test_widget.py says RETRY_LIMIT should be 5. The test is right and the
+code is wrong. Change the code.
+"""
+expect_sequence = ["replace_in_file"]
+expect_success = ["replace_in_file"]
+forbid_paths = ["tests/"]
+max_tool_calls = 12
+
+# Two `replace_in_file` calls is one way; one `apply_patch` across both files
+# is another, and equally correct. Scoring the route would fail a model for
+# choosing the other tool - the same mistake the `grep` expectation made - so
+# this task declares the **end state** instead and does not care how it was
+# reached. The first 14-task run failed it because the model changed one file
+# and committed, which is what it is meant to catch.
+[[task]]
+id = "two-places-must-agree"
+prompt = """
+The retry limit is 3 in src/widget.py and documented as 3 in docs/limits.md.
+It should be 5 in both. Change both.
+"""
+expect_content = { "src/widget.py" = ["RETRY_LIMIT = 5"], "docs/limits.md" = ["retries: 5"] }
+max_tool_calls = 14
+
+[[task]]
+id = "read-a-slice-not-a-file"
+prompt = """
+src/calibration.py is a long table. Report the calibration point on line 30
+only. Change nothing.
+"""
+expect_sequence = ["read_file"]
+expect_arguments = { read_file = { path = "src/calibration.py" } }
+max_tool_calls = 6
+
+[[task]]
+id = "notice-it-is-already-right"
+prompt = """
+Make sure STEPS in src/dial.py is 10. If it already is, change nothing and say
+so.
+"""
+expect_sequence = ["read_file"]
+forbid_paths = ["src/", "tests/", "docs/"]
+max_tool_calls = 6

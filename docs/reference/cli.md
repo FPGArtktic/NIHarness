@@ -57,15 +57,27 @@ Usage: nih bench [OPTIONS]
  scores them by folding the events.                                             
                                                                                 
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --layer                       <str>   L0, L1, L2 or L3. [default: L1]        │
-│ --project-root        -C      <path>  The project to operate on.             │
-│                                       [default: (.)]                         │
-│ --profile                     <str>   Override the profile.                  │
-│ --unsafe-local-tools                  Run the tools on this host instead of  │
-│                                       in the sandbox.                        │
-│ --json                                Print one JSON object instead of the   │
-│                                       human form.                            │
-│ --help                                Show this message and exit.            │
+│ --layer                       <str>                   L0, L1, L2 or L3.      │
+│                                                       [default: L1]          │
+│ --project-root        -C      <path>                  The project to operate │
+│                                                       on.                    │
+│                                                       [default: (.)]         │
+│ --profile                     <str>                   Override the profile.  │
+│ --repeat                      <int range> [1<=x<=20]  Run the suite this     │
+│                                                       many times; one record │
+│                                                       per pass, so the       │
+│                                                       model's own variance   │
+│                                                       is visible rather than │
+│                                                       averaged away.         │
+│                                                       [default: 1]           │
+│ --unsafe-local-tools                                  Run the tools on this  │
+│                                                       host instead of in the │
+│                                                       sandbox.               │
+│ --json                                                Print one JSON object  │
+│                                                       instead of the human   │
+│                                                       form.                  │
+│ --help                                                Show this message and  │
+│                                                       exit.                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 

@@ -23,7 +23,10 @@ site/
 
 # Runtime state (event logs, snapshots, worktrees, approvals)
 .nih/
-NOTES.md
+# Anchored: a run's notes live at the root, and run worktrees are under .nih/
+# anyway. A bare `NOTES.md` also matched committed material at any depth - it
+# silently kept the L1 benchmark fixture's own NOTES.md out of the tree.
+/NOTES.md
 
 # Machine-specific: written by `nih init` from the probed hardware
 harness.toml

@@ -38,6 +38,7 @@ the pipeline. A change that does one of those without an ADR is incomplete.
 | [0022](0022-an-edit-located-by-its-own-text.md) | An edit is located by its own text; the harness writes the diff | Accepted |
 | [0023](0023-the-sandbox-network-is-a-deployment-choice.md) | The sandbox's network is a deployment choice, not a constant | Accepted |
 | [0024](0024-a-benchmark-layer-is-scored-by-folding-the-event-log.md) | A benchmark layer is scored by folding the event log | Accepted |
+| [0025](0025-creation-is-an-edit-with-nothing-to-find.md) | Creation is an edit with nothing to find (extends 0022) | Accepted |
 
 ## Template
 

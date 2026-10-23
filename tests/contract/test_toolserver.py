@@ -544,6 +544,54 @@ async def test_replace_in_file_writes_the_change_and_shows_the_diff_it_made(
     assert body == "def add(x, y):\n    return x + y\n"
 
 
+async def test_replace_in_file_creates_a_file_with_an_empty_find(worktree: Path) -> None:
+    """Creation was the one change this tool could not make.
+
+    That left it to a hand-written creating diff, which is the format a small
+    model fails most: on the 14-task L1 suite a 4B failed the creation task and
+    nothing else about writing.
+    """
+    body = '"""A gauge."""\n\n\ndef reading() -> int:\n    return 0\n'
+    async with connected(worktree) as provider:
+        result = await call(
+            provider,
+            ToolName.REPLACE_IN_FILE,
+            ReplaceInFileArgs(path="src/pkg/gauge.py", find="", replace=body),
+        )
+    assert result.ok, result.content
+    assert "created src/pkg/gauge.py, 5 line(s)" in result.content
+    assert "def reading" in result.content, "the creating diff comes back"
+    landed = worktree / "src" / "pkg" / "gauge.py"
+    assert landed.read_text(encoding="utf-8") == body
+    assert landed.parent.is_dir(), "a missing directory is created, inside the worktree"
+
+
+async def test_an_empty_find_against_a_file_that_exists_is_refused(worktree: Path) -> None:
+    """It does not say what to change, and overwriting would lose the bound."""
+    async with connected(worktree) as provider:
+        result = await call(
+            provider,
+            ToolName.REPLACE_IN_FILE,
+            ReplaceInFileArgs(path="src/a.py", find="", replace="gone"),
+        )
+    assert not result.ok
+    assert "exists, so an empty `find`" in result.content
+    assert "def add" in (worktree / "src" / "a.py").read_text(encoding="utf-8")
+
+
+async def test_a_passage_sought_in_a_file_that_is_not_there_says_how_to_create_it(
+    worktree: Path,
+) -> None:
+    async with connected(worktree) as provider:
+        result = await call(
+            provider,
+            ToolName.REPLACE_IN_FILE,
+            ReplaceInFileArgs(path="src/absent.py", find="x", replace="y"),
+        )
+    assert not result.ok
+    assert "leave `find` empty" in result.content
+
+
 async def test_replace_in_file_refuses_a_passage_that_is_not_unique(worktree: Path) -> None:
     """Two matches do not say which one, and guessing would be a silent wrong edit."""
     (worktree / "src" / "dup.py").write_text("a = 1\nb = 1\n", encoding="utf-8")
@@ -577,16 +625,23 @@ async def test_replace_in_file_quotes_back_a_passage_whose_indentation_is_wrong(
     assert "    return x + y  # TODO: types" in result.content
 
 
-async def test_replace_in_file_is_confined_to_the_worktree(worktree: Path) -> None:
-    """A write tool that is not a diff still cannot reach outside."""
+@pytest.mark.parametrize("path", ["../escaped.py", "/etc/hostname", "src/../../out.py"])
+async def test_replace_in_file_is_confined_by_the_server_too(worktree: Path, path: str) -> None:
+    """A write tool that is not a diff still cannot reach outside.
+
+    The domain refuses these before dispatch, so this is the second layer:
+    the argument model itself accepts the string, and the server resolves
+    every path against the worktree root - which is what catches a symlink.
+    """
     async with connected(worktree) as provider:
         result = await call(
             provider,
             ToolName.REPLACE_IN_FILE,
-            ReplaceInFileArgs(path="src/absent.py", find="x", replace="y"),
+            ReplaceInFileArgs(path=path, find="", replace="x = 1\n"),
         )
     assert not result.ok
-    assert "not a file" in result.content
+    assert not (worktree.parent / "escaped.py").exists()
+    assert not (worktree.parent / "out.py").exists()
 
 
 async def test_a_diff_written_from_read_files_numbered_output_still_lands(

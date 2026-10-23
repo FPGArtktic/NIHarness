@@ -381,7 +381,17 @@ class Workspace:
         """
         target = self.resolve(path)
         if not target.is_file():
-            raise WorkspaceError(f"not a file: {path}")
+            if find:
+                raise WorkspaceError(
+                    f"not a file: {path}. To create it, leave `find` empty and send the "
+                    "whole content as `replace`."
+                )
+            return await self._create(path, target, replace)
+        if not find:
+            raise WorkspaceError(
+                f"{path} exists, so an empty `find` does not say what to change. Send "
+                "the passage to replace, or a different path to create."
+            )
         before = await asyncio.to_thread(target.read_text, "utf-8", "replace")
         plan = plan_edit(before, find, replace)
         if plan.outcome is not EditOutcome.UNIQUE:
@@ -390,6 +400,41 @@ class Workspace:
         if self._servers is not None:
             await self._servers.changed((path,))
         return f"replaced one passage in {path}.\n{await self._shown_diff(path)}"
+
+    async def _create(self, path: str, target: Path, content: str) -> str:
+        """Create a file whose whole content is the change.
+
+        Creation is the one change `replace_in_file` could not make, which left
+        it to a hand-written diff - and a creating diff is the format a small
+        model fails most. Measured: on the 14-task L1 suite a 4B failed the
+        creation task and nothing else about writing (ADR 0025).
+
+        The objection to a whole-file write does not apply here. What it
+        protects is the bound on how much one call may change, and for a file
+        that does not exist yet there is nothing being replaced: the content
+        *is* the change, the diff is a pure addition, and the size cap bounds
+        it exactly as it bounds a diff.
+        """
+        await asyncio.to_thread(target.parent.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(target.write_text, content, encoding="utf-8")
+        if self._servers is not None:
+            await self._servers.changed((path,))
+        lines = content.count("\n") + (0 if content.endswith("\n") else 1)
+        return f"created {path}, {lines} line(s).\n{await self._created_diff(path)}"
+
+    async def _created_diff(self, path: str) -> str:
+        """Return the creating diff of an untracked file.
+
+        `git diff` says nothing about a path git has never seen, so this asks
+        with `--no-index` - which needs no change to the index, and exits 1
+        when it finds a difference, which for a new file it always does.
+        """
+        shown = await self._git(("diff", "--no-index", "--", "/dev/null", path))
+        body = shown.stdout.strip()
+        if not body:
+            return "(git would not render the new file; read it back if you are unsure)"
+        content, _ = truncate_result(body, self._limits)
+        return content
 
     async def _shown_diff(self, path: str) -> str:
         """Return the diff of one path, so a model sees the change it caused.
