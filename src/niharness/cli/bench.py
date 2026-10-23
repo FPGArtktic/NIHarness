@@ -263,6 +263,7 @@ def record(
     model: ModelConfig,
     metrics: Sequence[str],
     seconds: float,
+    dirty: bool,
     attempt: int = 1,
     of: int = 1,
 ) -> dict[str, object]:
@@ -272,7 +273,7 @@ def record(
         "layer": score.layer,
         "date": datetime.now(tz=UTC).date().isoformat(),
         "harness_commit": _commit(config.project_root),
-        "harness_dirty": _dirty(config.project_root),
+        "harness_dirty": dirty,
         "model": model.name,
         "quantization": model.quantization,
         "profile": config.profile,
@@ -302,17 +303,23 @@ def record(
 
 
 def _dirty(root: Path) -> bool:
-    """Whether the tree had uncommitted changes when this was measured.
+    """Whether the *code* had uncommitted changes when the run started.
 
     Without it two records can carry the same commit and not be comparable:
-    a measurement taken before and after an uncommitted change says the same
-    `harness_commit` for both, which is the one thing a record must not do.
-    A record from a dirty tree is a working note, not a result.
+    a measurement taken either side of an uncommitted change says the same
+    `harness_commit` for both, which is the one thing a record must not do. A
+    record from a dirty tree is a working note, not a result.
+
+    Measured once, before the first pass, and with the results directory
+    excluded. Writing a record makes the tree dirty, so asking per pass made
+    every pass after the first report `true` - the flag answering a question
+    about its own output rather than about the code.
     """
     try:
-        return bool(_run(_git(), ("status", "--porcelain"), root).strip())
+        changed = _run(_git(), ("status", "--porcelain", "--", ":!" + str(RESULTS)), root)
     except (OSError, subprocess.CalledProcessError, SuiteError):
         return True
+    return bool(changed.strip())
 
 
 def _commit(root: Path) -> str:
@@ -398,6 +405,7 @@ def bench(
         raise typer.Exit(1) from error
 
     model = config.models.main
+    dirty = _dirty(config.project_root)
     backend = backend_for(model)
     passes: list[tuple[dict[str, object], SuiteScore]] = []
     written: list[Path] = []
@@ -428,6 +436,7 @@ def bench(
                     model=model,
                     metrics=metrics,
                     seconds=time.monotonic() - started,
+                    dirty=dirty,
                     attempt=attempt,
                     of=max(1, repeat),
                 )
@@ -439,22 +448,34 @@ def bench(
         finally:
             await backend.aclose()
 
+    broke = ""
     try:
         blocking(drive())
     except SuiteError as error:
-        fail(str(error), json_mode=json_mode)
-        raise typer.Exit(1) from error
+        broke = str(error)
+    except Exception as error:  # noqa: BLE001 - a pass may fail any number of ways
+        # Twelve minutes of model time should not be lost because the last
+        # pass died. What was measured is already on disk; this says what
+        # stopped the rest, and the command still exits non-zero.
+        broke = f"{type(error).__name__}: {error}"
+    if broke and not passes:
+        fail(broke, json_mode=json_mode)
+        raise typer.Exit(1)
 
     target = written[-1] if written else config.project_root / RESULTS
+    note = f"\n\nstopped after {len(passes)} pass(es): {broke}" if broke else ""
     emit(
         {
-            "ok": True,
+            "ok": not broke,
             "record": str(target),
             "passes": [entry for entry, _ in passes],
+            **({"stopped": broke} if broke else {}),
         },
         json_mode=json_mode,
-        human=f"{_rendered(passes)}\n\nrecorded in {target}",
+        human=f"{_rendered(passes)}\n\nrecorded in {target}{note}",
     )
+    if broke:
+        raise typer.Exit(1)
 
 
 def _rendered(passes: Sequence[tuple[dict[str, object], SuiteScore]]) -> str:

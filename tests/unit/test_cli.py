@@ -415,3 +415,37 @@ def test_ingest_says_so_when_it_cannot_index_what_it_read(tmp_path: Path) -> Non
     assert "models.embeddings" in payload["error"]
     corpus = next((tmp_path / ".nih" / "corpus").glob("*.jsonl"))
     assert corpus.read_text(encoding="utf-8").strip(), "written before indexing was attempted"
+
+
+def test_a_record_calls_the_tree_dirty_for_the_code_not_for_its_own_output(
+    tmp_path: Path,
+) -> None:
+    """Writing a record makes the tree dirty, which is not what the flag means.
+
+    Asked per pass, every pass after the first reported `true` - the flag
+    answering a question about its own output rather than about the code. It
+    is measured once now, with the results directory excluded.
+    """
+    import subprocess
+
+    from niharness.cli.bench import _dirty
+
+    repo = tmp_path / "repo"
+    (repo / "benchmarks" / "results").mkdir(parents=True)
+    (repo / "src").mkdir()
+    (repo / "src" / "a.py").write_text("x = 1\n", encoding="utf-8")
+    for argv in (
+        ("git", "init", "-q", "."),
+        ("git", "config", "user.email", "t@example.com"),
+        ("git", "config", "user.name", "T"),
+        ("git", "add", "-A"),
+        ("git", "commit", "-qm", "init"),
+    ):
+        subprocess.run(argv, cwd=repo, check=True, capture_output=True)
+    assert _dirty(repo) is False, "a clean tree is clean"
+
+    (repo / "benchmarks" / "results" / "l1.jsonl").write_text("{}\n", encoding="utf-8")
+    assert _dirty(repo) is False, "its own record does not make the code uncommitted"
+
+    (repo / "src" / "a.py").write_text("x = 2\n", encoding="utf-8")
+    assert _dirty(repo) is True, "a change to the code does"
