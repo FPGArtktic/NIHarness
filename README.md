@@ -5,6 +5,28 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # NIHarness
 
+> [!WARNING]
+> **Research and development. Nothing here is ready to depend on.**
+>
+> This is a working notebook with a quality gate, not a product. Specifically, and
+> because "under development" is too vague to be useful:
+>
+> - **The sandbox image has never been built.** Every run so far used
+>   `--unsafe-local-tools`, which runs the model's tools on the host. The isolation
+>   this project advertises - `--network=none`, read-only root, no capabilities - is
+>   asserted by tests over the container's argument vector and has never confined a
+>   real task. Do not rely on it.
+> - **One of three entry points works.** You can bring a finished `PLAN.md` and
+>   execute it. `nih brainstorm` and `nih plan spec` are stubs that exit 69 and say so.
+> - **The central question is unanswered.** L1 (tool calling) has numbers as of
+>   today; L2 and L3 have a methodology and no runner. One model family, one host.
+> - **Nothing is stable.** Event schemas, the config, the artifact contracts and the
+>   tool surface all change without notice, and there has been no release.
+>
+> What *is* true is in [`docs/orientation.md`](docs/orientation.md); what is not is in
+> [`docs/roadmap.md`](docs/roadmap.md). The reasoning behind every decision is in
+> [`docs/adr/`](docs/adr/). Issues and questions are welcome; promises are not made.
+
 **NIHarness** (*Not Invented Here* harness) is a local, air-gapped, multi-agent coding
 harness. Sequential agent roles run on local models (`llama-server`, `bitnet.cpp`),
 execute their tools inside a hardened Podman sandbox, and never commit code that does
@@ -125,18 +147,33 @@ bring a finished plan and only execute it. Every entry passes the same gates. Ea
 boundary starts a **fresh run** seeded only with the artifact, so what matters has to be
 written down, not remembered.
 
-## Status
+## What works, and what is missing
 
-Early, but running. The pipeline executes an approved plan end to end against a real
-model: worktree, tool loop, patches, formatter, tests, commit attempt, gate, loop
-detectors, handoff with diagnostics. The domain core, the event log and control inbox,
-the inference and embedding clients, the MCP tool server and client, declared MCP
-servers, the LSP client, the PDF reader, the Qdrant store and the management surface
-are in place. The benchmark runner and the code index are not.
+The pipeline executes an approved plan end to end against a real model - worktree,
+tool loop, edits, formatter, tests, commit attempt, gate, loop detectors, and either a
+commit or a handoff with diagnostics. A 4B has taken that path to a green commit
+unattended. Everything below is the detail of that sentence.
 
-See [`docs/orientation.md`](docs/orientation.md) for what works today,
-[`docs/roadmap.md`](docs/roadmap.md) for what does not, and `docs/adr/` for why
-anything is shaped the way it is.
+| Subsystem | Works | Missing |
+|---|---|---|
+| **Domain core** | contracts, event catalogue, tool-call validation with path confinement, role allowlists, budgets with forced finalisation, two-tier gate with failure signatures, loop detectors and the intervention ladder, compaction policy, the fold that derives run state | - |
+| **Tools** | `read_file`, `list_tree`, `grep`, `replace_in_file` (creates too), `apply_patch` with its clerical repairs, `format_code`, `run_lint`/`run_build`/`run_tests`, `git_commit` as the gate, `rag_query`, the LSP symbol tools | `diagnostics`; `add_dependency` cannot consult a real index |
+| **Sandbox** | the Containerfile, the hardened argument vector, two network modes, `--unsafe-local-tools` as the escape hatch | **the image has never been built**, so none of it has confined a real task; no wheelhouse; Quadlet units not rendered |
+| **Run loop** | `nih implement`, review and fix stages, structured output with GBNF, window building and compaction, resume, cancel | the full gate tier inside a run; a producer for `questions.asked` |
+| **Pipeline entries** | **C**: bring a `PLAN.md` and execute it | **A** (`nih brainstorm`) and **B** (`nih plan spec`) are stubs, so `nih run` is too |
+| **Retrieval** | Qdrant over REST, embeddings over `/v1/embeddings`, `nih ingest` reading PDFs with OCR and citing pages, `rag_query` over documents | the code index (needs tree-sitter chunking); compacted context is not indexed, so `nih compact` and `nih research` are stubs |
+| **Management** | `nih mcp`, `nih runs`, `nih status`, `nih cancel`, `nih resume`, `--json`, `--detach` | answering `Questions` from outside |
+| **TUI** | follows a live run's event log, writes the control inbox, cancels | the questions picker and plan approval |
+| **Benchmarks** | `nih bench --layer L1`, scored by folding the event log, `--repeat` for variance; L0 numbers taken by hand | **L2 and L3 have no runner**; 14 of L1's 20 tasks; no vendored reference sets |
+
+Three things block the rest, in order: **the sandbox image** (the safety story is
+unexercised), **L2 and L3** (review quality and end-to-end are unmeasured), and **the
+plan stage** (two of three entry points). Roughly 24 of 59 roadmap items are done; the
+count is a poor measure, because the remaining ones are the large ones.
+
+[`docs/orientation.md`](docs/orientation.md) is the long version of this table,
+[`docs/roadmap.md`](docs/roadmap.md) the itemised list, and
+[`docs/adr/`](docs/adr/) says why anything is shaped the way it is.
 
 ## Quickstart (development)
 

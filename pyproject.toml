@@ -70,10 +70,13 @@ docs = [
 ]
 
 [tool.hatch.build.targets.wheel]
+# `packages` already carries everything under the directory, prompts and
+# schemas included. A `force-include` of `src/niharness/prompts` was added here
+# to insure against that and instead added the same files a second time at the
+# same path, which hatchling refuses - so the wheel could not be built at all,
+# and with it neither the sandbox image nor the air-gap bundle. A test asserts
+# the prompt layers are in the wheel, which is the guarantee that was wanted.
 packages = ["src/niharness"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/niharness/prompts" = "niharness/prompts"
 
 # ---------------------------------------------------------------- lint / format
 

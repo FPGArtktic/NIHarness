@@ -104,6 +104,31 @@ per-command containers the gate's own commands run in.
 Images are built once on a networked machine and loaded with `podman load` on
 the air-gapped one. The harness never pulls.
 
+### What the first build of it found
+
+Nobody had built this image until the day it is written about here, and the
+chain to an air-gapped host turned out to be broken in five places at once -
+every one of them invisible to the quick gate, because the gate tests the
+source tree and nothing tested the image:
+
+| What | Why no test saw it |
+|---|---|
+| a `force-include` of the prompts duplicated them, so **the wheel would not build at all** | tests import from the source tree, never from a wheel |
+| `uv pip download`, which the instructions here named, does not exist in uv 0.12 | a comment, not code |
+| the instructions exported the whole lock, dev groups included, and some of that has no wheel for this interpreter | the same |
+| `bash-language-server` was installed as a Debian package; it is npm | the stage had never run |
+| the image carried only the runtime, so it **could not lint a line of Python** | nothing ran the image |
+
+The last is the one worth remembering, because it is a mistake about what this
+container *is*. An image carrying only the harness's runtime builds without
+complaint and is useless: the gate runs **in here**, so `ruff`, `mypy` and
+`pytest` belong in here, and `basedpyright` was being downloaded into the
+wheelhouse and then never installed because nothing depended on it.
+
+There is now a test that builds the wheel and asserts the prompt layers are in
+it, which is the cheapest of these to catch and was the one that blocked
+everything else.
+
 ## The network, and why it is the one flag that moves
 
 `--network=none` is the default and is what an air-gapped deployment requires.

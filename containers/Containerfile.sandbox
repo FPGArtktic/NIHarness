@@ -51,38 +51,55 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 # This is the layer that costs disk - clangd alone is a few hundred megabytes.
 # A project that does not want it can drop this stage and set
 # `[lsp] enabled = false`, and the symbol tools will say so instead of failing.
-# Each server is installed from this distribution's packages so the build stays
-# index-free; a language whose server is not packaged here (Rust, Go) gets it
-# from the toolchain tarball the respective stage already unpacks.
+# `clangd` comes from the cxx stage and Python's from the wheelhouse below, so
+# both are pinned with everything else. Bash's is not packaged by Debian at
+# all - `bash-language-server` is npm - and this stage installs it from there.
+# That reaches the network at *build* time, which is a connected machine by
+# definition: the rule is that nothing is fetched at **run** time, and the
+# image is sealed by the time it is exported. A language whose server is
+# neither packaged nor installed here simply has none, and the symbol tools say
+# so rather than failing - `nih tools` prints which are present.
 FROM hdl AS lsp
 RUN apt-get update && apt-get install --no-install-recommends -y \
-      bash-language-server \
-    && rm -rf /var/lib/apt/lists/*
+      nodejs npm \
+    && npm install --global --no-fund --no-audit bash-language-server \
+    && npm cache clean --force \
+    && rm -rf /var/lib/apt/lists/* /root/.npm
 
 # ------------------------------------------------------------- the tool server
 FROM lsp AS final
 
 # The server is this project's own package, installed from a local wheelhouse so
-# the build needs no index. Prepare the context on a networked machine first:
+# the build needs no index - and beside it the Python tools the **gate** runs,
+# because the gate runs in here. An image carrying only the runtime builds
+# fine and then cannot lint a line of Python, which is what a first build of
+# this file produced.
+#
+# Prepare the context on a networked machine first:
 #
 #   uv build --wheel --out-dir wheelhouse
-#   uv export --frozen --no-emit-project -o requirements.lock
-#   uv pip download -r requirements.lock -d wheelhouse
+#   uv export --frozen --no-dev --no-emit-project -o wheelhouse/requirements.lock
+#   uv tool run --from pip pip download -r wheelhouse/requirements.lock \
+#       -d wheelhouse --only-binary=:all:
+#   uv tool run --from pip pip download ruff mypy pytest basedpyright \
+#       -d wheelhouse --only-binary=:all:
 #
 # then build the image, save it, and load it on the air-gapped host.
+#
+# `--no-dev` matters: the full lock carries this project's own test and docs
+# tooling, some of which has no wheel for this interpreter, and none of which
+# the sandbox needs. What the sandbox needs is the gate's matrix, which is a
+# different list and is named explicitly above.
 COPY wheelhouse/ /tmp/wheelhouse/
 RUN python3 -m venv /opt/nih \
-    && /opt/nih/bin/pip install --no-index --find-links=/tmp/wheelhouse niharness \
+    && /opt/nih/bin/pip install --no-index --find-links=/tmp/wheelhouse \
+         niharness ruff mypy pytest basedpyright \
     && rm -rf /tmp/wheelhouse /root/.cache
 ENV PATH=/opt/nih/bin:$PATH
 
-# The Python language server comes from the same wheelhouse, so it is pinned
-# with everything else rather than pulled at build time. Add it to the
-# wheelhouse with:
-#
-#   uv pip download basedpyright -d wheelhouse
-#
-# and it is found on PATH as basedpyright-langserver.
+# `basedpyright-langserver` lands on PATH from that same install, so the Python
+# symbol tools are pinned with everything else rather than pulled at build
+# time.
 
 # The sandbox runs as a non-root user with the worktree bind-mounted at /work.
 RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin agent

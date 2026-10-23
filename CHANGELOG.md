@@ -13,6 +13,26 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- The sandbox image builds, and the chain to an air-gapped host was broken in
+  five places at once - none of them visible to the quick gate, because the
+  gate tests the source tree and nothing tested the image. A `force-include`
+  of the prompts duplicated them, so **the wheel would not build at all**, and
+  with no wheel there is no wheelhouse, no image and no bundle. The
+  instructions in the Containerfile named `uv pip download`, which does not
+  exist in uv 0.12, and exported the whole lock including dev groups, some of
+  which has no wheel for this interpreter. `bash-language-server` was
+  installed as a Debian package and is npm. And the image carried only the
+  harness's runtime, so it built without complaint and **could not lint a line
+  of Python** - a mistake about what the container is, since the gate runs
+  inside it, which is why `ruff`, `mypy` and `pytest` are now installed there
+  and `basedpyright` is installed rather than merely downloaded.
+- A test builds the wheel and asserts every prompt layer is in it. Nothing
+  else in the suite could have caught the packaging bug: tests import from the
+  source tree, so a wheel that cannot be built is invisible to them. The first
+  version of this test *skipped* - it built through `python -m uv`, which the
+  project venv cannot import - which would have been an absent check at
+  exactly the moment it mattered; it goes through the `uv` binary that runs the
+  gate.
 - `replace_in_file` creates a file: an empty `find` writes `replace` as the
   whole content, parent directories included, inside the worktree. Measured
   rather than decided - on the first 14-task L1 run a 4B passed every writing
