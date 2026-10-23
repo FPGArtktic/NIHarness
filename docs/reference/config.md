@@ -25,7 +25,7 @@ The whole configuration of one harness instance.
 | `sandbox` | `niharness.config.SandboxConfig` | `SandboxConfig(image='localhost/niharness-sandbox:latest', network='none', binary='podman', cpus=4.0, memory='8g', pids_limit=512, quick_timeout_seconds=900, full_timeout_seconds=10800)` |  |
 | `mcp` | `niharness.config.McpConfig` | `McpConfig(servers=())` |  |
 | `lsp` | `niharness.config.LspConfig` | `LspConfig(enabled=True, disabled_languages=(), servers={}, start_timeout_seconds=30.0, request_timeout_seconds=20.0)` |  |
-| `vector` | `niharness.config.VectorConfig` | `VectorConfig(url='http://127.0.0.1:6333', code_collection='code', run_collection_prefix='run-', embedding_dimensions=1024)` |  |
+| `vector` | `niharness.config.VectorConfig` | `VectorConfig(url='http://127.0.0.1:6333', code_collection='code', doc_collection='docs', run_collection_prefix='run-', embedding_dimensions=1024)` |  |
 | `gate` | `niharness.config.GateConfig` | `GateConfig(disabled_languages=(), fail_fast=True)` |  |
 | `loop` | `loop.LoopThresholds` | `LoopThresholds(exact_repeat_window=5, exact_repeat_count=2, state_cycle_revisits=1, progress_stall_calls=8, gate_thrash_repeats=3, invalid_calls_in_a_row=3, degenerate_ngram_size=8, degenerate_ngram_repeats=4)` |  |
 | `compact` | `context.CompactionPolicy` | `CompactionPolicy(context_window=65536, threshold=0.75, keep_last_tool_results=6, reserve_response_tokens=2048, summary_token_budget=1500)` |  |
@@ -65,6 +65,7 @@ Where the vector store lives and how collections are named.
 |---|---|---|---|
 | `url` | `str` | `'http://127.0.0.1:6333'` |  |
 | `code_collection` | `str` | `'code'` |  |
+| `doc_collection` | `str` | `'docs'` | Where `nih ingest` indexes documents, separate from code so that re-indexing one does not touch the other. |
 | `run_collection_prefix` | `str` | `'run-'` |  |
 | `embedding_dimensions` | `int` | `1024` |  |
 

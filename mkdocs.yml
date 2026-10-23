@@ -110,6 +110,7 @@ nav:
       - concepts/prompts.md
       - concepts/context.md
       - concepts/documents.md
+      - concepts/retrieval.md
       - concepts/events.md
       - concepts/tool-loops.md
   - Reference:
@@ -154,3 +155,4 @@ nav:
       - adr/0018-a-run-records-its-conclusions.md
       - adr/0019-declared-mcp-servers.md
       - adr/0020-language-servers-in-the-sandbox.md
+      - adr/0021-retrieval-runs-in-the-harness.md

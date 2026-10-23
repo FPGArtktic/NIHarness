@@ -16,6 +16,7 @@ produce citations nobody can follow.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from enum import StrEnum
 from typing import Self
 
@@ -94,3 +95,93 @@ class Hit(BaseModel):
 
     chunk: Chunk
     score: float
+
+
+# ---------------------------------------------------------------- retrieval policy
+
+MAX_HIT_CHARS = 2_000
+"""How much of one chunk is rendered. A chunk this long is already a mistake."""
+
+
+def collections_for(
+    requested: str,
+    *,
+    code: str,
+    docs: str,
+    run: str = "",
+) -> tuple[str, ...]:
+    """Return the collections one query searches.
+
+    A query that names a collection searches that one and nothing else; the
+    caller asked a specific question. A query that names none searches
+    everything the run has: the code index, the ingested documents, and - when
+    there is one - the run's own collection, which is where compaction put the
+    context that left the window.
+
+    Searching the run's own collection by default is the reason compaction can
+    drop a tool result without losing it. Making the model name a collection
+    first would mean it has to know that, and it does not.
+
+    Args:
+        requested: a collection name, or empty for the default set.
+        code: the code collection's name.
+        docs: the ingested-documents collection's name.
+        run: the run's own collection, when the run has one.
+
+    Returns:
+        Collection names, in search order, without duplicates or blanks.
+    """
+    wanted = (requested,) if requested else (code, docs, run)
+    return tuple(dict.fromkeys(name for name in wanted if name))
+
+
+def merge_hits(groups: Iterable[Sequence[Hit]], top_k: int) -> tuple[Hit, ...]:
+    """Merge per-collection results into one ranking, best first.
+
+    Scores from one embedding model over one metric are comparable across
+    collections, so the merge is a sort. A chunk found in two collections is
+    kept once, at its best score - the same document indexed twice should not
+    occupy two of the few slots a window can afford.
+
+    Args:
+        groups: each collection's hits.
+        top_k: how many to keep.
+
+    Returns:
+        At most `top_k` hits, highest score first.
+    """
+    best: dict[str, Hit] = {}
+    for group in groups:
+        for hit in group:
+            kept = best.get(hit.chunk.id)
+            if kept is None or hit.score > kept.score:
+                best[hit.chunk.id] = hit
+    ranked = sorted(best.values(), key=lambda hit: -hit.score)
+    return tuple(ranked[:top_k])
+
+
+def render_hits(hits: Sequence[Hit], *, searched: Sequence[str] = ()) -> str:
+    """Render hits for the model: what was searched, then each citation and text.
+
+    The citation comes before the text so that a model quoting a passage has
+    the reference in front of it, and so a human reading the event log can
+    follow one. An empty result says which collections were searched, because
+    "nothing matched" and "nothing is indexed" look identical otherwise.
+
+    Args:
+        hits: the merged ranking.
+        searched: the collections that were searched.
+
+    Returns:
+        The text the tool returns.
+    """
+    where = ", ".join(searched)
+    if not hits:
+        return f"no matches in {where}" if where else "no matches"
+    lines = [f"{len(hits)} match(es) in {where}:" if where else f"{len(hits)} match(es):"]
+    for position, hit in enumerate(hits, start=1):
+        body = hit.chunk.text.strip()
+        if len(body) > MAX_HIT_CHARS:
+            body = f"{body[:MAX_HIT_CHARS]}\n... [chunk truncated]"
+        lines += ["", f"[{position}] {hit.chunk.citation()}  score {hit.score:.3f}", body]
+    return "\n".join(lines)

@@ -205,22 +205,30 @@ stop the step.
       one and OCRs the pages where it does not, and turns the result into
       chunks that cite their pages (`manual.pdf pp. 12-13`, marked when the
       text came off a rendering). Verified against a typeset PDF and the same
-      document rasterised into an image-only scan. The chunks land in
-      `.nih/corpus/` until there is a store to put them in.
-- [ ] `VectorStore` adapter (Qdrant) and the embedding backends. Both are
-      reachable over HTTP with what the harness already depends on - Qdrant has
-      a REST API, and `/v1/embeddings` is the same OpenAI-compatible surface
-      the inference port already speaks - so this needs no new dependency.
-      bge-m3 is the embedding model the profiles name, and its 1024 dimensions
-      are what `[vector] embedding_dimensions` already expects.
-- [ ] `rag_query` in the tool server. It is in every role's allowlist already
-      and answers nothing, which is the last link in the chain: ingest, index,
-      retrieve, cite.
-- [ ] tree-sitter chunking, re-index by file hash.
+      document rasterised into an image-only scan. `nih ingest` indexes the
+      chunks and also writes them to `.nih/corpus/`, so a retrieval result can
+      be checked against the text that produced it.
+- [x] `VectorStore` adapter (Qdrant over REST) and the `Embedder` port over
+      `/v1/embeddings`. No new dependency: five endpoints with the `httpx` the
+      inference port already uses. Verified end to end against Qdrant 1.19 and
+      bge-m3 - including an English query retrieving a Polish OCR'd page,
+      which is what that model is for.
+- [x] `rag_query`, served by the harness process rather than the sandbox,
+      because the container has no network and the store is a service on the
+      host ([ADR 0021](adr/0021-retrieval-runs-in-the-harness.md)). Searches
+      the code index, the documents and the run's own context; reports a
+      collection nothing has written to rather than counting it as searched.
+- [ ] tree-sitter chunking of the project's code, re-indexed by file hash.
+      This is the `code` collection's writer; until it exists `rag_query`
+      reports that collection as not indexed.
 - [ ] Compacted run context indexed under the run's collection, recoverable
       with `rag_query`. Until this lands, folded-away turns live only in the
       event log, and the window says so in place of the summary it could not
-      index.
+      index. The retrieval half is done: the run's collection is already in
+      the default search set, and already reported as empty.
+- [ ] A vision tier for a page OCR cannot read - a schematic, a timing
+      diagram, a table whose structure is the information. The per-page policy
+      in `domain/documents.py` is where a third tier goes.
 - [ ] `nih research`.
 
 ## Stage: context management end to end

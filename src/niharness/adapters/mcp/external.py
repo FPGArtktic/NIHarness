@@ -59,7 +59,7 @@ from niharness.domain.tools import (
     is_external,
     truncate_result,
 )
-from niharness.ports.tool_provider import ToolProvider
+from niharness.ports.tool_provider import LocalToolProvider, ToolProvider
 
 _log = structlog.get_logger(__name__)
 
@@ -216,9 +216,13 @@ def _read(raw: types.CallToolResult) -> tuple[bool, str]:
 class CompositeToolProvider:
     """The harness's own tool server, plus every server a project declared.
 
-    Calls route by name: anything namespaced goes to the server that owns the
-    namespace, everything else to the sandbox. The sandbox is the primary and
-    cannot be shadowed, because a built-in name has no namespace to claim.
+    Calls route by name, over three destinations. Anything namespaced goes to
+    the server that owns the namespace. A name the harness serves in its own
+    process goes there - today that is `rag_query` alone, because the sandbox
+    runs `--network=none` and the vector store is a service on the host.
+    Everything else goes to the sandbox, which is the primary and cannot be
+    shadowed: a built-in name has no namespace to claim, and a local provider
+    declares the handful of names it answers rather than being asked.
     """
 
     def __init__(
@@ -226,6 +230,7 @@ class CompositeToolProvider:
         primary: ToolProvider,
         external: Mapping[str, ExternalTools],
         catalog: ToolCatalog,
+        local: LocalToolProvider | None = None,
     ) -> None:
         """Wire the router.
 
@@ -234,10 +239,15 @@ class CompositeToolProvider:
             external: the attached servers, by name.
             catalog: what those servers contributed, for the model's tool list
                 and for the domain's validation.
+            local: a provider running in the harness process, for the tools
+                the sandbox cannot reach. None leaves those tools unoffered,
+                which is what happens when the vector store is not configured.
         """
         self._primary = primary
         self._external = dict(external)
         self._catalog = catalog
+        self._local = local
+        self._served = local.served if local is not None else frozenset()
 
     @property
     def catalog(self) -> ToolCatalog:
@@ -245,8 +255,10 @@ class CompositeToolProvider:
         return self._catalog
 
     async def descriptors(self, allowlist: frozenset[ToolId]) -> tuple[ToolSchema, ...]:
-        """Return the allowed tools' schemas: the sandbox's, then the declared ones."""
+        """Return the allowed schemas: the sandbox's, then the local, then the declared."""
         own = await self._primary.descriptors(allowlist)
+        if self._local is not None:
+            own += await self._local.descriptors(allowlist)
         external = tuple(
             ToolSchema(
                 name=tool.id,
@@ -260,6 +272,8 @@ class CompositeToolProvider:
 
     async def call(self, accepted: AcceptedCall) -> ToolResult:
         """Execute a validated call on whichever server owns its name."""
+        if accepted.tool in self._served and self._local is not None:
+            return await self._local.call(accepted)
         if not is_external(accepted.tool):
             return await self._primary.call(accepted)
         server = accepted.tool.split(NAMESPACE, 1)[0]
@@ -338,6 +352,7 @@ async def connect_tools(
     *,
     limits: ToolLimits | None = None,
     timeout_seconds: float = 120.0,
+    local: LocalToolProvider | None = None,
 ) -> AsyncIterator[CompositeToolProvider]:
     """Start the sandbox's tool server and every declared external one.
 
@@ -348,6 +363,9 @@ async def connect_tools(
         limits: result caps, applied to every server alike.
         timeout_seconds: per-call timeout for the harness's own server; an
             external server carries its own.
+        local: tools the harness serves itself, because the sandbox cannot
+            reach what they need. Nothing is started for it; it is already
+            running in this process.
 
     Yields:
         A provider over all of them, and the catalogue of what was attached.
@@ -362,4 +380,9 @@ async def connect_tools(
             tools = await stack.enter_async_context(attach(server, limits=limits))
             catalog.extend(await tools.discover())
             attached[server.name] = tools
-        yield CompositeToolProvider(own, attached, ToolCatalog(external=tuple(catalog)))
+        yield CompositeToolProvider(
+            own,
+            attached,
+            ToolCatalog(external=tuple(catalog)),
+            local,
+        )

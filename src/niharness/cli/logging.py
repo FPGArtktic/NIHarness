@@ -9,6 +9,12 @@ The stream is resolved at write time rather than at configuration time. Binding
 it once looks harmless until something replaces `sys.stderr` after the harness
 has configured itself - a test runner capturing output, an embedding process -
 and every later log line raises on a closed file.
+
+`httpx` is quieted to warnings. It logs a plain-text line per request at info
+level, which is not JSON and therefore not something a reader of this stream
+can parse, and there is one per model call, per embedding batch and per vector
+store request. What the harness wants recorded about a request it records
+itself, with the detail that matters.
 """
 
 from __future__ import annotations
@@ -53,6 +59,8 @@ def configure(verbose: bool = False) -> None:
     """
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(format="%(message)s", stream=sys.stderr, level=level)
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,

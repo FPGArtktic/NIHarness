@@ -34,6 +34,7 @@ the pipeline. A change that does one of those without an ADR is incomplete.
 | [0018](0018-a-run-records-its-conclusions.md) | A run records its conclusions, so it can be continued | Accepted |
 | [0019](0019-declared-mcp-servers.md) | A project may declare MCP servers, under a namespace | Accepted |
 | [0020](0020-language-servers-in-the-sandbox.md) | Language servers run in the sandbox, and are asked by name | Accepted |
+| [0021](0021-retrieval-runs-in-the-harness.md) | Retrieval runs in the harness, over the store's REST API | Accepted |
 
 ## Template
 

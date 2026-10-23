@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Concepts
 
-Seven ideas carry the whole harness. Each page below is the authoritative
+Nine ideas carry the whole harness. Each page below is the authoritative
 description of one of them; the code follows these pages, and when they disagree
 the page is a bug.
 
@@ -16,5 +16,7 @@ the page is a bug.
 | [Gate](gate.md) | `git_commit` is a gate in two tiers, with a normalised failure signature |
 | [Prompts](prompts.md) | Layered, versioned, golden-tested prompts; reasoning logged and never fed back |
 | [Context](context.md) | The window is a derived view; compaction is a policy over it |
+| [Documents](documents.md) | A text layer where there is one, OCR where there is not, chunks that cite pages |
+| [Retrieval](retrieval.md) | `rag_query` over three collections, run by the harness because the sandbox has no network |
 | [Events](events.md) | Run state is an append-only stream, and everything else is derived |
 | [Tool loops](tool-loops.md) | Bounded ReAct loops, pathology detectors, an intervention ladder |

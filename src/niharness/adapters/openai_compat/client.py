@@ -5,18 +5,22 @@
 This is the only inference code path in the harness. `llama-server` and
 `bitnet.cpp` are both driven through it; their differences are configuration,
 not branches. Any non-localhost base URL is refused at construction, because
-the harness runs air-gapped.
+the harness runs air-gapped - see :mod:`niharness.adapters.local_http`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Any, Final
-from urllib.parse import urlparse
 
 import httpx
 import structlog
 
+from niharness.adapters.local_http import (
+    AirGapViolationError,
+    checked,
+    require_local,
+)
 from niharness.domain.identity import CallId
 from niharness.domain.messages import (
     ChatRequest,
@@ -29,7 +33,6 @@ from niharness.domain.messages import (
 )
 from niharness.ports.model_backend import BackendInfo
 
-LOCAL_HOSTS: Final = frozenset({"localhost", "127.0.0.1", "::1", "0.0.0.0"})  # noqa: S104
 CHAT_PATH: Final = "/v1/chat/completions"
 TOKENIZE_PATH: Final = "/tokenize"
 TEMPLATE_PATH: Final = "/apply-template"
@@ -37,61 +40,19 @@ TEMPLATE_PATH: Final = "/apply-template"
 _log = structlog.get_logger(__name__)
 
 
-class AirGapViolationError(RuntimeError):
-    """Raised when a backend URL points anywhere but localhost."""
-
-
 class BackendProtocolError(RuntimeError):
     """Raised when the backend answers something the harness cannot interpret."""
 
 
-MAX_ERROR_BODY = 2_000
-"""How much of a refusal's body is carried into the exception."""
-
-
-def _checked(response: httpx.Response) -> None:
-    """Raise with the server's own explanation when a request was refused.
-
-    `raise_for_status` reports the status and the URL, and throws away the
-    body - which is where a server says *what* it objected to. A backend that
-    refuses a request is not a mystery to be guessed at from the status code:
-    the body goes into the message, truncated, so the operator reads the reason
-    instead of rediscovering it with curl.
-
-    Raises:
-        httpx.HTTPStatusError: when the response is an error, with the body.
-    """
-    if not response.is_error:
-        return
-    body = response.text.strip()
-    if len(body) > MAX_ERROR_BODY:
-        body = f"{body[:MAX_ERROR_BODY]}... [truncated]"
-    message = (
-        f"{response.status_code} from {response.request.method} {response.request.url}: "
-        f"{body or '(no body)'}"
-    )
-    raise httpx.HTTPStatusError(message, request=response.request, response=response)
-
-
-def require_local(base_url: str) -> str:
-    """Return `base_url` unchanged, or refuse it.
-
-    Args:
-        base_url: the configured endpoint.
-
-    Returns:
-        The URL without a trailing slash.
-
-    Raises:
-        AirGapViolationError: when the host is not a loopback address. There is
-            no configuration flag to switch this off.
-    """
-    parsed = urlparse(base_url)
-    host = (parsed.hostname or "").strip("[]")
-    if parsed.scheme not in {"http", "https"} or host not in LOCAL_HOSTS:
-        msg = f"backend must be served from localhost, got {base_url!r}"
-        raise AirGapViolationError(msg)
-    return base_url.rstrip("/")
+__all__ = [
+    "AirGapViolationError",
+    "BackendProtocolError",
+    "OpenAiCompatBackend",
+    "require_local",
+]
+"""`AirGapViolationError` and `require_local` are re-exported from
+:mod:`niharness.adapters.local_http`, which now holds the rules every HTTP
+adapter here shares: importers of this module predate the move."""
 
 
 class OpenAiCompatBackend:
@@ -159,7 +120,7 @@ class OpenAiCompatBackend:
         """Run one completion and return the parsed response."""
         payload = self._request_payload(request)
         response = await self._client.post(CHAT_PATH, json=payload)
-        _checked(response)
+        checked(response)
         parsed = self._parse_response(response.json())
         _log.debug(
             "model.response",
@@ -173,7 +134,7 @@ class OpenAiCompatBackend:
     async def count_text(self, text: str) -> int:
         """Return the backend's own token count for `text`."""
         response = await self._client.post(TOKENIZE_PATH, json={"content": text})
-        _checked(response)
+        checked(response)
         body = response.json()
         tokens = body.get("tokens")
         if not isinstance(tokens, list):
@@ -198,7 +159,7 @@ class OpenAiCompatBackend:
         response = await self._client.post(TEMPLATE_PATH, json=payload)
         if response.status_code == httpx.codes.NOT_FOUND:
             return "\n".join(f"{m.role.value}: {m.content}" for m in messages)
-        _checked(response)
+        checked(response)
         prompt = response.json().get("prompt")
         if not isinstance(prompt, str):
             msg = f"{TEMPLATE_PATH} returned no prompt"

@@ -23,6 +23,7 @@ from pydantic import ValidationError
 from niharness.adapters.git import GitError, GitVcs
 from niharness.adapters.jsonl_control import JsonlControlChannel
 from niharness.adapters.jsonl_events import JsonlEventSink
+from niharness.adapters.local_http import explain
 from niharness.adapters.mcp import ExternalToolsError, connect_tools
 from niharness.adapters.openai_compat import AirGapViolationError, OpenAiCompatBackend
 from niharness.adapters.podman import (
@@ -34,6 +35,7 @@ from niharness.application import ImplementationRun, RunResult, StepRunner
 from niharness.application.summarizer import ModelSummarizer
 from niharness.cli.blocking import blocking
 from niharness.cli.output import emit, fail
+from niharness.cli.retrieval import Retrieval, open_retrieval
 from niharness.cli.tools import external_servers
 from niharness.config import HarnessConfig, ModelConfig
 from niharness.domain.artifacts import Plan
@@ -49,6 +51,9 @@ from niharness.management.runs import (
     pid_file,
 )
 from niharness.ports.vcs import Worktree
+
+TIMEOUT_HINT = "On a slow host raise [models.main] request_timeout_seconds."
+"""What to suggest when the model backend stops answering mid-generation."""
 
 EX_UNAVAILABLE = 69
 """`sysexits.h`: a service the command needs is not there."""
@@ -120,6 +125,16 @@ async def _check_sandbox(config: HarnessConfig, worktree: Worktree) -> None:
         raise typer.Exit(EX_UNAVAILABLE) from error
 
 
+def _retrieval_line(config: HarnessConfig, retrieval: Retrieval) -> str:
+    """Say in one line whether `rag_query` will be offered, and over what."""
+    if not retrieval.ready:
+        return f"off, so rag_query is not offered ({retrieval.why})"
+    where = ", ".join(
+        (config.vector.code_collection, config.vector.doc_collection),
+    )
+    return f"{config.vector.url}, searching {where} and this run's own context"
+
+
 def _backend(model: ModelConfig) -> OpenAiCompatBackend:
     """Build a client for one served model."""
     return OpenAiCompatBackend(
@@ -188,11 +203,15 @@ async def execute(
     async with AsyncExitStack() as stack:
         stack.push_async_callback(main.aclose)
         stack.push_async_callback(utility.aclose)
+        retrieval = await stack.enter_async_context(open_retrieval(config))
+        if not quiet:
+            typer.echo(f"  retrieval: {_retrieval_line(config, retrieval)}")
         tools = await stack.enter_async_context(
             connect_tools(
                 server_parameters(config, worktree, local=local_tools),
                 external_servers(config),
                 limits=config.tools,
+                local=retrieval.tools(config, run_id=run_id),
             ),
         )
         runner = StepRunner(
@@ -229,25 +248,6 @@ async def execute(
                 resumed_from=resume.from_seq if resume else 0,
             )
     raise AssertionError("unreachable: the context manager always returns")  # pragma: no cover
-
-
-def _why(error: httpx.HTTPError) -> str:
-    """Return something worth reading about an HTTP failure.
-
-    Several httpx exceptions carry an empty message - a read timeout among
-    them - so a report built from `str(error)` alone ends in a colon and
-    nothing. A run that died after ten minutes of prompt processing should say
-    which wall it hit.
-    """
-    detail = str(error).strip()
-    if detail:
-        return detail
-    if isinstance(error, httpx.TimeoutException):
-        return (
-            f"{type(error).__name__}: no answer within the request timeout. "
-            "On a slow host raise [models.main] request_timeout_seconds."
-        )
-    return type(error).__name__
 
 
 def report(result: RunResult, runs_dir: Path) -> None:
@@ -351,7 +351,7 @@ def implement(
         raise typer.Exit(EX_UNAVAILABLE) from error
     except httpx.HTTPError as error:
         fail(
-            f"the model backend at {config.models.main.base_url} did not answer: {_why(error)}",
+            f"the model backend did not answer: {explain(error, timeout_hint=TIMEOUT_HINT)}",
             json_mode=json_mode,
             code=EX_UNAVAILABLE,
         )
@@ -409,7 +409,7 @@ def resume(config: HarnessConfig, run_id: str, *, local_tools: bool, json_mode: 
         raise typer.Exit(EX_UNAVAILABLE) from error
     except httpx.HTTPError as error:
         fail(
-            f"the model backend at {config.models.main.base_url} did not answer: {_why(error)}",
+            f"the model backend did not answer: {explain(error, timeout_hint=TIMEOUT_HINT)}",
             json_mode=json_mode,
             code=EX_UNAVAILABLE,
         )

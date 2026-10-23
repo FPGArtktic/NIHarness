@@ -44,8 +44,11 @@ suggestion. See [Architecture](concepts/architecture.md) and
   validation with path confinement, role allowlists, budgets, the two-tier gate
   with failure signatures, loop detectors with the intervention ladder,
   compaction policy, and the fold that derives run state from events.
-- Four adapters: the JSONL event sink, the OpenAI-compatible inference client,
-  the git worktree adapter, and the rootless Podman sandbox.
+- The adapters: the JSONL event sink and control inbox, the OpenAI-compatible
+  inference and embedding clients, the git worktree adapter, the rootless
+  Podman sandbox, the MCP tool client, the PDF reader and the Qdrant vector
+  store. Adapters never import each other; what they share - the air-gap check
+  and HTTP failure reporting - is one module beside them.
 - The step executor: it runs a step to completion against the ports, measures
   and compacts its window before every model call, and is tested with fakes
   rather than with a model and a container.
@@ -69,12 +72,25 @@ suggestion. See [Architecture](concepts/architecture.md) and
   real language server inside the sandbox, by name, so navigation costs a line
   instead of a page. Verified against `clangd`. See
   [language servers](operations/language-servers.md).
+- Documents and retrieval: `nih ingest` reads a PDF - its text layer where
+  there is one, OCR where there is not - and indexes chunks that cite their
+  pages; `rag_query` searches them, the code index and the run's own context,
+  and answers with citations. It is the one tool that runs in the harness
+  process rather than the sandbox, because the container has no network. See
+  [documents](concepts/documents.md) and
+  [retrieval](concepts/retrieval.md).
 
 ## What does not work yet
 
 Commands that need a model, a container or a vector store exit with code 69 and
 say what is missing. That is deliberate: see [the roadmap](roadmap.md) for the
 order in which the gaps get filled.
+
+Two of retrieval's three collections have no writer yet: the project's code is
+not indexed (that needs tree-sitter chunking) and compaction does not yet write
+what it drops. `rag_query` reports an unwritten collection as not indexed
+rather than counting it as searched, so what works is honest about what does
+not.
 
 ## Rules that hold everywhere
 

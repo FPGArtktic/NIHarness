@@ -13,8 +13,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Retrieval, end to end: a `VectorStore` adapter over Qdrant's REST API, an
+  `Embedder` port over the same OpenAI-compatible `/v1/embeddings` the
+  inference port already speaks, and `rag_query` answering with chunks that
+  cite their lines or their pages. No new dependency: five endpoints with
+  `httpx`. `nih ingest` now indexes what it reads, and refuses to report
+  success when it could not. Verified against Qdrant 1.19 and bge-m3,
+  including an English query retrieving a Polish page that was read by OCR.
+  Indexing a document replaces what it indexed before: a chunk's id comes from
+  the content, so a revision produces new ids and its predecessor would
+  otherwise stay indexed and be cited as current. `VectorStore.forget` exists
+  for that, keyed on the path, which is what survives a revision. A document
+  inside the project is cited by its project-relative path, so a citation can
+  be followed on another machine.
+- `rag_query` is served by the harness process, not the sandbox, because the
+  container is started `--network=none` and the store is a service on the host
+  (ADR 0021). The router now has three destinations and sends it by name;
+  tools a local provider answers are declared, so none can claim one the
+  sandbox holds. A tool server that offered `rag_query` would be dispatching
+  into a container that cannot reach the store, so a contract test asserts it
+  does not.
+- Retrieval degrades to absence rather than to failure. Both halves are probed
+  when a run starts - the store answers, and the embedding model returns
+  vectors of the width the collections were built at - and on failure the tool
+  is left out of the model's tool list instead of offered and broken.
+  `nih implement` and `nih tools` both say so, and `nih tools` reports how many
+  chunks each collection holds, because an empty collection and an absent store
+  look identical from the outside.
 - Logging resolves `sys.stderr` at write time, so a captured or replaced stream
-  does not make every later record raise on a closed file.
+  does not make every later record raise on a closed file. `httpx` is quieted
+  to warnings: it logs a plain-text line per request into a stream the harness
+  documents as JSON, and there is one per model call, per embedding batch and
+  per vector-store request.
+- The air-gap check and the rule that a refused request carries the server's
+  own explanation live in one place (`adapters/local_http.py`), now that three
+  adapters dial a URL from configuration.
 
 - Repository bootstrap: PEP 621 packaging with `uv`, GPL-3.0-or-later licensing,
   REUSE compliance, ruff/mypy/pytest/import-linter configuration.

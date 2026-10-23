@@ -170,8 +170,17 @@ class VectorConfig(BaseModel):
 
     url: str = "http://127.0.0.1:6333"
     code_collection: str = "code"
+    doc_collection: str = Field(
+        default="docs",
+        description="Where `nih ingest` indexes documents, separate from code "
+        "so that re-indexing one does not touch the other.",
+    )
     run_collection_prefix: str = "run-"
     embedding_dimensions: int = Field(default=1_024, ge=64)
+
+    def run_collection(self, run_id: str) -> str:
+        """Return the collection holding one run's compacted context."""
+        return f"{self.run_collection_prefix}{run_id}"
 
 
 class GateConfig(BaseModel):

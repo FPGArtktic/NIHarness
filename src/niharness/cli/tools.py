@@ -10,9 +10,10 @@ server will fail during a run, it fails here instead, with the same message and
 nothing half-done.
 
 It also reports which **language servers** are installed, because the symbol
-tools are only as good as what is on the machine that runs them. One caveat it
-states rather than hides: this command looks at *this* host, and in a sandboxed
-run the servers come from the image instead.
+tools are only as good as what is on the machine that runs them, and whether
+**retrieval** is there, because `rag_query` is offered only when it is. One
+caveat it states rather than hides: this command looks at *this* host, and in a
+sandboxed run the servers come from the image instead.
 """
 
 from __future__ import annotations
@@ -28,12 +29,14 @@ from niharness.adapters.git import GitError, GitVcs
 from niharness.adapters.mcp import ExternalServer, ExternalToolsError, attach
 from niharness.cli.blocking import blocking
 from niharness.cli.output import emit, fail
+from niharness.cli.retrieval import open_retrieval
 from niharness.config import HarnessConfig
 from niharness.domain.gate import Language, detect_languages
 from niharness.domain.language_servers import LANGUAGE_SERVERS, ServerCandidate
 from niharness.domain.roles import DEFAULT_ROLES
 from niharness.domain.tools import EMPTY_CATALOG, ExternalTool, ToolCatalog
 from niharness.ports.vcs import Worktree
+from niharness.ports.vector_store import VectorStoreError
 from niharness.toolserver.lsp import LanguageServers
 
 EX_UNAVAILABLE = 69
@@ -120,15 +123,64 @@ def language_servers(config: HarnessConfig, detected: frozenset[Language]) -> di
     return found
 
 
+async def retrieval_report(config: HarnessConfig) -> dict[str, Any]:
+    """Return whether `rag_query` would be offered, and what is indexed.
+
+    The point counts are the part worth asking for: a configured store with
+    empty collections answers every query with nothing, and looks from the
+    outside exactly like a store that is not configured at all.
+    """
+    model = config.models.embeddings
+    async with open_retrieval(config) as retrieval:
+        if retrieval.store is None:
+            return {"ready": False, "why": retrieval.why}
+        collections: dict[str, int | None] = {}
+        try:
+            version = await retrieval.store.version()
+            for name in (config.vector.code_collection, config.vector.doc_collection):
+                collections[name] = await retrieval.store.points(name)
+        except VectorStoreError as error:
+            return {"ready": False, "why": str(error)}
+        return {
+            "ready": True,
+            "url": retrieval.store.url,
+            "version": version,
+            "model": model.name if model else "",
+            "dimensions": config.vector.embedding_dimensions,
+            "collections": collections,
+        }
+
+
+def _retrieval_lines(report: dict[str, Any]) -> list[str]:
+    """Render the retrieval report for an operator."""
+    if not report.get("ready"):
+        return [
+            "retrieval: off, so rag_query is not offered",
+            f"  {report.get('why', 'unknown')}",
+        ]
+    collections = report.get("collections", {})
+    lines = [
+        "retrieval, in the harness process because the sandbox has no network:",
+        f"  rag_query     {report['url']} (qdrant {report['version']}), "
+        f"{report['model']} at {report['dimensions']} dims",
+    ]
+    for name, count in collections.items():
+        state = "not created yet, so nothing to find" if count is None else f"{count} chunk(s)"
+        lines.append(f"      {name:<11} {state}")
+    return lines
+
+
 def _payload(
     config: HarnessConfig,
     catalog: ToolCatalog,
     servers: dict[str, str],
+    retrieval: dict[str, Any],
 ) -> dict[str, Any]:
     """Return the machine-readable form: built-in tools per role, then servers."""
     return {
         "ok": True,
         "language_servers": servers,
+        "retrieval": retrieval,
         "builtin": {
             role.value: sorted(tool.value for tool in spec.allowlist)
             for role, spec in sorted(DEFAULT_ROLES.items())
@@ -153,12 +205,19 @@ def _payload(
     }
 
 
-def _human(config: HarnessConfig, catalog: ToolCatalog, servers: dict[str, str]) -> str:
+def _human(
+    config: HarnessConfig,
+    catalog: ToolCatalog,
+    servers: dict[str, str],
+    retrieval: dict[str, Any],
+) -> str:
     """Return the operator's form: who may call what, and from where."""
-    lines = ["built-in, in the sandbox (the gate among them):"]
+    lines = ["allowed per role (all in the sandbox, the gate among them, except rag_query):"]
     for role, spec in sorted(DEFAULT_ROLES.items()):
         offered = ", ".join(sorted(tool.value for tool in spec.allowlist)) or "none"
         lines.append(f"  {role.value:<13} {offered}")
+    lines.append("")
+    lines += _retrieval_lines(retrieval)
     lines.append("")
     if not config.lsp.enabled:
         lines.append("language servers: disabled in harness.toml")
@@ -197,8 +256,9 @@ def tools(config: HarnessConfig, *, json_mode: bool) -> None:
         raise typer.Exit(EX_UNAVAILABLE) from error
     detected = blocking(_detected(config.project_root))
     servers = language_servers(config, detected) if config.lsp.enabled else {}
+    retrieval = blocking(retrieval_report(config))
     emit(
-        _payload(config, catalog, servers),
+        _payload(config, catalog, servers, retrieval),
         json_mode=json_mode,
-        human=_human(config, catalog, servers),
+        human=_human(config, catalog, servers, retrieval),
     )

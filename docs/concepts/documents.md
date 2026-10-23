@@ -15,6 +15,8 @@ uv run nih ingest manual.pdf --ocr-languages pol+eng
 ```text
 manual.pdf: 2 page(s): 2 ocr, 1 chunk(s) -> .nih/corpus/d9cea719c2cf54cf.jsonl
     manual.pdf pp. 1-2 (OCR)
+
+indexed 1 chunk(s) into docs; rag_query can find them
 ```
 
 ## Two tiers, like the gate
@@ -72,18 +74,60 @@ best boundary after a page break. A page with no text still contributes its
 page number, so a gap in a document is visible rather than invented away - and
 a hypothesis test asserts that no page's text is lost.
 
+## Indexed, and also written down
+
+The chunks go into the vector store's document collection, and the same chunks
+are written to `.nih/corpus/<digest>.jsonl`, one per line.
+
+Re-ingesting a document **replaces** what it indexed before:
+
+```text
+datasheet.pdf: 1 page(s): 1 text_layer, 1 chunk(s) -> .nih/corpus/b806862e.jsonl
+    datasheet.pdf p. 1
+
+indexed 1 chunk(s) into docs; rag_query can find them
+  replaced 2 chunk(s) from an earlier revision
+```
+
+That is not free, and the reason is worth knowing. A chunk's id comes from the
+document's content, so a revised document produces *new* ids - its predecessor's
+chunks would stay indexed and be cited as current. For a corpus of datasheets
+and errata that is the normal case, not an edge one, so each document's path is
+forgotten before the new chunks are written. The path is the one identity that
+survives a revision.
+
+The file is not a cache. It is what the store was handed, so a retrieval result
+that looks wrong can be checked against the text that produced it without
+querying anything, and a corpus can be diffed across two runs of the reader -
+after a tesseract upgrade, say. `--no-index` writes the file and skips the
+store, which is what to use when the chunking itself is the question.
+
+A document read but **not** indexed is a failure, not a success with a caveat:
+
+```console
+$ uv run nih ingest manual.pdf
+manual.pdf: 2 page(s): 2 ocr, 1 chunk(s) -> .nih/corpus/d9cea719c2cf54cf.jsonl
+the chunks are written, but indexing them failed: no vector store at
+http://127.0.0.1:6333: All connection attempts failed
+$ echo $?
+69
+```
+
+The chunks survive, so nothing has to be read twice. What would not survive is
+an operator believing `rag_query` can find a document that nothing indexed.
+
+From there it is [retrieval](retrieval.md): `rag_query` searches the document
+collection along with the code index and the run's own context, and answers
+with the citations above.
+
 ## What is not built yet
-
-`nih ingest` writes `.nih/corpus/<digest>.jsonl`, one chunk per line, and
-stops there. The vector store adapter and `rag_query` do not exist yet
-([the roadmap](../roadmap.md) has them), so nothing is indexed and no model can
-ask about a document today.
-
-The file is a deliberate staging post rather than a placeholder: it is exactly
-what the store will be handed, so the half that *is* built can be inspected,
-diffed and re-run without one.
 
 The programs belong in the sandbox image, which is where a run's tools live.
 `nih ingest` runs on the host for now and says which program is missing when
 one is - "pdfinfo is not installed; it belongs in the sandbox image" - rather
 than failing with a traceback from a subprocess.
+
+A **vision model** reading a page it cannot OCR - a schematic, a timing
+diagram, a table whose structure is the information - is on
+[the roadmap](../roadmap.md). The policy in `domain/documents.py` is already
+a two-tier choice per page, so a third tier fits where the second one did.

@@ -132,6 +132,10 @@ def ingest(
         typer.Option("--ocr-languages", help="OCR languages, the engine's way: pol+eng."),
     ] = "eng",
     dpi: Annotated[int, typer.Option("--dpi", help="Rendering resolution for OCR.")] = 300,
+    index: Annotated[
+        bool,
+        typer.Option("--index/--no-index", help="Index the chunks into the vector store."),
+    ] = True,
     json_mode: JsonOption = False,
 ) -> None:
     """Read documents into citable chunks, with OCR where there is no text layer."""
@@ -140,6 +144,7 @@ def ingest(
         documents,
         languages=languages,
         dpi=dpi,
+        index=index,
         json_mode=json_mode,
     )
 

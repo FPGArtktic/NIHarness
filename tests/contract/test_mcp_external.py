@@ -31,9 +31,11 @@ from niharness.adapters.mcp import (
 from niharness.domain.identity import CallId
 from niharness.domain.messages import ToolSchema
 from niharness.domain.tools import (
+    EMPTY_CATALOG,
     AcceptedCall,
     ExternalArgs,
     ExternalTool,
+    RagQueryArgs,
     ReadFileArgs,
     ToolCatalog,
     ToolId,
@@ -182,7 +184,12 @@ async def test_a_result_is_truncated_to_the_configured_cap() -> None:
 
 
 class FakeSandbox:
-    """The harness's own tool server, as far as the router can tell."""
+    """The harness's own tool server, as far as the router can tell.
+
+    It offers the built-in names and nothing else - not the namespaced ones,
+    which belong to a declared server, and not `rag_query`, which the real
+    tool server does not register because the container has no network.
+    """
 
     def __init__(self) -> None:
         self.calls: list[str] = []
@@ -191,7 +198,7 @@ class FakeSandbox:
         return tuple(
             ToolSchema(name=name, description=name, parameters={"type": "object"})
             for name in sorted(allowlist)
-            if "__" not in name
+            if "__" not in name and name != ToolName.RAG_QUERY
         )
 
     async def call(self, accepted: AcceptedCall) -> ToolResult:
@@ -217,6 +224,82 @@ async def test_a_builtin_call_goes_to_the_sandbox_and_a_namespaced_one_does_not(
     assert sandbox.calls == ["read_file"], "the sandbox never saw the external call"
     assert seen == [{"tool": "read_report", "design": "top", "stage": "synth"}]
     assert external.ok
+
+
+class FakeLocal:
+    """A tool the harness serves itself, as far as the router can tell."""
+
+    def __init__(self, served: frozenset[ToolId]) -> None:
+        self._served = served
+        self.calls: list[str] = []
+
+    @property
+    def served(self) -> frozenset[ToolId]:
+        return self._served
+
+    async def descriptors(self, allowlist: frozenset[ToolId]) -> tuple[ToolSchema, ...]:
+        return tuple(
+            ToolSchema(name=name, description=name, parameters={"type": "object"})
+            for name in sorted(self._served & allowlist)
+        )
+
+    async def call(self, accepted: AcceptedCall) -> ToolResult:
+        self.calls.append(accepted.tool)
+        return ToolResult(
+            call_id=accepted.call_id,
+            tool=accepted.tool,
+            ok=True,
+            content="from the harness",
+        )
+
+
+async def test_a_tool_the_harness_serves_itself_never_reaches_the_sandbox() -> None:
+    """`rag_query` needs the vector store, and the sandbox has no network.
+
+    The route has to be by name rather than by failure: a `rag_query` that
+    went to the sandbox would come back as a tool the server does not offer,
+    which reads to the model like the tool not existing.
+    """
+    sandbox = FakeSandbox()
+    local = FakeLocal(frozenset({ToolId(ToolName.RAG_QUERY.value)}))
+    router = CompositeToolProvider(sandbox, {}, EMPTY_CATALOG, local)
+    answered = await router.call(
+        AcceptedCall(
+            call_id=CallId("c0"),
+            tool=ToolName.RAG_QUERY,
+            args=RagQueryArgs(query="what voltage"),
+        ),
+    )
+    read = await router.call(
+        AcceptedCall(
+            call_id=CallId("c1"),
+            tool=ToolName.READ_FILE,
+            args=ReadFileArgs(path="src/a.py"),
+        ),
+    )
+    assert answered.content == "from the harness"
+    assert local.calls == ["rag_query"]
+    assert sandbox.calls == ["read_file"], "the sandbox saw only what it holds"
+    assert read.content == "in"
+
+
+async def test_without_a_local_provider_its_tools_are_not_offered() -> None:
+    """A store that is not running means no `rag_query`, not a broken one.
+
+    The role's allowlist still names it - the allowlist says what a role may
+    do, not what this host can do - so the tool list is where it disappears.
+    """
+    allowlist = frozenset({ToolId(ToolName.READ_FILE.value), ToolId(ToolName.RAG_QUERY.value)})
+    router = CompositeToolProvider(FakeSandbox(), {}, EMPTY_CATALOG)
+    offered = await router.descriptors(allowlist)
+    with_store = await CompositeToolProvider(
+        FakeSandbox(),
+        {},
+        EMPTY_CATALOG,
+        FakeLocal(frozenset({ToolId(ToolName.RAG_QUERY.value)})),
+    ).descriptors(allowlist)
+    assert [schema.name for schema in offered] == ["read_file"]
+    assert [schema.name for schema in with_store] == ["read_file", "rag_query"]
 
 
 async def test_the_tool_list_is_the_sandbox_plus_what_the_role_was_granted() -> None:

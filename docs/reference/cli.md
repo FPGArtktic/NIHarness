@@ -200,14 +200,19 @@ Usage: nih ingest [OPTIONS] {documents}...
 │ *    documents      <path>  Documents to read. [required]                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --project-root   -C      <path>  The project to operate on. [default: (.)]   │
-│ --ocr-languages          <str>   OCR languages, the engine's way: pol+eng.   │
-│                                  [default: eng]                              │
-│ --dpi                    <int>   Rendering resolution for OCR.               │
-│                                  [default: 300]                              │
-│ --json                           Print one JSON object instead of the human  │
-│                                  form.                                       │
-│ --help                           Show this message and exit.                 │
+│ --project-root   -C                <path>  The project to operate on.        │
+│                                            [default: (.)]                    │
+│ --ocr-languages                    <str>   OCR languages, the engine's way:  │
+│                                            pol+eng.                          │
+│                                            [default: eng]                    │
+│ --dpi                              <int>   Rendering resolution for OCR.     │
+│                                            [default: 300]                    │
+│ --index              --no-index            Index the chunks into the vector  │
+│                                            store.                            │
+│                                            [default: index]                  │
+│ --json                                     Print one JSON object instead of  │
+│                                            the human form.                   │
+│ --help                                     Show this message and exit.       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 

@@ -327,10 +327,14 @@ def test_ingest_writes_chunks_a_retriever_can_cite(tmp_path: Path) -> None:
     document = tmp_path / "manual.pdf"
     subprocess.run(["ps2pdf", str(source), str(document)], check=True, capture_output=True)
 
-    result = runner.invoke(app, ["ingest", str(document), "-C", str(tmp_path), "--json"])
+    result = runner.invoke(
+        app,
+        ["ingest", str(document), "-C", str(tmp_path), "--no-index", "--json"],
+    )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)
     assert payload["ok"] is True
+    assert payload["indexed"] is False, "--no-index leaves the chunks on disk only"
     entry = payload["documents"][0]
     assert entry["chunks"] >= 1
     assert "p. 1" in entry["citations"][0], "a chunk cites the page it came from"
@@ -341,3 +345,48 @@ def test_ingest_writes_chunks_a_retriever_can_cite(tmp_path: Path) -> None:
     assert first["first_page"] == 1
     assert first["start_line"] is None, "a page is not a line"
     assert "loop bandwidth" in first["text"]
+    assert first["path"] == "manual.pdf", (
+        "a citation names the document the way a reader can follow it, "
+        "not by somebody's absolute path"
+    )
+
+
+def test_a_document_outside_the_project_keeps_its_path(tmp_path: Path) -> None:
+    """It has no project-relative name, and inventing one points at nothing."""
+    from niharness.cli.ingest import cited_as
+
+    project = tmp_path / "project"
+    project.mkdir()
+    assert cited_as(project / "docs" / "manual.pdf", project) == "docs/manual.pdf"
+    assert cited_as(tmp_path / "elsewhere.pdf", project) == str(tmp_path / "elsewhere.pdf")
+
+
+def test_ingest_says_so_when_it_cannot_index_what_it_read(tmp_path: Path) -> None:
+    """A document read but not indexed is a failure, not a success with a caveat.
+
+    The chunks are on disk either way, so nothing is lost - but a command that
+    reported success here would leave an operator believing `rag_query` can
+    find a document that nothing indexed.
+    """
+    import shutil
+    import subprocess
+
+    if shutil.which("ps2pdf") is None or shutil.which("pdftotext") is None:
+        pytest.skip("ghostscript or poppler is not installed")
+    source = tmp_path / "doc.ps"
+    source.write_text(
+        "%!PS\n/Helvetica findfont 14 scalefont setfont\n"
+        "72 700 moveto (One page is enough for this.) show\nshowpage\n",
+        encoding="utf-8",
+    )
+    document = tmp_path / "manual.pdf"
+    subprocess.run(["ps2pdf", str(source), str(document)], check=True, capture_output=True)
+
+    result = runner.invoke(app, ["ingest", str(document), "-C", str(tmp_path), "--json"])
+    assert result.exit_code == EX_UNAVAILABLE
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert "the chunks are written" in payload["error"]
+    assert "models.embeddings" in payload["error"]
+    corpus = next((tmp_path / ".nih" / "corpus").glob("*.jsonl"))
+    assert corpus.read_text(encoding="utf-8").strip(), "written before indexing was attempted"

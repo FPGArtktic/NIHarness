@@ -32,7 +32,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-vector = ["qdrant-client>=1.12"]
+# No `vector` extra: the Qdrant adapter is five REST endpoints over the `httpx`
+# the inference port already uses, so there is no client library to install or
+# to mirror into the wheelhouse (ADR 0021). The import-linter contracts below
+# still forbid `qdrant_client`, which is what keeps that decision true.
 metrics = ["psutil>=6.0", "nvidia-ml-py>=12.560"]
 tracing = ["opentelemetry-sdk>=1.27"]
 chunking = ["tree-sitter>=0.23", "tree-sitter-language-pack>=0.3"]
@@ -253,6 +256,9 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+# `niharness.adapters.local_http` is deliberately absent: it is the shared rule
+# every HTTP adapter here follows - localhost only, and a refusal carries the
+# server's own explanation - not an adapter of its own.
 name = "Adapters do not import each other"
 type = "independence"
 modules = [
@@ -262,4 +268,7 @@ modules = [
   "niharness.adapters.podman",
   "niharness.adapters.mcp",
   "niharness.adapters.jsonl_control",
+  "niharness.adapters.pdf",
+  "niharness.adapters.qdrant",
+  "niharness.adapters.retrieval",
 ]

@@ -138,6 +138,21 @@ async def call(provider: McpToolProvider, tool: ToolName, args: object) -> ToolR
     )
 
 
+async def test_the_sandbox_does_not_offer_rag_query(worktree: Path) -> None:
+    """Retrieval is served by the harness, because the container has no network.
+
+    The tool is in every role's allowlist, so the only thing keeping it out of
+    the sandbox is that the server never registers it. If that changed, a
+    `rag_query` would be dispatched into a container that cannot reach the
+    vector store, and the model would be told the store is down.
+    """
+    async with connected(worktree) as tools:
+        offered = await tools.descriptors(IMPLEMENTER)
+    assert ToolName.RAG_QUERY in IMPLEMENTER, "the role may call it"
+    assert ToolName.RAG_QUERY.value not in {schema.name for schema in offered}
+    assert {"read_file", "apply_patch", "git_commit"} <= {schema.name for schema in offered}
+
+
 async def test_the_server_offers_exactly_the_tools_the_role_may_use(worktree: Path) -> None:
     async with connected(worktree) as provider:
         names = {schema.name for schema in await provider.descriptors(IMPLEMENTER)}

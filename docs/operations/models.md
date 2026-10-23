@@ -167,7 +167,7 @@ ports, and the harness picks between them by role, never by guessing:
 | `[models.main]` | planner, implementer, reviewer, fixer, researcher | all the work on code: reading, patching, reviewing, running the gate through tools | GPU, CPU, or split, per profile |
 | `[models.thinking]` | brainstormer; optionally planner and reviewer | the reasoning variant, for open-ended exploration before anything is written | same server as the main model; a swap is allowed only at a stage boundary |
 | `[models.utility]` | compactor, NOTES.md, routing, classification | summarises what no longer fits in the window; never gets tools | CPU, always resident |
-| `[models.embeddings]` | the vector store | embeds code chunks and compacted run context for `rag_query` | GPU on the GPU profiles, CPU otherwise |
+| `[models.embeddings]` | the vector store | embeds documents, code chunks and compacted run context for `rag_query` | GPU on the GPU profiles, CPU otherwise |
 
 One run uses **one** main model throughout: the roles differ by prompt,
 allowlist and temperature, not by weights, so there are no model swaps inside a
@@ -180,6 +180,35 @@ on that profile is minutes per turn, on top of a second set of roughly 18 GiB of
 weights. Where it is absent, the brainstormer runs on the main model with a
 higher temperature - a worse brainstorm, but one that answers this side of
 lunch.
+
+### Serving the embedding model
+
+Any server that speaks `/v1/embeddings` will do - it is the same
+OpenAI-compatible surface as inference, so there is no embedding-specific code
+path in the harness:
+
+```bash
+llama-server --embeddings -m bge-m3-f16.gguf --host 127.0.0.1 --port 8082
+```
+
+Two numbers have to agree, and the harness checks them rather than trusting
+them. `[vector] embedding_dimensions` is the width the collections are created
+at; bge-m3 returns 1024, which is the default. A model of another width is
+refused at startup by name and number:
+
+```text
+bge-m3 returned 768-dimensional vectors, but the configuration declares 1024
+(vector.embedding_dimensions). Fix the number, or point [models.embeddings] at
+a model of that width.
+```
+
+An existing collection built at a different width is refused the same way,
+naming the collection: the alternative is a wall of upserts that Qdrant refuses
+one batch at a time.
+
+Retrieval is optional. Where no embedding model is configured or served,
+`rag_query` is left out of the model's tool list rather than offered and
+broken - see [retrieval](../concepts/retrieval.md).
 
 ## Rules
 
