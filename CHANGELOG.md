@@ -40,6 +40,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `nih implement` and `nih tools` both say so, and `nih tools` reports how many
   chunks each collection holds, because an empty collection and an absent store
   look identical from the outside.
+- `apply_patch` names three more mistakes a weak model makes, all found on one
+  live run and each with the diff that produced it as a test. `read_file`
+  numbers its answer so it can be read; a diff written from what was read
+  carries the numbers into the context, where they are not in the file, and
+  git then blames a hunk header. The harness added the numbers, so it takes
+  them off and says so. A diff of nothing but context lines is valid, applies
+  cleanly and changes nothing - reporting success for it is the worst outcome
+  available, so it is refused with the sentence that explains it. And added
+  lines sent on their own, without headers or a hunk, are named as such
+  instead of being called a corrupt patch. A refusal that quotes a `@@` line
+  no longer calls it "text with no prefix": a hunk header is legal, and the
+  complaint is that it arrived before the previous hunk's counts were used up.
 - Logging resolves `sys.stderr` at write time, so a captured or replaced stream
   does not make every later record raise on a closed file. `httpx` is quieted
   to warnings: it logs a plain-text line per request into a stream the harness

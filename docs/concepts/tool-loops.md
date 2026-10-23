@@ -70,8 +70,9 @@ with `tool_choice: none`. That is where the artifact is demanded.
 ## Diffs a model actually writes
 
 `apply_patch` is the only way anything changes, and a model writes a diff by
-hand. It gets the *change* right far more often than the paperwork, and three
-clerical mistakes account for nearly all of the failures:
+hand. It gets the *change* right far more often than the paperwork, and a
+handful of clerical mistakes account for nearly all of the failures. Every row
+below is a diff a live model actually produced:
 
 | What the model writes | What git wants | What the harness does |
 |---|---|---|
@@ -80,12 +81,28 @@ clerical mistakes account for nearly all of the failures:
 | `--- src/new.py` for a new file | `--- /dev/null` | rewrites the header, and says so |
 | `--- a/dev/null` | `--- /dev/null` | the same rewrite: the `a/` convention does not apply to `/dev/null` |
 | a last line with no newline | every line terminated | terminates it, and says so |
+| `     1  def add(x, y):` as context | the file's own text | strips the margin, and says where it came from |
+| every line prefixed with a space | `+` for the lines being added | refuses: it would apply cleanly and change nothing |
+| `+ VALUE = 1` on its own | headers and a hunk | refuses, naming the three lines that are missing |
 | the same patch twice | - | answers "already applied", because the worktree is in the state that was asked for |
+
+Two of those are the harness's own fault and the last is its own doing.
+`read_file` numbers its answer, which is what makes it readable; a model that
+writes a diff from what it read carries the numbers into the context, where
+they are not in the file, so every line mismatches and git blames a hunk
+header. The harness put them there, so it takes them off.
+
+A context-only diff is the one that has to be *refused* rather than repaired,
+and it is the only entry here where applying it would have succeeded. git
+accepts it, changes nothing, and the model walks into the gate believing it
+wrote the change.
 
 None of that changes what a diff may do: the content still has to match the
 file, so a diff whose context is not in the worktree is still refused, and the
 file is still created where the diff says - a repaired header has to agree with
-the strip level, or the file lands one directory too high.
+the strip level, or the file lands one directory too high. A repair is only
+kept when the repaired diff applies; a wrong guess is indistinguishable from
+the diff that already did not apply.
 
 The refusals say what was wrong rather than quoting git. `corrupt patch at line
 8` becomes the line itself and the rule it breaks, because the model is the one

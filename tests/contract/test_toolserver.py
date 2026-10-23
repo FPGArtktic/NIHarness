@@ -478,6 +478,53 @@ async def test_a_new_file_a_model_announced_wrongly_still_lands(worktree: Path) 
     assert not (worktree / "greeter").exists(), "not one directory too high"
 
 
+async def test_a_diff_written_from_read_files_numbered_output_still_lands(
+    worktree: Path,
+) -> None:
+    # What the live 4B wrote after reading the file: `read_file` numbers its
+    # answer so it can be read, and the model carried the numbers into the
+    # context, where they are not in the file. Every line then mismatches and
+    # git blames a hunk header. The harness put the numbers there, so it takes
+    # them off - and says so.
+    diff = (
+        "--- a/src/a.py\n"
+        "+++ b/src/a.py\n"
+        "@@ -1,2 +1,3 @@\n"
+        "      1  def add(x, y):\n"
+        "      2      return x + y  # TODO: types\n"
+        "+VALUE = 7\n"
+    )
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=diff))
+    assert result.ok, result.content
+    assert "line numbers" in result.content, "the model is told what it got wrong"
+    body = (worktree / "src" / "a.py").read_text(encoding="utf-8")
+    assert "VALUE = 7" in body
+    assert "1  def add" not in body, "the margin is not written into the file"
+
+
+async def test_a_diff_of_nothing_but_context_is_refused_rather_than_applied(
+    worktree: Path,
+) -> None:
+    # Valid, applies cleanly against matching context, and changes nothing.
+    # Reporting success here is the worst outcome available: the model goes on
+    # to the gate believing it wrote the change, and the file is untouched.
+    diff = (
+        "--- a/src/a.py\n"
+        "+++ b/src/a.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " def add(x, y):\n"
+        "     return x + y  # TODO: types\n"
+        " VALUE = 8\n"
+    )
+    async with connected(worktree) as provider:
+        result = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=diff))
+    assert not result.ok
+    assert "changes nothing" in result.content
+    assert "starts with '+'" in result.content, "and what to write instead"
+    assert "VALUE = 8" not in (worktree / "src" / "a.py").read_text(encoding="utf-8")
+
+
 async def test_a_patch_that_is_already_applied_is_not_a_failure(worktree: Path) -> None:
     # A live 9B re-sent the same patch for a file it had already written,
     # twice, until the loop detectors stopped the step. "does not apply" was

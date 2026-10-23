@@ -19,7 +19,13 @@ from pathlib import Path
 
 import structlog
 
-from niharness.domain.diffs import ensure_terminated, repair_new_file_headers
+from niharness.domain.diffs import (
+    changes_nothing,
+    ensure_terminated,
+    is_not_a_diff,
+    repair_new_file_headers,
+    strip_line_numbers,
+)
 from niharness.domain.gate import (
     GateKind,
     GateResult,
@@ -373,24 +379,30 @@ class Workspace:
             raise WorkspaceError(
                 f"diff is {size} bytes, limit is {self._limits.max_diff_bytes}"
             )
-        # Two repairs, both clerical, both reported back - because a tool that
+        # Three repairs, all clerical, all reported back - because a tool that
         # silently fixes its caller teaches it nothing. An unterminated last
         # line makes git call the whole patch corrupt at a line that looks
-        # fine, and a new file announced as `--- path` instead of
-        # `--- /dev/null` is the mistake no git option forgives.
+        # fine; a new file announced as `--- path` instead of `--- /dev/null`
+        # is the mistake no git option forgives; and `read_file`'s own line
+        # numbers, copied into the context, make every line mismatch.
         diff, terminated = ensure_terminated(diff)
+        malformed = _malformed(diff)
+        if malformed is not None:
+            raise WorkspaceError(malformed)
         diff, created = repair_new_file_headers(diff, self._is_file)
-        failures: list[str] = []
-        for options in APPLY_VARIANTS:
-            check = await self._git(("apply", "--check", *options, "-"), stdin=diff)
-            if check.ok:
-                applied = await self._git(("apply", *options, "-"), stdin=diff)
-                if applied.ok:
-                    break
-                failures.append(_variant_failure(options, applied.output))
-            else:
-                failures.append(_variant_failure(options, check.output))
-        else:
+        applied, failures = await self._apply_variants(diff)
+        numbered = False
+        if not applied:
+            # Tried only after the diff as written has failed, and accepted
+            # only because it applied. A wrong guess here is indistinguishable
+            # from the diff that already did not apply.
+            candidate, stripped = strip_line_numbers(diff)
+            if stripped:
+                applied, more = await self._apply_variants(candidate)
+                failures += [] if applied else more
+                if applied:
+                    diff, numbered = candidate, True
+        if not applied:
             # A patch that will not apply because it is already applied is not
             # a failure, and telling a model otherwise is how it gets stuck:
             # observed on a live run, the model re-sent the same patch for a
@@ -403,24 +415,32 @@ class Workspace:
                     "nothing was done. Read the file if you are unsure what is in it."
                 )
             raise WorkspaceError(_apply_refusal(diff, failures))
-        notes: list[str] = []
-        if terminated:
-            notes.append(
-                "note: the diff's last line had no newline, which makes git read the hunk "
-                "as truncated. It was terminated for you; end a diff with a newline.",
-            )
-        if created:
-            notes.append(
-                f"note: {', '.join(created)} did not exist, so the `---` line was read as "
-                "`--- /dev/null`. Announce a new file that way next time.",
-            )
-        note = "".join(f"{line}\n" for line in notes)
+        note = _repair_notes(terminated=terminated, created=created, numbered=numbered)
         changed = await self._git(("status", "--porcelain"))
         # The only writer in the harness is this method, which makes it the one
         # place a language server's view of the tree can be kept honest.
         if self._servers is not None:
             await self._servers.changed(_porcelain_paths(changed.stdout))
         return f"{note}applied.\nworktree now:\n{changed.stdout.strip() or '(clean)'}"
+
+    async def _apply_variants(self, diff: str) -> tuple[bool, list[str]]:
+        """Try each option set until one applies, and return what the rest said.
+
+        Returns:
+            Whether the diff was applied, and one failure line per variant that
+            refused it - in variant order, so the most lenient one is last.
+        """
+        failures: list[str] = []
+        for options in APPLY_VARIANTS:
+            check = await self._git(("apply", "--check", *options, "-"), stdin=diff)
+            if check.ok:
+                applied = await self._git(("apply", *options, "-"), stdin=diff)
+                if applied.ok:
+                    return True, failures
+                failures.append(_variant_failure(options, applied.output))
+            else:
+                failures.append(_variant_failure(options, check.output))
+        return False, failures
 
     async def _already_applied(self, diff: str) -> bool:
         """Return whether this diff describes a change the worktree already has."""
@@ -621,6 +641,59 @@ def _variant_failure(options: Sequence[str], output: str) -> str:
     return f"[{label}] {output.strip()}"
 
 
+def _malformed(diff: str) -> str | None:
+    """Return why a diff cannot be a patch at all, or None when git should decide.
+
+    Two mistakes are worth catching before `git apply` sees them, because
+    git's answer to both is "corrupt patch" and a line number. Both were
+    observed on consecutive turns of one live run, the second being the
+    model's attempt to correct the first.
+    """
+    if is_not_a_diff(diff):
+        return (
+            "this is not a unified diff. It needs, in this order: `--- <path>`, "
+            "`+++ <path>`, a `@@ -<start>,<count> +<start>,<count> @@` hunk header, "
+            "then the lines - '+' to add, '-' to remove, a leading space for a line "
+            "that is already there and unchanged. Added lines on their own are not a "
+            "patch, because nothing says where they go."
+        )
+    if changes_nothing(diff):
+        return (
+            "this diff changes nothing: every line in it is context. A line you are "
+            "adding starts with '+' and a line you are removing starts with '-'; a "
+            "leading space means 'this line is already there, unchanged'. Applying it "
+            "would have reported success and left the file as it was."
+        )
+    return None
+
+
+def _repair_notes(*, terminated: bool, created: Sequence[str], numbered: bool) -> str:
+    """Return the notes that tell a model which clerical mistakes were repaired.
+
+    A tool that silently fixes its caller teaches it nothing, so every repair
+    is reported with the rule behind it.
+    """
+    notes: list[str] = []
+    if terminated:
+        notes.append(
+            "note: the diff's last line had no newline, which makes git read the hunk "
+            "as truncated. It was terminated for you; end a diff with a newline.",
+        )
+    if created:
+        notes.append(
+            f"note: {', '.join(created)} did not exist, so the `---` line was read as "
+            "`--- /dev/null`. Announce a new file that way next time.",
+        )
+    if numbered:
+        notes.append(
+            "note: the hunk's lines carried line numbers. `read_file` adds those so you "
+            "can read the file; they are not in it, so a diff that keeps them matches "
+            "nothing. They were removed for you; write a diff from the file's own text, "
+            "without the left margin.",
+        )
+    return "".join(f"{line}\n" for line in notes)
+
+
 def _apply_refusal(diff: str, failures: Sequence[str]) -> str:
     """Return a refusal a model can act on.
 
@@ -638,8 +711,13 @@ def _apply_refusal(diff: str, failures: Sequence[str]) -> str:
         index = int(numbers[0]) - 1
         if 0 <= index < len(lines):
             offender = lines[index]
-            prefix = offender[:1]
-            if prefix not in DIFF_LINE_PREFIXES:
+            if offender.startswith("@@"):
+                hint = (
+                    f"\nline {index + 1} is {offender[:80]!r}: a new hunk starts there, "
+                    "but the previous hunk's `@@` counts had not been used up. Count "
+                    "the lines in each hunk, or write one hunk per change."
+                )
+            elif offender[:1] not in DIFF_LINE_PREFIXES:
                 hint = (
                     f"\nline {index + 1} is {offender[:80]!r}: inside a hunk every line "
                     "must start with a space, a '+' or a '-'. Text with no prefix ends "
