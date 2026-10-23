@@ -80,12 +80,28 @@ class ModelsConfig(BaseModel):
 
 
 class SandboxConfig(BaseModel):
-    """How the tool sandbox is started. `--network=none` is not negotiable."""
+    """How the tool sandbox is started.
+
+    Every hardening flag but one is fixed: read-only root, no capabilities, no
+    new privileges, one writable mount. The network is the exception, and its
+    default is `none` (ADR 0023).
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     image: str = "localhost/niharness-sandbox:latest"
-    network: Literal["none"] = "none"
+    network: Literal["none", "private"] = Field(
+        default="none",
+        description=(
+            "The sandbox's network. 'none' gives its tools no interface at all and is "
+            "what an air-gapped deployment requires - the default, because that is the "
+            "deployment this harness is built to export to. 'private' gives them "
+            "Podman's rootless networking: the internet, but not this host's loopback "
+            "services, so the inference server and the vector store stay out of reach. "
+            "Opening it is deliberate, recorded in the run, and does not touch the "
+            "gate (ADR 0023)."
+        ),
+    )
     binary: str = Field(default="podman", description="The container runtime executable.")
     cpus: float = Field(default=4.0, gt=0)
     memory: str = "8g"

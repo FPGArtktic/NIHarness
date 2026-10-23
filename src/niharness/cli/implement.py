@@ -97,6 +97,7 @@ def server_parameters(
         memory=config.sandbox.memory,
         pids_limit=config.sandbox.pids_limit,
         binary=config.sandbox.binary,
+        network=config.sandbox.network,
     )
     argv = sandbox.tool_server_argv()
     return StdioServerParameters(command=argv[0], args=list(argv[1:]))
@@ -112,6 +113,7 @@ async def _check_sandbox(config: HarnessConfig, worktree: Worktree) -> None:
         config.sandbox.image,
         Path(worktree.path),
         binary=config.sandbox.binary,
+        network=config.sandbox.network,
     )
     try:
         await sandbox.ensure_ready()
@@ -123,6 +125,20 @@ async def _check_sandbox(config: HarnessConfig, worktree: Worktree) -> None:
             err=True,
         )
         raise typer.Exit(EX_UNAVAILABLE) from error
+
+
+def _network_note(config: HarnessConfig, local_tools: bool) -> str:
+    """Say when the tools have a network, because the default is that they do not.
+
+    Silence means `--network=none`. A run whose tools could reach the internet
+    is a materially different run and the operator should not have to go and
+    read `harness.toml` to find out which one this is.
+    """
+    if local_tools:
+        return " (on this host, so whatever network this host has)"
+    if config.sandbox.network == "none":
+        return ""
+    return f", network {config.sandbox.network}: its tools can reach the internet"
 
 
 def _retrieval_line(config: HarnessConfig, retrieval: Retrieval) -> str:
@@ -186,7 +202,7 @@ async def execute(
         typer.echo(f"run {run_id}")
         typer.echo(f"  worktree: {worktree.path} ({worktree.branch})")
         typer.echo(f"  model: {config.models.main.name} at {config.models.main.base_url}")
-        typer.echo(f"  tools: {mode}")
+        typer.echo(f"  tools: {mode}{_network_note(config, local_tools)}")
         measured = config.models.main.measured_generation_tps
         if measured > 0:
             typer.echo(
@@ -244,6 +260,7 @@ async def execute(
                 branch=worktree.branch,
                 profile=config.profile,
                 tools=mode,
+                sandbox_network=config.sandbox.network,
                 done=resume.done if resume else (),
                 resumed_from=resume.from_seq if resume else 0,
             )

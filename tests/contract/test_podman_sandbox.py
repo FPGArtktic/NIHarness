@@ -55,7 +55,10 @@ def sandbox(worktree: Path, runner: Recorder | None = None) -> PodmanSandbox:
     return PodmanSandbox(IMAGE, worktree, runner=runner or Recorder())
 
 
-def test_the_container_has_no_network_and_cannot_gain_privileges(worktree: Path) -> None:
+def test_the_container_has_no_network_by_default_and_cannot_gain_privileges(
+    worktree: Path,
+) -> None:
+    """`none` is the default because the air gap is what this exports to."""
     argv = sandbox(worktree).container_argv(["pytest"])
     assert "--network=none" in argv
     assert "--cap-drop=ALL" in argv
@@ -129,6 +132,44 @@ def test_a_suspect_environment_name_is_refused(worktree: Path, name: str) -> Non
 
 def test_the_adapter_reports_the_air_gap(worktree: Path) -> None:
     assert sandbox(worktree).network_disabled is True
+    assert sandbox(worktree).network == "none"
+
+
+def test_a_private_network_reaches_the_internet_but_not_this_host(worktree: Path) -> None:
+    """The one thing it must not reach is loopback.
+
+    The inference server, the vector store and the management surface all
+    live on this host's loopback. A tool that could dial them would be
+    outside the sandbox in the only sense that matters, so the flag pins
+    `allow_host_loopback=false` rather than trusting Podman's default.
+    """
+    opened = PodmanSandbox(IMAGE, worktree, network="private", runner=Recorder())
+    argv = opened.container_argv(["pytest"])
+    assert "--network=slirp4netns:allow_host_loopback=false" in argv
+    assert "--network=none" not in argv
+    assert opened.network_disabled is False
+    assert "--cap-drop=ALL" in argv, "nothing else about the hardening changes"
+    assert "--read-only" in argv
+
+
+def test_the_tool_server_gets_the_same_network_as_everything_else(worktree: Path) -> None:
+    opened = PodmanSandbox(IMAGE, worktree, network="private", runner=Recorder())
+    assert "--network=slirp4netns:allow_host_loopback=false" in opened.tool_server_argv()
+
+
+@pytest.mark.parametrize("mode", ["host", "bridge", "none ", "", "slirp4netns"])
+def test_an_unknown_network_mode_is_refused_rather_than_passed_to_podman(
+    worktree: Path,
+    mode: str,
+) -> None:
+    """A typo in a hardening flag must not become a permission.
+
+    `--network=hostt` is an error Podman reports; `--network=host` is not, and
+    it would share this host's whole namespace. Neither should be reachable by
+    misspelling a configuration value.
+    """
+    with pytest.raises(ValueError, match="unknown sandbox network"):
+        PodmanSandbox(IMAGE, worktree, network=mode, runner=Recorder())
 
 
 async def test_ensure_ready_accepts_a_present_image(worktree: Path) -> None:

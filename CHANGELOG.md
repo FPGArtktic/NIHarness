@@ -13,6 +13,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- The sandbox's network is a deployment choice rather than a constant.
+  `[sandbox] network` takes `none`, which is the default and what an air-gapped
+  deployment requires, or `private` - `slirp4netns:allow_host_loopback=false`,
+  so the internet but explicitly **not** this host's loopback, where the
+  inference server, the vector store and the management surface listen. The
+  rule it replaces conflated two claims: that the harness must *run*
+  air-gapped, which stands and is what `require_local` enforces on its own
+  traffic, and that a model's tools must never have a network anywhere, which
+  was an assumption that bought a connected project nothing. Any other value
+  is refused at construction with the two named, because `--network=host` is a
+  real mode and must not be reachable by misspelling a line of TOML. Recorded
+  in `run.started` as `sandbox_network` and printed by `nih implement` when it
+  is not `none`, so silence means the strict default. Nothing else about the
+  container changes, and neither does the gate (ADR 0023).
 - `replace_in_file`: an edit located by the text it replaces, with the harness
   computing the diff. `find` is copied out of the file and has to occur exactly
   once, `replace` goes in its place, and an empty `replace` deletes it. The

@@ -6,7 +6,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 # Sandbox
 
 Models never get a host shell. Every tool call runs inside a rootless Podman
-container with the project directory bind-mounted and no network interface at
+container with the project directory bind-mounted and, by default, no network
+interface at
 all.
 
 ```bash
@@ -31,7 +32,7 @@ is empty, a red command stays red, a hanging command is stopped.
 
 | Setting | Why |
 |---|---|
-| `--network=none` | the air gap, enforced at the kernel rather than by convention |
+| `--network=none` | the air gap, enforced at the kernel rather than by convention. The one flag here that is configurable: see below |
 | only the run worktree is writable | a tool cannot touch the user's checkout, let alone the host |
 | `--cap-drop=ALL`, `no-new-privileges` | a compiler or test runner has no business with capabilities |
 | cpu, memory and pid caps | a runaway test suite or a fork bomb in a build script must not take the machine down |
@@ -102,6 +103,46 @@ per-command containers the gate's own commands run in.
 
 Images are built once on a networked machine and loaded with `podman load` on
 the air-gapped one. The harness never pulls.
+
+## The network, and why it is the one flag that moves
+
+`--network=none` is the default and is what an air-gapped deployment requires.
+It is not, however, a property of every host the harness runs on: the air gap
+is what this is exported *to*. A project developing on a connected network may
+decide its tools should use it.
+
+```toml
+[sandbox]
+network = "private"   # or "none", the default
+```
+
+`private` is `slirp4netns:allow_host_loopback=false`: the internet, and
+explicitly **not** this host's loopback. That exclusion is the point rather
+than a detail. The inference server, the vector store and the `nih mcp`
+management surface all listen on loopback, and a tool that could dial them
+would be outside the sandbox in the only sense that matters.
+
+Anything other than those two values is refused when the sandbox is
+constructed, with both named. `--network=host` is a real Podman mode and would
+share this host's whole namespace; it must not be reachable by misspelling a
+line of TOML, so the adapter validates rather than forwarding.
+
+Nothing else changes: `--read-only`, `--cap-drop=ALL`,
+`--security-opt=no-new-privileges`, one writable mount and the resource caps
+apply either way. Neither does the gate - what may become a commit is decided
+by `git_commit` and by nothing else.
+
+!!! warning "What `private` actually permits"
+
+    A tool run can then fetch and execute arbitrary code, and can send the
+    worktree's contents anywhere. The gate decides what becomes a *commit*,
+    and that is all it decides. This is a trade to make knowingly, which is
+    why it is opt-in, printed in `nih implement`'s header, and carried in the
+    run's `run.started` event as `sandbox_network` - so a log read six months
+    later says which kind of run it was.
+
+    `add_dependency` is unaffected and still refuses anything absent from the
+    local mirror.
 
 Run the integration tests against an image you already have:
 

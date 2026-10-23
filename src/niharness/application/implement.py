@@ -214,6 +214,7 @@ class ImplementationRun:
         branch: str,
         profile: str,
         tools: Literal["sandbox", "local"] = "sandbox",
+        sandbox_network: Literal["none", "private"] = "none",
         done: Sequence[str] = (),
         resumed_from: int = 0,
     ) -> RunResult:
@@ -225,6 +226,9 @@ class ImplementationRun:
             branch: the worktree's branch.
             profile: the hardware profile in force.
             tools: where the tool server ran.
+            sandbox_network: whether the sandbox had a network. Recorded,
+                because a run whose tools could reach the internet is a
+                different run from one whose could not.
             done: tasks a previous attempt at this run already completed; they
                 are skipped, because their commits are already on the branch.
             resumed_from: the event this run continues after, when it is a resume.
@@ -241,6 +245,7 @@ class ImplementationRun:
                 model=self._model,
                 plan_digest=plan.digest(),
                 tools=tools,
+                sandbox_network=sandbox_network,
             ),
         )
         await self._events.append(

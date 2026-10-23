@@ -44,12 +44,16 @@ The models of a profile. One main model per run, no swaps inside a run.
 
 ## [sandbox]
 
-How the tool sandbox is started. `--network=none` is not negotiable.
+How the tool sandbox is started.
+
+    Every hardening flag but one is fixed: read-only root, no capabilities, no
+    new privileges, one writable mount. The network is the exception, and its
+    default is `none` (ADR 0023).
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `image` | `str` | `'localhost/niharness-sandbox:latest'` |  |
-| `network` | `Literal['none']` | `'none'` |  |
+| `network` | `Literal['none', 'private']` | `'none'` | The sandbox's network. 'none' gives its tools no interface at all and is what an air-gapped deployment requires - the default, because that is the deployment this harness is built to export to. 'private' gives them Podman's rootless networking: the internet, but not this host's loopback services, so the inference server and the vector store stay out of reach. Opening it is deliberate, recorded in the run, and does not touch the gate (ADR 0023). |
 | `binary` | `str` | `'podman'` | The container runtime executable. |
 | `cpus` | `float` | `4.0` |  |
 | `memory` | `str` | `'8g'` |  |

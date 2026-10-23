@@ -34,6 +34,7 @@ A run began on a fresh worktree, seeded only by its input artifact.
 | `profile` | `str` | required |  |
 | `model` | `str` | required |  |
 | `tools` | `Literal['sandbox', 'local']` | `'sandbox'` | Where the tool server ran. 'local' means outside the container. |
+| `sandbox_network` | `Literal['none', 'private']` | `'none'` | Whether the sandbox had a network. 'none' is the default and what an air-gapped deployment requires; 'private' means its tools could reach the internet. Recorded because a run that could is a different run. |
 | `spec_digest` | `Optional[identity.Digest]` | `None` |  |
 | `plan_digest` | `Optional[identity.Digest]` | `None` |  |
 | `parent_run_id` | `Optional[identity.RunId]` | `None` |  |

@@ -70,6 +70,14 @@ class RunStarted(Payload):
         default="sandbox",
         description="Where the tool server ran. 'local' means outside the container.",
     )
+    sandbox_network: Literal["none", "private"] = Field(
+        default="none",
+        description=(
+            "Whether the sandbox had a network. 'none' is the default and what an "
+            "air-gapped deployment requires; 'private' means its tools could reach "
+            "the internet. Recorded because a run that could is a different run."
+        ),
+    )
     spec_digest: Digest | None = None
     plan_digest: Digest | None = None
     parent_run_id: RunId | None = None

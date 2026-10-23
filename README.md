@@ -7,15 +7,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 **NIHarness** (*Not Invented Here* harness) is a local, air-gapped, multi-agent coding
 harness. Sequential agent roles run on local models (`llama-server`, `bitnet.cpp`),
-execute their tools inside a Podman sandbox with no network, and never commit code that
-does not pass the quality gate.
+execute their tools inside a hardened Podman sandbox, and never commit code that does
+not pass the quality gate.
 
 Python core, Rust TUI as a thin client. Package `niharness`, CLI `nih`.
 
 ## Why
 
-- **Air-gapped.** No network at runtime: no package installs, no model downloads, no
-  HTTP outside `localhost` in any code path.
+- **Air-gapped by default, and exportable.** The harness itself never leaves
+  `localhost` - inference, embeddings and the vector store are local services and a
+  non-loopback URL is refused at construction. The sandbox its tools run in gets
+  `--network=none` unless a project says otherwise, because an air-gapped network is
+  what this is built to be exported to: Podman images and a wheelhouse, no pulls, no
+  downloads. Where there *is* internet, `[sandbox] network = "private"` lets the tools
+  use it - still without reach to this host's loopback, and recorded in the run
+  ([ADR 0023](docs/adr/0023-the-sandbox-network-is-a-deployment-choice.md)).
 - **Gated.** `git_commit` is not a convenience wrapper, it is the gate: format, lint,
   incremental build, quick tests. Red output means no commit, for agents and humans.
 - **Local models.** One resident coder model per run, a ternary utility model on CPU for
@@ -31,7 +37,7 @@ Python core, Rust TUI as a thin client. Package `niharness`, CLI `nih`.
 Nobody has published that with a method you can re-run. Public coding benchmarks
 measure a model in isolation, or a frontier model behind a scaffold that is free to
 retry, fetch and ask. Neither tells you what happens when the ceiling is a 9B on a
-laptop GPU, the sandbox has no network, and a red gate means the commit does not
+laptop GPU, the sandbox is sealed, and a red gate means the commit does not
 happen. Almost nobody runs a 4B agentically, because almost nobody has to - unless
 the work is air-gapped, and then there is no other option.
 

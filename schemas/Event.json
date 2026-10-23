@@ -661,6 +661,16 @@
           "title": "Profile",
           "type": "string"
         },
+        "sandbox_network": {
+          "default": "none",
+          "description": "Whether the sandbox had a network. 'none' is the default and what an air-gapped deployment requires; 'private' means its tools could reach the internet. Recorded because a run that could is a different run.",
+          "enum": [
+            "none",
+            "private"
+          ],
+          "title": "Sandbox Network",
+          "type": "string"
+        },
         "spec_digest": {
           "anyOf": [
             {

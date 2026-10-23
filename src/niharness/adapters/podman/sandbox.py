@@ -3,9 +3,17 @@
 """Command execution in a rootless Podman container.
 
 Models never get a host shell. Every command the harness runs on a model's
-behalf runs here: one short-lived container per command, with no network
-interface, no capabilities, a read-only root filesystem, and exactly one
-writable path - the run's worktree, bind-mounted at `/work`.
+behalf runs here: one short-lived container per command, with no capabilities,
+a read-only root filesystem, and exactly one writable path - the run's
+worktree, bind-mounted at `/work`.
+
+The network is the one hardening flag that is configurable, and `none` is the
+default. The air gap is what this harness exports *to*, not a constraint on
+every host it runs on: where there is internet, a project may decide its tools
+should reach it, and `private` gives them Podman's rootless networking - the
+internet, but not this host's loopback, so the inference server and the vector
+store stay out of reach. The choice is recorded in the run, because a run
+whose tools could reach the network is a different run (ADR 0023).
 
 The argument vector is built by :meth:`PodmanSandbox.container_argv`, which is
 a pure function of the configuration, so the hardening flags are asserted by a
@@ -20,7 +28,7 @@ import re
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath
-from typing import NamedTuple, Protocol
+from typing import Final, NamedTuple, Protocol
 
 import structlog
 
@@ -128,6 +136,20 @@ async def subprocess_runner(
     )
 
 
+NETWORK_MODES: Final[dict[str, str]] = {
+    "none": "none",
+    "private": "slirp4netns:allow_host_loopback=false",
+}
+"""The modes a sandbox may run with, mapped to what Podman is told.
+
+`private` pins `allow_host_loopback=false` explicitly rather than relying on
+the default, because the thing it must not reach is this host's loopback: the
+inference server, the vector store and the management surface all live there,
+and a tool that could dial them would be outside the sandbox in the only sense
+that matters.
+"""
+
+
 class PodmanSandbox:
     """A :class:`niharness.ports.sandbox.Sandbox` over rootless Podman."""
 
@@ -140,6 +162,7 @@ class PodmanSandbox:
         memory: str = "8g",
         pids_limit: int = 512,
         binary: str = "podman",
+        network: str = "none",
         runner: ProcessRunner | None = None,
     ) -> None:
         """Create a sandbox for one run's worktree.
@@ -151,20 +174,37 @@ class PodmanSandbox:
             memory: memory cap, same reason.
             pids_limit: process cap, against fork bombs in a build script.
             binary: the Podman executable.
+            network: `none` for no interface at all, `private` for Podman's
+                rootless networking. Anything else is refused rather than
+                passed to Podman, because a typo in a hardening flag must not
+                become a permission.
             runner: injected executor; contract tests replace it.
+
+        Raises:
+            ValueError: if `network` is not one of the two supported modes.
         """
+        if network not in NETWORK_MODES:
+            allowed = ", ".join(sorted(NETWORK_MODES))
+            msg = f"unknown sandbox network {network!r}; use one of: {allowed}"
+            raise ValueError(msg)
         self._image = image
         self._worktree = worktree
         self._cpus = cpus
         self._memory = memory
         self._pids_limit = pids_limit
         self._binary = binary
+        self._network = network
         self._runner: ProcessRunner = runner or subprocess_runner
 
     @property
+    def network(self) -> str:
+        """Which network mode this sandbox runs with."""
+        return self._network
+
+    @property
     def network_disabled(self) -> bool:
-        """Always true: `--network=none` is not configurable."""
-        return True
+        """Whether the container gets no network interface at all."""
+        return self._network == "none"
 
     def container_argv(
         self,
@@ -205,8 +245,8 @@ class PodmanSandbox:
             "run",
             "--rm",
             *(["--interactive"] if interactive else []),
-            # The air gap, enforced by the kernel rather than by convention.
-            "--network=none",
+            # Enforced by the kernel rather than by convention, whichever it is.
+            f"--network={NETWORK_MODES[self._network]}",
             # Only the worktree is writable; everything else is read-only.
             "--read-only",
             "--read-only-tmpfs",

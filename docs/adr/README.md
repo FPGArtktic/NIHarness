@@ -36,6 +36,7 @@ the pipeline. A change that does one of those without an ADR is incomplete.
 | [0020](0020-language-servers-in-the-sandbox.md) | Language servers run in the sandbox, and are asked by name | Accepted |
 | [0021](0021-retrieval-runs-in-the-harness.md) | Retrieval runs in the harness, over the store's REST API | Accepted |
 | [0022](0022-an-edit-located-by-its-own-text.md) | An edit is located by its own text; the harness writes the diff | Accepted |
+| [0023](0023-the-sandbox-network-is-a-deployment-choice.md) | The sandbox's network is a deployment choice, not a constant | Accepted |
 
 ## Template
 
