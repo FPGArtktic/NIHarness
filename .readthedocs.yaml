@@ -7,15 +7,18 @@ build:
   os: ubuntu-24.04
   tools:
     python: "3.12"
-  jobs:
-    post_create_environment:
-      - pip install uv
-    post_install:
-      - uv sync --group docs --frozen
+  # `commands` takes over the whole build, which is what this project wants:
+  # the docs are built by the same `uv run mkdocs build --strict` the quick
+  # gate runs, from the same lockfile, so a page that builds here builds there.
+  #
+  # It cannot be combined with `build.jobs`, and this file used to carry both -
+  # which is a configuration error, so no documentation was ever published.
+  # Nor is a `mkdocs:` key read in this mode; the configuration comes from the
+  # `mkdocs build` invocation below.
   commands:
+    # `mkdocs-git-revision-date-localized` reads git history, and Read the Docs
+    # clones shallow. Without this every page is dated today.
+    - git fetch --unshallow || true
     - pip install uv
     - uv sync --all-groups --frozen
     - uv run mkdocs build --strict --site-dir $READTHEDOCS_OUTPUT/html
-
-mkdocs:
-  configuration: mkdocs.yml

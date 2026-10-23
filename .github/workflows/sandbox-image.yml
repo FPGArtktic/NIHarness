@@ -1,0 +1,89 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Build the sandbox image, and publish it so an air-gap bundle starts with a
+# pull instead of a build.
+#
+# This workflow exists because nothing built this image for the whole life of
+# the project, and when something finally did, the path to an air-gapped host
+# turned out to be broken in five separate places - a wheel that would not
+# build, two wrong commands in the instructions, a language server installed
+# from the wrong ecosystem, and an image that could not lint a line of Python.
+# Every one of them was invisible to the test suite, which reads the source
+# tree. This is the check that reads the artifact.
+name: sandbox image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - containers/**
+      - pyproject.toml
+      - uv.lock
+      - src/**
+      - .github/workflows/sandbox-image.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sandbox-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Podman
+        run: command -v podman || (sudo apt-get update && sudo apt-get install -y podman)
+
+      # The same script the documentation points at, so the two cannot drift.
+      - name: Wheelhouse
+        run: sh containers/wheelhouse.sh
+
+      - name: Build
+        run: podman build -t niharness-sandbox:ci -f containers/Containerfile.sandbox .
+
+      # The part that would have caught the last and worst of those five bugs.
+      # An image that builds and cannot run the gate is useless, and the gate
+      # runs in here.
+      - name: The toolchain is actually in there
+        run: |
+          podman run --rm --network=none niharness-sandbox:ci sh -c '
+            set -e
+            for binary in python3 ruff mypy pytest basedpyright-langserver \
+                          clangd shellcheck shfmt verilator ghdl \
+                          bash-language-server git; do
+              command -v "$binary" >/dev/null || { echo "MISSING: $binary"; exit 1; }
+              echo "ok $binary"
+            done
+            python3 -c "import niharness.toolserver.server"
+            echo "ok the tool server imports"
+          '
+
+      - name: Publish to GHCR
+        if: github.event_name == 'push'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+          name=ghcr.io/${{ github.repository_owner }}/niharness-sandbox
+          podman tag niharness-sandbox:ci "${name,,}:${GITHUB_SHA::7}"
+          podman push "${name,,}:${GITHUB_SHA::7}"
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+            podman tag niharness-sandbox:ci "${name,,}:main"
+            podman push "${name,,}:main"
+          fi
+          if [ "${GITHUB_REF#refs/tags/}" != "${GITHUB_REF}" ]; then
+            podman tag niharness-sandbox:ci "${name,,}:${GITHUB_REF#refs/tags/}"
+            podman push "${name,,}:${GITHUB_REF#refs/tags/}"
+          fi

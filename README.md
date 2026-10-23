@@ -5,6 +5,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # NIHarness
 
+[![gate](https://github.com/FPGArtktic/NIHarness/actions/workflows/gate.yml/badge.svg)](https://github.com/FPGArtktic/NIHarness/actions/workflows/gate.yml)
+[![sandbox image](https://github.com/FPGArtktic/NIHarness/actions/workflows/sandbox-image.yml/badge.svg)](https://github.com/FPGArtktic/NIHarness/actions/workflows/sandbox-image.yml)
+[![docs](https://app.readthedocs.org/projects/niharness/badge/?version=latest)](https://niharness.readthedocs.io)
+[![REUSE](https://api.reuse.software/badge/github.com/FPGArtktic/NIHarness)](https://api.reuse.software/info/github.com/FPGArtktic/NIHarness)
+
+[![models](https://img.shields.io/badge/models-ternary%20%C2%B7%20local%20only-5b21b6)](docs/operations/models.md)
+[![ternary](https://img.shields.io/badge/ternary-BitNet%20b1.58%20%C2%B7%20Bonsai%202%20%28PrismML%29-7c3aed)](docs/operations/models.md)
+[![inference](https://img.shields.io/badge/inference-llama.cpp%20%C2%B7%20bitnet.cpp-0ea5e9)](docs/operations/models.md)
+[![network](https://img.shields.io/badge/network-air--gapped%20by%20default-059669)](docs/operations/sandbox.md)
+[![license](https://img.shields.io/badge/license-GPL--3.0--or--later-1f2937)](LICENSE)
+[![python](https://img.shields.io/badge/python-3.12%2B-3776ab)](pyproject.toml)
+
 > [!WARNING]
 > **Research and development. Nothing here is ready to depend on.**
 >

@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The quick gate of §13, run where nobody can forget to run it. Twice in one
+# day a red commit was pushed from a machine where the gate *had* been run -
+# through `| tail`, which returns zero whatever ruff said. A check that depends
+# on being invoked correctly is not a check.
+name: gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      # --all-groups, because plain `uv sync` leaves out the docs group and
+      # `mkdocs build --strict` is part of the gate.
+      - run: uv sync --all-groups
+
+      # --check, never a rewrite: CI reports, it does not edit.
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy --strict src
+      # Includes the staleness check on the generated reference pages and on
+      # schemas/, and the test that builds the wheel.
+      - run: uv run pytest -q
+      - run: uv run lint-imports
+      - run: uv run reuse lint
+      - run: uv run mkdocs build --strict
+
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tui
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tui
+      - run: cargo fmt --check
+      - run: cargo clippy -- -D warnings
+      - run: cargo test
