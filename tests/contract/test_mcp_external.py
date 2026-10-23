@@ -283,9 +283,7 @@ async def test_a_tool_the_harness_serves_itself_never_reaches_the_sandbox() -> N
     assert read.content == "in"
 
 
-async def test_a_harness_tool_with_nothing_serving_it_says_why(
-    worktree_free: None = None,
-) -> None:
+async def test_a_harness_tool_with_nothing_serving_it_says_why() -> None:
     """Allowlisted, not offered, and called anyway - which the prompts invite.
 
     `rag_query` is in every role's allowlist and the prompts name it, so a

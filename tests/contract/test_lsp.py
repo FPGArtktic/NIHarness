@@ -203,7 +203,7 @@ async def test_an_outline_that_cannot_be_answered_names_the_fallback(
     """
     owned = servers(worktree)
     try:
-        with pytest.raises(Exception, match="read notes.tcl instead"):
+        with pytest.raises(Exception, match=r"read notes\.tcl instead"):
             await owned.outline("notes.tcl")
     finally:
         await owned.aclose()
@@ -211,7 +211,7 @@ async def test_an_outline_that_cannot_be_answered_names_the_fallback(
     # The other branch: a suffix a server *would* own, with none to run.
     absent = LanguageServers(worktree, disabled=frozenset({Language.PYTHON}))
     try:
-        with pytest.raises(Exception, match="read src/app.py instead"):
+        with pytest.raises(Exception, match=r"read src/app\.py instead"):
             await absent.outline("src/app.py")
     finally:
         await absent.aclose()
