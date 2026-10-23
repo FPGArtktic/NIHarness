@@ -204,7 +204,8 @@ def brainstorm(root: ProjectRoot = Path()) -> None:
     del root
     unavailable(
         "brainstorm",
-        "the inference adapter, the MCP tool provider and the TUI socket",
+        "an interactive session loop and a TUI pane for the running draft;\n"
+        "the model, the read-only tools and the prompt layer are built",
         "docs/roadmap.md, stage 'brainstorm'",
     )
 
@@ -253,7 +254,8 @@ def run(spec: Annotated[Path, typer.Argument(help="Path to SPEC.md")]) -> None:
     del spec
     unavailable(
         "run",
-        "the full pipeline: inference, sandbox, tools, vector store",
+        "the planning stage, which this chains to implement without an\n"
+        "approval stop; `nih implement --plan` runs the second half today",
         "docs/roadmap.md, stage 'implement'",
     )
 
@@ -289,7 +291,8 @@ def compact(run_id: Annotated[str, typer.Argument(help="Run id to compact")]) ->
     del run_id
     unavailable(
         "compact",
-        "the tokenizer and the utility model for the ContextSummary pass",
+        "compaction of a stopped run on demand; a live run already compacts\n"
+        "its own window with the tokenizer and the utility model",
         "docs/roadmap.md, 'context management'",
     )
 
@@ -300,7 +303,8 @@ def research(topic: Annotated[str, typer.Argument(help="What to research")]) -> 
     del topic
     unavailable(
         "research",
-        "the vector store adapter (Qdrant) and the inference adapter",
+        "the researcher sub-run and its scratch worktree; the store it would\n"
+        "cite is built, and `rag_query` already answers from it",
         "docs/roadmap.md, 'retrieval'",
     )
 
@@ -313,7 +317,8 @@ def bench(
     del layer
     unavailable(
         "bench",
-        "the benchmark runner and a served model",
+        "the runner; the suites carry a task format and a seed set, and the\n"
+        "L0 numbers in benchmarks/results/ were taken by hand",
         "docs/benchmarks/methodology.md",
     )
 

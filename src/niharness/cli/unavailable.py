@@ -27,6 +27,16 @@ def unavailable(command: str, needs: str, tracked_in: str) -> None:
         typer.Exit: always, with `EX_UNAVAILABLE`.
     """
     typer.secho(f"nih {command}: not available yet", fg=typer.colors.YELLOW, err=True)
-    typer.echo(f"  needs: {needs}", err=True)
+    typer.echo(f"  needs: {_indented(needs, len('  needs: '))}", err=True)
     typer.echo(f"  tracked in: {tracked_in}", err=True)
     raise typer.Exit(EX_UNAVAILABLE)
+
+
+def _indented(text: str, width: int) -> str:
+    """Return `text` with its continuation lines aligned under the first.
+
+    What is missing is often a sentence rather than a noun, and a sentence
+    that wraps back to column zero reads as a second field.
+    """
+    lines = text.splitlines()
+    return f"\n{' ' * width}".join(lines)

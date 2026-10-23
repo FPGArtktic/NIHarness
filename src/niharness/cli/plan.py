@@ -50,7 +50,8 @@ def plan_spec(
     del spec
     unavailable(
         "plan",
-        "the inference adapter and the MCP tool provider (read-only tools for the planner)",
+        "a runner for the planning stage; the inference adapter and the\n"
+        "read-only tools it needs are built and drive `nih implement` today",
         "docs/roadmap.md, stage 'plan'",
     )
 
@@ -113,7 +114,8 @@ def import_plan(
     except (ArtifactNotFoundError, ValidationError):
         unavailable(
             "plan import",
-            "the inference adapter (the planner role converts free-form plans)",
+            "the planner role, to convert a plan that does not already conform;\n"
+            "a plan that does conform is imported by this command today",
             "docs/roadmap.md, stage 'plan'",
         )
         return
