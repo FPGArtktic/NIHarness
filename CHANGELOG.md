@@ -13,6 +13,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- A degenerate response never enters the window. Refusing it in the loop was
+  not enough: the executor recorded the assistant turn *before* the loop
+  judged it, so the junk was already in the window and the **next**
+  `prepare()` asked the backend to render a tool call whose JSON had been
+  truncated mid-string - which answered 500 and ended a run rather than a
+  step. It happened twice, the second time after the loop had been taught to
+  refuse it, which is what made the ordering visible. The executor now asks
+  the same pure function the loop uses, before adding the turn, so the two
+  cannot disagree about what counts as degenerate.
 - A degenerate response is refused rather than logged, and the check now reads
   a tool call's arguments as well as the prose. The rule said "abort
   generation"; the code emitted a `loop.detected` event and then dispatched the

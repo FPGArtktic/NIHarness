@@ -36,6 +36,7 @@ from niharness.domain.tool_loop import (
     Step,
     Stop,
     cancel,
+    degenerate_response,
     injected,
     next_action,
     observe_model,
@@ -227,9 +228,16 @@ class StepRunner:
             step_id=step_id,
         )
         response = await self._backend.chat(request)
-        # Reasoning is logged as an event by the loop and deliberately left out
-        # of the window: there is no field on a Message that could carry it.
-        await window.add_assistant(response.content, response.tool_calls)
+        # A degenerate answer never enters the window. The loop refuses it, but
+        # refusing is too late on its own: the turn was recorded first, and the
+        # *next* `prepare()` asked the backend to render a tool call whose JSON
+        # had been truncated mid-string, which answered 500 and ended the run.
+        # Asked here with the same pure function the loop uses, so the two
+        # cannot disagree about what counts as degenerate.
+        if degenerate_response(response, config.thresholds) is None:
+            # Reasoning is logged as an event by the loop and deliberately left
+            # out of the window: no field on a Message could carry it.
+            await window.add_assistant(response.content, response.tool_calls)
         step = observe_model(state, response)
         await self._append(step, step_id)
         return step.state

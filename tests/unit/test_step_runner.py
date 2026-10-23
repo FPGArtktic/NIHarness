@@ -420,3 +420,31 @@ async def test_the_iteration_guard_fails_loudly() -> None:
         await runner(backend, FakeTools(), FakeSink(), iteration_limit=2).run(
             config(), await seeded_window()
         )
+
+
+async def test_a_degenerate_answer_never_enters_the_window() -> None:
+    """Refusing it in the loop is too late: the turn was recorded first.
+
+    Observed on a live run - twice, the second time after the loop had already
+    been taught to refuse it. A 4B emitted a dataclass field repeated until the
+    tool call's JSON was truncated mid-string; the window kept the turn, and
+    the *next* `prepare()` asked the backend to render it and got a 500. That
+    ended a benchmark run rather than a step.
+    """
+    runaway = "\n".join(["    last_retry_time_ms_ns: Optional[int] = None"] * 10)
+    backend = FakeBackend(
+        proposes("replace_in_file", {"path": "src/a.py", "find": runaway, "replace": ""}),
+        final_answer(),
+    )
+    tools, sink = FakeTools(), FakeSink()
+    await runner(backend, tools, sink).run(config(), await seeded_window())
+
+    assert not tools.calls, "the degenerate call never reaches the provider"
+    assert "LoopDetected" in kinds(sink)
+    later = backend.requests[-1]
+    assert all("last_retry_time_ms_ns" not in message.content for message in later.messages), (
+        "and the junk is not in the window the next turn is built from"
+    )
+    assert any("repeated itself" in message.content for message in later.messages), (
+        "the model is told why, so it can answer differently"
+    )

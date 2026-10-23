@@ -179,7 +179,10 @@ because reading eight new files changes nothing and is perfectly good work.
 
 A degenerate response is the one the loop **refuses** outright rather than
 escalating over: it is recorded as an invalid call, the model is told the
-answer repeated itself, and nothing is dispatched. Logging it and carrying on -
+answer repeated itself, nothing is dispatched, and - the part that is easy to
+miss - the turn never enters the window. The executor asks before it records,
+because refusing afterwards leaves the junk in the window and the next token
+count fails on it. Logging it and carrying on -
 which is what the code did until a live run proved otherwise - means the
 arguments arrive truncated mid-string, the window carries the junk, and the
 next tokenizer call fails on it. That ended a benchmark run rather than a step.

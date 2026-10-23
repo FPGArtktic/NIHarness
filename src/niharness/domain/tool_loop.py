@@ -418,7 +418,7 @@ def observe_model(state: LoopState, response: ChatResponse) -> Step:
         update={"pending_instruction": "", "pending_tool_choice": ToolChoice.AUTO},
     )
 
-    degenerate = _degenerate_anywhere(response, state.config.thresholds)
+    degenerate = degenerate_response(response, state.config.thresholds)
     if degenerate is not None:
         emitted.append(
             ev.LoopDetected(
@@ -511,7 +511,7 @@ def _handle_tool_call(
     return accepted, (called,)
 
 
-def _degenerate_anywhere(
+def degenerate_response(
     response: ChatResponse,
     thresholds: LoopThresholds,
 ) -> LoopFinding | None:
@@ -522,6 +522,11 @@ def _degenerate_anywhere(
     `replace_in_file` argument until the tool call's JSON was truncated
     mid-string, and the backend then returned 500 when the harness asked it to
     render that history. The prose was empty, so the detector saw nothing.
+
+    Public because the executor has to ask the same question *before* it adds
+    the turn to the window. Refusing the response is not enough on its own:
+    the window had already recorded it, and the next tokenizer call failed on
+    the junk rather than on anything the loop could still decide.
     """
     found = degenerate_output(response.content, thresholds)
     if found is not None:
