@@ -23,6 +23,80 @@ Python core, Rust TUI as a thin client. Package `niharness`, CLI `nih`.
 - **Event-sourced.** Run state is an append-only `events.jsonl` plus snapshots. The TUI
   renders that stream and computes nothing of its own.
 
+## The question this exists to answer
+
+> **How well do 2B-30B models do agentic coding, measured rigorously - and how much
+> of the gap to a frontier model can the harness close rather than the weights?**
+
+Nobody has published that with a method you can re-run. Public coding benchmarks
+measure a model in isolation, or a frontier model behind a scaffold that is free to
+retry, fetch and ask. Neither tells you what happens when the ceiling is a 9B on a
+laptop GPU, the sandbox has no network, and a red gate means the commit does not
+happen. Almost nobody runs a 4B agentically, because almost nobody has to - unless
+the work is air-gapped, and then there is no other option.
+
+### The hypothesis
+
+**Small models fail at protocol, not at comprehension - and protocol failures are the
+harness's to fix.**
+
+Every harness fix so far came from watching a weak model fail and then making the
+*harness* explain itself better, never from making the prompt longer. One run is the
+whole thesis in miniature: asked for a register's supply voltage, a 4B called
+`rag_query` first, read the value out of an ingested datasheet whose erratum
+contradicted the obvious answer, and wrote `VDDC_VOLTS = 1.20` with a comment naming
+the revision. It then failed three times in a row to express that one-line change as
+a unified diff.
+
+Finding the value was never the problem. Saying it in the required form was. If that
+generalises, the interesting engineering is not in the weights.
+
+### Why loop interventions per task
+
+A model that lands a correct patch after sixty redundant calls is not equivalent to
+one that lands it in eight, and `pass@1` cannot tell them apart. The
+[intervention ladder](docs/concepts/tool-loops.md) makes every pathology - an exact
+repeat, a worktree state cycle, a progress stall, gate thrash - an event, so "how hard
+did the harness have to work" becomes a number per task and therefore a
+model-selection criterion. On this hardware it is also the *cost* metric: a redundant
+call on a CPU-only profile is tens of seconds of wall clock.
+
+### What is measured so far
+
+**L0 only** - throughput, and by hand rather than by the runner. Host: Intel i5-12500H
+(4 P-cores + 8 E-cores), RTX 3050 Laptop 4 GiB, 62 GiB RAM. Ternary Bonsai 2 on the
+PrismML llama.cpp fork, prompt-processing / generation tok/s:
+
+| Model | Packing | CPU (8 threads) | CUDA |
+|---|---|---|---|
+| 4B | PQ2_0 | 53.7 / 15.8 | **1539 / 105.6** |
+| 9B | PQ2_0 | 19.4 / 8.7 | **1035 / 59.0** |
+| 27B | PQ2_0 | - | 130.6 / 3.2 *(partial offload: 6.7 GiB does not fit in 4)* |
+| 27B | PTQ1_0 | 2.1 / 1.7 | - |
+
+Two findings worth the table on their own. The packing dominates the parameter count:
+the 27B in `PTQ1_0` is the *smaller* file (5.5 GiB against 6.7) and processes a prompt
+on a CPU **25x slower** than the 4B in `PQ2_0`, for 6.4x the parameters. Picking by
+file size picks the wrong one. And more threads than P-cores costs throughput - 16
+threads is slower than 8, because the E-cores contend.
+
+Records: [`benchmarks/results/`](benchmarks/results/), one JSONL line each, tagged with
+the harness commit, model, quantization, profile, host and date.
+
+### What is *not* measured
+
+Everything that would actually answer the question. L1 (tool calling), L2 (gate and
+review) and L3 (end to end) have a
+[methodology](docs/benchmarks/methodology.md) and no data: `nih bench` is a stub and
+the suites are empty. Until they are not, every claim here about model behaviour is an
+observation from roughly ten live runs - which is an anecdote, not a measurement, and
+is labelled as one wherever it appears.
+
+The honest headline, stated plainly: **no model has yet produced a green commit
+unattended.** The closest was a 27B that wrote a module and a passing test and was
+blocked by one missing blank line - which is why `format_code` exists now. That gap is
+the project's own benchmark, and it is open.
+
 ## Pipeline
 
 ```
@@ -40,10 +114,16 @@ written down, not remembered.
 
 ## Status
 
-Early. The domain core (contracts, gate planning, tool validation, loop detectors,
-compaction policy, event fold) and the event-log adapter are in place; the sandbox,
-MCP and inference adapters are being filled in. See `CHANGELOG.md` and
-`docs/adr/` for what has been decided and why.
+Early, but running. The pipeline executes an approved plan end to end against a real
+model: worktree, tool loop, patches, formatter, tests, commit attempt, gate, loop
+detectors, handoff with diagnostics. The domain core, the event log and control inbox,
+the inference and embedding clients, the MCP tool server and client, declared MCP
+servers, the LSP client, the PDF reader, the Qdrant store and the management surface
+are in place. The benchmark runner and the code index are not.
+
+See [`docs/orientation.md`](docs/orientation.md) for what works today,
+[`docs/roadmap.md`](docs/roadmap.md) for what does not, and `docs/adr/` for why
+anything is shaped the way it is.
 
 ## Quickstart (development)
 
@@ -82,11 +162,15 @@ reading, patching and testing. See
 |---|---|
 | `src/niharness/domain/` | pure pipeline, contracts, gate logic, loop detectors, compaction |
 | `src/niharness/ports/` | Protocols the outside world must satisfy |
-| `src/niharness/adapters/` | OpenAI-compatible HTTP, MCP, Qdrant, git, Podman, JSONL events |
+| `src/niharness/adapters/` | HTTP inference and embeddings, MCP, Qdrant, PDF, git, Podman, JSONL |
+| `src/niharness/application/` | the step executor, the window, compaction, the plan runner |
+| `src/niharness/management/` | the run registry and the `nih mcp` surface |
+| `src/niharness/toolserver/` | the sandbox end of the protocol: the gate, and the LSP client |
 | `src/niharness/cli/` | Typer commands |
 | `src/niharness/prompts/` | versioned prompt layers |
 | `schemas/` | generated JSON Schema: the contract with the TUI |
-| `tui/` | Rust crate (ratatui), reads the run socket |
+| `tui/` | Rust crate (ratatui), follows the run's event log |
+| `benchmarks/` | L0-L3 suites and the committed JSONL records |
 | `docs/` | MkDocs sources, including `docs/adr/` |
 
 ## Documentation
