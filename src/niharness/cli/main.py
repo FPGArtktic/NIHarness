@@ -317,8 +317,8 @@ def bench(
     del layer
     unavailable(
         "bench",
-        "the runner; the suites carry a task format and a seed set, and the\n"
-        "L0 numbers in benchmarks/results/ were taken by hand",
+        "the runner; the suites already carry a task format and a seed set,\n"
+        "and the L0 numbers in benchmarks/results/ were taken by hand",
         "docs/benchmarks/methodology.md",
     )
 

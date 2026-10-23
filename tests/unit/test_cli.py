@@ -135,21 +135,47 @@ def test_plan_import_needs_a_model_for_free_form_prose(tmp_path: Path) -> None:
     assert "planner" in result.output
 
 
-@pytest.mark.parametrize(
-    ("command", "needs"),
-    [
-        (["brainstorm"], "inference"),
-        (["run", "SPEC.md"], "pipeline"),
-        (["compact", "abc"], "tokenizer"),
-        (["research", "topic"], "vector store"),
-        (["bench"], "benchmark"),
-    ],
-)
+STUBS = [
+    (["brainstorm"], "session loop"),
+    (["run", "SPEC.md"], "planning stage"),
+    (["compact", "abc"], "on demand"),
+    (["research", "topic"], "sub-run"),
+    (["bench"], "runner"),
+    (["plan", "spec", "SPEC.md"], "runner"),
+]
+"""Each stub and a phrase from the thing that is actually missing."""
+
+PRESENT = ("built", "today", "already")
+"""A stub has to say what *is* there, which is the part that goes stale."""
+
+
+@pytest.mark.parametrize(("command", "needs"), STUBS)
 def test_unimplemented_commands_say_what_they_need(command: list[str], needs: str) -> None:
     result = runner.invoke(app, command)
     assert result.exit_code == EX_UNAVAILABLE
     assert "not available yet" in result.output
     assert needs in result.output
+
+
+@pytest.mark.parametrize(("command", "needs"), STUBS)
+def test_a_stub_distinguishes_what_is_missing_from_what_is_built(
+    command: list[str],
+    needs: str,
+) -> None:
+    """The previous version of this test pinned a noun, and the noun went stale.
+
+    Five of six stubs ended up naming a prerequisite that had since shipped -
+    `nih research` asked for the vector store adapter while `rag_query` was
+    answering from it - because nothing made the message account for the
+    present. Requiring each to say what is already there is what stops that:
+    a message cannot claim a dependency is missing and also describe it as
+    built without somebody noticing.
+    """
+    del needs
+    result = runner.invoke(app, command)
+    assert any(word in result.output for word in PRESENT), (
+        f"{command[0]} says what it needs but not what already works: {result.output}"
+    )
 
 
 async def seed_run(runs_dir: Path, run_id: RunId) -> None:
