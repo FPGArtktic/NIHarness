@@ -11,11 +11,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 > This is a working notebook with a quality gate, not a product. Specifically, and
 > because "under development" is too vague to be useful:
 >
-> - **The sandbox image has never been built.** Every run so far used
->   `--unsafe-local-tools`, which runs the model's tools on the host. The isolation
->   this project advertises - `--network=none`, read-only root, no capabilities - is
->   asserted by tests over the container's argument vector and has never confined a
->   real task. Do not rely on it.
+> - **The sandbox is young.** The image builds, and the tool server and the language
+>   servers start inside it under `--network=none`. But every number in
+>   `benchmarks/results/` so far was taken with `--unsafe-local-tools`, which runs the
+>   model's tools on the host, and the container's hardening - read-only root, no
+>   capabilities, one writable mount - is asserted by tests over its argument vector
+>   rather than by having withstood anything. Treat it as a reasonable default, not as
+>   a boundary you have audited.
 > - **One of three entry points works.** You can bring a finished `PLAN.md` and
 >   execute it. `nih brainstorm` and `nih plan spec` are stubs that exit 69 and say so.
 > - **The central question is unanswered.** L1 (tool calling) has numbers as of

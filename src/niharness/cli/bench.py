@@ -263,6 +263,7 @@ def record(
     model: ModelConfig,
     metrics: Sequence[str],
     seconds: float,
+    commit: str,
     dirty: bool,
     attempt: int = 1,
     of: int = 1,
@@ -272,7 +273,7 @@ def record(
     return {
         "layer": score.layer,
         "date": datetime.now(tz=UTC).date().isoformat(),
-        "harness_commit": _commit(config.project_root),
+        "harness_commit": commit,
         "harness_dirty": dirty,
         "model": model.name,
         "quantization": model.quantization,
@@ -323,7 +324,12 @@ def _dirty(root: Path) -> bool:
 
 
 def _commit(root: Path) -> str:
-    """Return the harness's short commit, or 'unknown' outside a repository."""
+    """Return the harness's short commit, or 'unknown' outside a repository.
+
+    Read once per run by the caller, never per record: the code under test was
+    loaded when the process started, so a record written after a commit would
+    otherwise name a commit it never ran.
+    """
     try:
         return _run(_git(), ("rev-parse", "--short", "HEAD"), root).strip() or "unknown"
     except (OSError, subprocess.CalledProcessError, SuiteError):
@@ -405,6 +411,11 @@ def bench(
         raise typer.Exit(1) from error
 
     model = config.models.main
+    # Both read once, before the first pass. `harness_commit` was read as each
+    # record was written, so a run that straddled a commit labelled its later
+    # passes with code they were not running - the same shape of mistake the
+    # dirty flag made, and just as quiet.
+    commit = _commit(config.project_root)
     dirty = _dirty(config.project_root)
     backend = backend_for(model)
     passes: list[tuple[dict[str, object], SuiteScore]] = []
@@ -436,6 +447,7 @@ def bench(
                     model=model,
                     metrics=metrics,
                     seconds=time.monotonic() - started,
+                    commit=commit,
                     dirty=dirty,
                     attempt=attempt,
                     of=max(1, repeat),

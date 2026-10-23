@@ -13,6 +13,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- A record reads the harness commit once, at the start of the run, as the dirty
+  flag already did. It was read as each record was written, so a run that
+  straddled a commit labelled its later passes with code they were not
+  running - which happened, and produced a record naming a commit whose
+  changes it had never loaded.
+- **Correction.** The commit that quoted `recover-from-an-ambiguous-passage`
+  going "0/3 to 1/3 - moved, not solved" was reading a measurement taken on a
+  working tree. Three passes from a clean tree fail it 3/3. The one success
+  was variance, the disambiguation fix did not measurably move that task, and
+  the claim should not have been made from a dirty record - which is the
+  reason records now carry `harness_dirty` and the reason that flag says a
+  dirty record is a working note.
 - The sandbox image builds, and the chain to an air-gapped host was broken in
   five places at once - none of them visible to the quick gate, because the
   gate tests the source tree and nothing tested the image. A `force-include`
