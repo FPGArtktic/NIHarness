@@ -86,11 +86,11 @@ the harness commit, model, quantization, profile, host and date.
 ### What is *not* measured
 
 Everything that would actually answer the question. L1 (tool calling), L2 (gate and
-review) and L3 (end to end) have a
-[methodology](docs/benchmarks/methodology.md) and no data: `nih bench` is a stub and
-the suites are empty. Until they are not, every claim here about model behaviour is an
-observation from roughly ten live runs - which is an anecdote, not a measurement, and
-is labelled as one wherever it appears.
+review) and L3 (end to end) have a [methodology](docs/benchmarks/methodology.md), a
+record format, and a seed set of tasks - 5 of L1's 20, 3 of L2's golden cases, 2 of
+L3's - and **no runner to execute any of them**, so no data. Until there is, every
+claim here about model behaviour is an observation from roughly ten live runs, which
+is an anecdote and not a measurement, and is labelled as one wherever it appears.
 
 The honest headline, stated plainly: **no model has yet produced a green commit
 unattended.** The closest was a 27B that wrote a module and a passing test and was
