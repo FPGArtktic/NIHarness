@@ -326,13 +326,54 @@ def test_an_exhausted_token_budget_stops_the_step() -> None:
     assert after.state.stop_reason is StopReason.BUDGET_TOKENS
 
 
-def test_degenerate_output_is_reported() -> None:
+def test_degenerate_output_is_refused_and_not_just_reported() -> None:
+    """The rule says abort generation; the code used to only log the finding.
+
+    It then dispatched the call anyway, and nothing downstream survives that:
+    the arguments arrive truncated mid-string, the window carries the junk, and
+    the next tokenizer call fails on it - which ended a benchmark run rather
+    than a step.
+    """
     text = " ".join(["the same eight words repeated over and over"] * 6)
-    response = answers(content=text)
-    step = observe_model(state(), response)
+    step = observe_model(state(), answers(content=text))
     detected = [e for e in step.events if isinstance(e, ev.LoopDetected)]
     assert detected
     assert detected[0].pathology == "degenerate_output"
+    assert step.state.final is None, "the answer was not accepted"
+    assert step.state.pending_call is None, "and nothing was dispatched"
+    assert "repeated itself" in step.state.pending_instruction
+    assert step.state.calls[-1].invalid, "it counts against the invalid-call detector"
+
+
+def test_a_repetition_inside_the_tool_arguments_is_caught_too() -> None:
+    """Checking the prose alone misses the shape this actually takes.
+
+    Observed on a live run: a 4B emitted `last_retry_time_ms_ns_ns_ns...`
+    growing inside a `replace_in_file` argument until the tool call's JSON was
+    truncated mid-string. The prose was empty, so a check on `content` saw
+    nothing at all.
+    """
+    # The real one, trimmed: a dataclass field repeated until the JSON was cut.
+    runaway = "\n".join(["    last_retry_time_ms_ns: Optional[int] = None"] * 10)
+    step = observe_model(
+        state(), proposes("replace_in_file", {"path": "a.py", "find": runaway})
+    )
+    detected = [e for e in step.events if isinstance(e, ev.LoopDetected)]
+    assert detected
+    assert detected[0].pathology == "degenerate_output"
+    assert step.state.pending_call is None, "the call never reaches the sandbox"
+
+
+def test_a_long_answer_that_does_not_repeat_is_left_alone() -> None:
+    """The check is repetition, not length."""
+    step = observe_model(
+        state(),
+        proposes(
+            "apply_patch", {"diff": "\n".join(f"+line {n} of a real patch" for n in range(80))}
+        ),
+    )
+    assert not [e for e in step.events if isinstance(e, ev.LoopDetected)]
+    assert step.state.pending_call is not None
 
 
 def test_cancelling_stops_the_step_once() -> None:

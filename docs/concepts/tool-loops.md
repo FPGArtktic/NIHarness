@@ -169,13 +169,22 @@ Pure functions over the step's window of call records. Thresholds live in
 | progress stall | consecutive calls that changed nothing and returned a known result | 8 |
 | gate thrash | the same normalised [failure signature](gate.md) returns | 3 |
 | invalid calls | schema or allowlist violations in a row | 3 |
-| degenerate output | an n-gram repeats in the assistant stream | 8-gram, 4 times |
+| degenerate output | an n-gram repeats in the assistant stream **or in a tool call's arguments** | 8-gram, 4 times |
 
 A detector needs **both** halves of the signal where that matters: eight calls
 that change nothing are only a stall if the results were also already seen,
 because reading eight new files changes nothing and is perfectly good work.
 
 ## Intervention ladder
+
+A degenerate response is the one the loop **refuses** outright rather than
+escalating over: it is recorded as an invalid call, the model is told the
+answer repeated itself, and nothing is dispatched. Logging it and carrying on -
+which is what the code did until a live run proved otherwise - means the
+arguments arrive truncated mid-string, the window carries the junk, and the
+next tokenizer call fails on it. That ended a benchmark run rather than a step.
+Checking the prose alone also missed it: the repetition was inside a
+`replace_in_file` argument and `content` was empty.
 
 Each firing climbs exactly one rung, and the rung is an event
 (`loop.intervention`):

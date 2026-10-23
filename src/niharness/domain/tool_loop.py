@@ -34,6 +34,7 @@ from niharness.domain.identity import CallId, Digest, digest_text
 from niharness.domain.loop import (
     REFLECTION_INSTRUCTION,
     CallRecord,
+    LoopFinding,
     LoopThresholds,
     degenerate_output,
     evaluate,
@@ -417,7 +418,7 @@ def observe_model(state: LoopState, response: ChatResponse) -> Step:
         update={"pending_instruction": "", "pending_tool_choice": ToolChoice.AUTO},
     )
 
-    degenerate = degenerate_output(response.content, state.config.thresholds)
+    degenerate = _degenerate_anywhere(response, state.config.thresholds)
     if degenerate is not None:
         emitted.append(
             ev.LoopDetected(
@@ -427,6 +428,9 @@ def observe_model(state: LoopState, response: ChatResponse) -> Step:
                 evidence=degenerate.evidence,
             ),
         )
+        refused, refusal_events = _handle_degenerate(working, degenerate)
+        emitted.extend(refusal_events)
+        return Step(state=refused, events=tuple(emitted))
 
     if response.tool_calls:
         working, call_events = _handle_tool_call(working, response)
@@ -505,6 +509,66 @@ def _handle_tool_call(
         arguments_digest=digest,
     )
     return accepted, (called,)
+
+
+def _degenerate_anywhere(
+    response: ChatResponse,
+    thresholds: LoopThresholds,
+) -> LoopFinding | None:
+    """Look for a runaway repetition in the prose *and* in the tool arguments.
+
+    Checking `content` alone misses the shape this actually takes. Observed on
+    a live run: a 4B emitted `last_retry_time_ms_ns_ns_ns...` growing inside a
+    `replace_in_file` argument until the tool call's JSON was truncated
+    mid-string, and the backend then returned 500 when the harness asked it to
+    render that history. The prose was empty, so the detector saw nothing.
+    """
+    found = degenerate_output(response.content, thresholds)
+    if found is not None:
+        return found
+    for call in response.tool_calls:
+        found = degenerate_output(call.arguments_json, thresholds)
+        if found is not None:
+            return found
+    return None
+
+
+def _handle_degenerate(
+    state: LoopState,
+    finding: LoopFinding,
+) -> tuple[LoopState, tuple[EventBody, ...]]:
+    """Refuse a degenerate response instead of folding it into the window.
+
+    The rule said "abort generation" and the code only logged the finding,
+    then went on to dispatch the call. Nothing downstream survives that: the
+    arguments are truncated mid-string, the window carries the junk, and the
+    next tokenizer call fails on it - which ended a benchmark run rather than a
+    step.
+
+    So it is treated as a refused call: recorded invalid, the model told what
+    happened, and the ladder bounds it. A model that keeps producing this ends
+    the step through the detectors rather than through an HTTP 500.
+    """
+    recorded = _record(
+        state,
+        CallRecord(
+            seq=state.next_seq,
+            tool="(response)",
+            arguments_digest=digest_text(finding.evidence),
+            invalid=True,
+        ),
+    )
+    instructed = recorded.model_copy(
+        update={
+            "pending_instruction": (
+                "That answer repeated itself and was discarded without being run "
+                f"({finding.observed} repetitions of the same phrase). Answer again, "
+                "shorter, and do not repeat a line you have already written."
+            ),
+        },
+    )
+    after, events = _intervene(instructed)
+    return _escalate_if_final(after), events
 
 
 def _handle_rejection(

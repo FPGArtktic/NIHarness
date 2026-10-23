@@ -13,6 +13,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- A degenerate response is refused rather than logged, and the check now reads
+  a tool call's arguments as well as the prose. The rule said "abort
+  generation"; the code emitted a `loop.detected` event and then dispatched the
+  call anyway. Observed on a live run: a 4B emitted
+  `last_retry_time_ms_ns_ns_ns...` growing inside a `replace_in_file` argument
+  until the tool call's JSON was truncated mid-string, the prose was empty so
+  the detector saw nothing, and the backend returned 500 when the harness next
+  asked it to render that history - which ended a benchmark run rather than a
+  step. It is now recorded as an invalid call, nothing is dispatched, and the
+  model is told its answer repeated itself, so a model that keeps doing it
+  ends the step through the ladder instead of through an HTTP 500.
 - A repeated call that had been **refused** gets the refusal's own words back,
   not a hash of them. The level-one intervention interpolated
   `Digest of the previous result: 3f9a...`, which is nothing a model can act
