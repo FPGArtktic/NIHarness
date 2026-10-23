@@ -469,3 +469,41 @@ def test_declaring_an_end_state_leaves_the_route_unconstrained() -> None:
     )
     done = {"src/widget.py": "RETRY_LIMIT = 5\n", "docs/limits.md": "- retries: 5\n"}
     assert score_task(AGREE, busy, done).passed
+
+
+REMOVED = L1Task(
+    id="delete-a-passage",
+    prompt="Remove the docstring.",
+    expect_content={"src/dial.py": ("STEPS = 10",)},
+    forbid_content={"src/dial.py": ("How many positions",)},
+)
+
+
+def test_a_removal_is_scored_by_what_is_gone() -> None:
+    """Asserting what is present cannot say that something is not.
+
+    The mirror of `expect_content`, and the only way to score a task whose
+    point is that something was taken out.
+    """
+    done = {"src/dial.py": "STEPS = 10\n"}
+    left = {"src/dial.py": 'STEPS = 10\n"""How many positions the dial has."""\n'}
+    assert score_task(REMOVED, answered(called("replace_in_file", path="a")), done).complete
+    score = score_task(REMOVED, answered(called("replace_in_file", path="a")), left)
+    assert not score.complete
+    assert "still contains" in " ".join(score.notes)
+
+
+def test_a_removal_that_took_too_much_fails_the_other_half() -> None:
+    """Deleting the constant along with its docstring is not the task."""
+    score = score_task(
+        REMOVED, answered(called("replace_in_file", path="a")), {"src/dial.py": ""}
+    )
+    assert not score.complete
+    assert "does not contain" in " ".join(score.notes)
+
+
+def test_a_forbidden_fragment_in_a_file_that_is_gone_is_not_a_pass() -> None:
+    """A deleted file reads as absent, and absent is not the same as checked."""
+    score = score_task(REMOVED, answered(called("replace_in_file", path="a")), {})
+    assert not score.complete
+    assert "was not read back" in " ".join(score.notes)

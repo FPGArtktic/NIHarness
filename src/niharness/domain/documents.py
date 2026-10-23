@@ -31,7 +31,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field
 
 from niharness.domain.identity import Digest
-from niharness.domain.rag import Chunk, ChunkKind
+from niharness.domain.rag import Chunk, ChunkKind, ChunkPolicy
 
 
 class TextSource(StrEnum):
@@ -113,18 +113,6 @@ def needs_ocr(text: str, policy: OcrPolicy) -> bool:
     if len(stripped) < policy.min_characters:
         return True
     return alphanumeric_ratio(stripped) < policy.min_alphanumeric_ratio
-
-
-class ChunkPolicy(BaseModel):
-    """How pages are packed into chunks."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    max_characters: int = Field(default=2_000, ge=200)
-    """A chunk this size embeds well and still carries its context."""
-
-    min_characters: int = Field(default=200, ge=0)
-    """A chunk smaller than this takes the next page with it, when there is one."""
 
 
 def chunk_pages(

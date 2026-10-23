@@ -96,6 +96,22 @@ Everything compacted away is indexed into the run's own collection in the vector
 store, so `rag_query` can bring it back. Compaction loses a position in the
 window, not information.
 
+That is true now and was a claim before it was: the writer landed with the
+retrieval work, and until it did, this paragraph described an intention. Two
+conditions qualify it.
+
+A dropped item is chunked by its own text, so the id is content-derived - a
+step rolled back and retried drops much of the same material again and writes
+it once. An item too large to embed well is split on a paragraph break, then a
+line break, then at the limit: three boundaries, each worse than the last.
+
+And with **no store configured** the window still compacts and nothing is
+indexed. The event log is complete either way, so the record is not at risk;
+what is lost is the model's ability to ask for what it had. The failure is
+logged and `context.compacted` reports `indexed_chunks: 0`, so a run where
+recall was unavailable says so rather than looking like one where nothing was
+dropped.
+
 Token counts always come from the backend tokenizer. The compaction code cannot
 estimate: it takes a `measure` function as an argument, and the adapter backs it
 with `/tokenize`.

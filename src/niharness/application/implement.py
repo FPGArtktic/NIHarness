@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from niharness.application.step_runner import StepRunner
 from niharness.application.summarizer import Summarizer
-from niharness.application.window import Window
+from niharness.application.window import ContextArchive, Window
 from niharness.domain import events as ev
 from niharness.domain.artifacts import Decision, FinalAnswer, Plan, Task, Verdict
 from niharness.domain.budgets import fit_to_host
@@ -159,6 +159,7 @@ class ImplementationRun:
         vcs: Vcs,
         worktree: Worktree,
         summarizer: Summarizer | None = None,
+        archive: ContextArchive | None = None,
         control: ControlChannel | None = None,
         catalog: ToolCatalog | None = None,
         generation_tps: float = 0.0,
@@ -175,6 +176,9 @@ class ImplementationRun:
             thresholds: loop detector thresholds.
             limits: tool argument and result caps.
             summarizer: the utility model, for compaction summaries.
+            archive: where compaction puts what it drops, so `rag_query` can
+                hand it back. Without one the window still compacts; it is the
+                model's recall that is lost, not the record.
             vcs: version control. A run needs it: the commit gate is "did a
                 commit land", and the reviewer starts from the diff.
             worktree: the run's worktree.
@@ -198,6 +202,7 @@ class ImplementationRun:
         self._thresholds = thresholds or LoopThresholds()
         self._limits = limits or ToolLimits()
         self._summarizer = summarizer
+        self._archive = archive
         self._vcs = vcs
         self._worktree = worktree
         self._control = control
@@ -454,7 +459,13 @@ class ImplementationRun:
         definition = step_for(stage)
         kind = STAGE_ARTIFACTS[stage]
         step_id = StepId(derive_id(run_id, stage.value, task.id, str(revision)))
-        window = Window(self._tokenizer, self._policy, summarizer=self._summarizer)
+        window = Window(
+            self._tokenizer,
+            self._policy,
+            summarizer=self._summarizer,
+            archive=self._archive,
+            step=str(step_id),
+        )
         await window.add_prompt(assemble(spec.prompt_layers))
         await window.add_task(render_task(task, plan, position))
         await window.add_notes(NOTES_POINTER)

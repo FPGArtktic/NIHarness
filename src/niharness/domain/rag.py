@@ -22,7 +22,7 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from niharness.domain.identity import Digest
+from niharness.domain.identity import Digest, digest_text
 
 
 class ChunkKind(StrEnum):
@@ -86,6 +86,23 @@ class Chunk(BaseModel):
             marked = f"{self.path} {pages}"
             return f"{marked} (OCR)" if self.provenance == "ocr" else marked
         return self.path
+
+
+class ChunkPolicy(BaseModel):
+    """How much text one chunk may carry.
+
+    Here rather than beside the document reader, because it is a property of a
+    chunk and `Chunk` is here - and because the run-context chunker needs it
+    too, which the other way round would be a circular import.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    max_characters: int = Field(default=2_000, ge=200)
+    """A chunk this size embeds well and still carries its context."""
+
+    min_characters: int = Field(default=200, ge=0)
+    """A chunk smaller than this takes the next page with it, when there is one."""
 
 
 class Hit(BaseModel):
@@ -185,3 +202,106 @@ def render_hits(hits: Sequence[Hit], *, searched: Sequence[str] = ()) -> str:
             body = f"{body[:MAX_HIT_CHARS]}\n... [chunk truncated]"
         lines += ["", f"[{position}] {hit.chunk.citation()}  score {hit.score:.3f}", body]
     return "\n".join(lines)
+
+
+def context_chunks(
+    texts: Sequence[str],
+    *,
+    run_id: str,
+    step: str = "",
+    policy: ChunkPolicy | None = None,
+) -> tuple[Chunk, ...]:
+    """Turn what compaction dropped into chunks the run's own collection can hold.
+
+    This is what makes compaction lossless from the model's side. The event log
+    keeps everything regardless - compaction is a view policy and never touches
+    it - but the *model* cannot read the event log. Indexing what left the
+    window is what lets `rag_query` hand it back, which is the promise the
+    context design makes and the reason the run's collection is in the default
+    search set.
+
+    A chunk's id is derived from its text, so compacting the same content twice
+    writes one point rather than two: a step that is rolled back and retried
+    drops much of the same material again.
+
+    Args:
+        texts: the content of each item that left the window, in order.
+        run_id: the run whose collection these belong to.
+        step: the step that dropped them, for the citation.
+        policy: how long a chunk may be; the document default when omitted.
+
+    Returns:
+        One or more chunks per text, in order, skipping anything blank.
+    """
+    limits = policy or ChunkPolicy()
+    where = f"{run_id}/{step}" if step else run_id
+    chunks: list[Chunk] = []
+    for text in texts:
+        body = text.strip()
+        if not body:
+            continue
+        for part in _split_text(body, limits):
+            digest = digest_text(part)
+            chunks.append(
+                Chunk(
+                    id=f"{run_id}:{digest}",
+                    kind=ChunkKind.RUN_CONTEXT,
+                    path=where,
+                    text=part,
+                    file_digest=digest,
+                    provenance="compacted",
+                ),
+            )
+    return tuple(chunks)
+
+
+def _split_text(body: str, policy: ChunkPolicy) -> tuple[str, ...]:
+    """Split one dropped item so each chunk is still worth embedding.
+
+    A tool result can be the whole of a build log, and an embedding of ten
+    thousand characters means nothing in particular. Three boundaries, each a
+    worse one than the last - the same ordering `domain.documents` uses on an
+    oversized page: a paragraph break, then a line break, then the limit
+    itself, which cuts mid-sentence and is only reached by text that offers
+    nothing better.
+    """
+    if len(body) <= policy.max_characters:
+        return (body,)
+    parts = _packed(body.split("\n\n"), "\n\n", policy.max_characters)
+    if all(len(part) <= policy.max_characters for part in parts):
+        return parts
+    finer: list[str] = []
+    for part in parts:
+        if len(part) <= policy.max_characters:
+            finer.append(part)
+            continue
+        finer += _packed(part.splitlines(), "\n", policy.max_characters)
+    return tuple(
+        piece
+        for part in finer
+        for piece in _hard_split(part, policy.max_characters)
+        if piece.strip()
+    )
+
+
+def _packed(pieces: Sequence[str], joiner: str, limit: int) -> tuple[str, ...]:
+    """Join `pieces` back together, starting a new part before exceeding `limit`."""
+    parts: list[str] = []
+    current: list[str] = []
+    length = 0
+    for piece in pieces:
+        if current and length + len(piece) > limit:
+            parts.append(joiner.join(current))
+            current, length = [], 0
+        current.append(piece)
+        length += len(piece) + len(joiner)
+    if current:
+        parts.append(joiner.join(current))
+    return tuple(part for part in parts if part.strip())
+
+
+def _hard_split(part: str, limit: int) -> tuple[str, ...]:
+    """Cut a part that offers no boundary of its own, at the limit."""
+    if len(part) <= limit:
+        return (part,)
+    return tuple(part[at : at + limit] for at in range(0, len(part), limit))

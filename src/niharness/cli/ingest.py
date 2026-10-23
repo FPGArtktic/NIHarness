@@ -27,9 +27,9 @@ from niharness.cli.blocking import blocking
 from niharness.cli.output import emit, fail
 from niharness.cli.retrieval import open_retrieval
 from niharness.config import HarnessConfig
-from niharness.domain.documents import ChunkPolicy, OcrPolicy, chunk_pages, read_summary
+from niharness.domain.documents import OcrPolicy, chunk_pages, read_summary
 from niharness.domain.identity import digest_text
-from niharness.domain.rag import Chunk
+from niharness.domain.rag import Chunk, ChunkPolicy
 from niharness.ports.vector_store import VectorStoreError
 
 EX_UNAVAILABLE = 69

@@ -6,12 +6,14 @@ from collections.abc import Sequence
 
 import pytest
 
-from niharness.application.window import MeasurementMissingError, Window
+from niharness.application.window import ContextArchive, MeasurementMissingError, Window
 from niharness.domain.artifacts import ContextSummary
 from niharness.domain.context import CompactionPolicy, ItemKind
 from niharness.domain.identity import CallId
 from niharness.domain.messages import Message, MessageRole, ToolCallRequest
+from niharness.domain.rag import Chunk, Hit
 from niharness.domain.tools import ToolName, ToolResult
+from niharness.ports.vector_store import StoreUnavailableError
 
 POLICY = CompactionPolicy(
     context_window=1_024,
@@ -225,3 +227,119 @@ async def test_the_window_records_what_each_item_is() -> None:
         ItemKind.NOTES,
         ItemKind.INSTRUCTION,
     ]
+
+
+# ------------------------------------------- what compaction drops is kept
+
+
+class RecordingStore:
+    """A vector store that remembers what it was asked to keep."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.kept: list[tuple[str, tuple[str, ...]]] = []
+        self._fail = fail
+
+    async def ensure_collection(self, name: str) -> None:
+        return None
+
+    async def upsert(self, collection: str, chunks: Sequence[Chunk]) -> int:
+        if self._fail:
+            raise StoreUnavailableError("http://127.0.0.1:6333", "refused")
+        self.kept.append((collection, tuple(chunk.text for chunk in chunks)))
+        return len(chunks)
+
+    async def query(self, collection: str, text: str, top_k: int) -> tuple[Hit, ...]:
+        raise AssertionError("compaction never queries")
+
+    async def forget(self, collection: str, path: str) -> int:
+        raise AssertionError("compaction never forgets")
+
+    async def drop(self, collection: str) -> None:
+        raise AssertionError("compaction never drops a collection")
+
+
+async def test_what_compaction_drops_is_indexed_under_the_runs_collection() -> None:
+    """The event log keeps it either way; the model cannot read the event log.
+
+    Indexing what leaves the window is what makes `rag_query` able to hand it
+    back, which is the promise the context design makes and the reason the
+    run's own collection is in retrieval's default search set.
+    """
+    store = RecordingStore()
+    window = Window(
+        FakeTokenizer(),
+        CompactionPolicy(context_window=1_024, threshold=0.3, keep_last_tool_results=1),
+        archive=ContextArchive(store=store, collection="run-7", run_id="run-7"),
+        step="t1",
+    )
+    await window.add_prompt("policy")
+    for index in range(6):
+        await window.add_tool_result(
+            ToolResult(
+                call_id=CallId(f"c{index}"),
+                tool=ToolName.READ_FILE,
+                ok=True,
+                content=f"a distinctive line about file {index} " * 12,
+                summary=f"read_file src/{index}.py",
+            ),
+        )
+    snapshot = await window.prepare()
+
+    assert snapshot.compacted
+    assert snapshot.archived > 0, "something left the window and was kept"
+    assert store.kept, "and it went to the run's collection"
+    collection, texts = store.kept[0]
+    assert collection == "run-7"
+    assert any("distinctive line about file 0" in text for text in texts)
+
+
+async def test_a_store_that_is_down_costs_recall_and_not_the_step() -> None:
+    """The window is already compacted by the time the archive is written.
+
+    Failing the step would trade a recoverable loss for an unrecoverable one.
+    """
+    window = Window(
+        FakeTokenizer(),
+        CompactionPolicy(context_window=1_024, threshold=0.3, keep_last_tool_results=1),
+        archive=ContextArchive(
+            store=RecordingStore(fail=True),
+            collection="run-7",
+            run_id="run-7",
+        ),
+    )
+    await window.add_prompt("policy")
+    for index in range(6):
+        await window.add_tool_result(
+            ToolResult(
+                call_id=CallId(f"c{index}"),
+                tool=ToolName.READ_FILE,
+                ok=True,
+                content=f"line about {index} " * 20,
+                summary=f"read_file src/{index}.py",
+            ),
+        )
+    snapshot = await window.prepare()
+    assert snapshot.compacted
+    assert snapshot.archived == 0
+
+
+async def test_without_an_archive_the_window_still_compacts() -> None:
+    """Retrieval is optional; compaction is not."""
+    window = Window(
+        FakeTokenizer(),
+        CompactionPolicy(context_window=1_024, threshold=0.3, keep_last_tool_results=1),
+    )
+    await window.add_prompt("policy")
+    for index in range(6):
+        await window.add_tool_result(
+            ToolResult(
+                call_id=CallId(f"c{index}"),
+                tool=ToolName.READ_FILE,
+                ok=True,
+                content=f"line about {index} " * 20,
+                summary=f"read_file src/{index}.py",
+            ),
+        )
+    snapshot = await window.prepare()
+    assert snapshot.compacted
+    assert snapshot.archived == 0

@@ -13,6 +13,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Compaction writes what it drops into the run's own collection, which is what
+  makes it lossless from the model's side. The event log kept everything
+  regardless - compaction is a view policy and never touches it - but the
+  *model* cannot read the event log, and `docs/concepts/context.md` had been
+  describing this recovery as a fact since before it existed. A dropped item is
+  chunked with a content-derived id, so a step rolled back and retried writes
+  the same material once, and an item too large to embed well is split on a
+  paragraph break, then a line break, then at the limit - three boundaries,
+  each worse than the last, the same ordering the document reader uses on an
+  oversized page. `ChunkPolicy` moved to `domain/rag.py` beside `Chunk`, where
+  it belongs and where the run-context chunker can reach it without a circular
+  import.
+- A vector store that is down costs the model its recall and not the step. The
+  window is already compacted by the time the archive is written, so failing
+  there would trade a recoverable loss for an unrecoverable one; it is logged
+  and `context.compacted` reports `indexed_chunks: 0`, a field that had existed
+  and never been populated.
+- L1 reaches the 20 tasks the methodology asks for, and `forbid_content` with
+  them: asserting what a file contains cannot say that something was removed,
+  which is the whole point of a deletion task. The six new ones are scored on
+  end state and effect rather than route, on the evidence of three passes where
+  the route metrics moved by up to three tasks in fourteen with nothing
+  changed. The fixture's baseline is now stated as an invariant - format clean,
+  lint clean, exactly one deliberate test failure - because a task that adds a
+  second red thing makes every gate-running task fix somebody else's problem.
 - A record reads the harness commit once, at the start of the run, as the dirty
   flag already did. It was read as each record was written, so a run that
   straddled a commit labelled its later passes with code they were not

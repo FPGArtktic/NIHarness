@@ -31,7 +31,12 @@ from niharness.adapters.podman import (
     SandboxImageMissingError,
     SandboxUnavailableError,
 )
-from niharness.application import ImplementationRun, RunResult, StepRunner
+from niharness.application import (
+    ContextArchive,
+    ImplementationRun,
+    RunResult,
+    StepRunner,
+)
 from niharness.application.summarizer import ModelSummarizer
 from niharness.cli.blocking import blocking
 from niharness.cli.output import emit, fail
@@ -246,6 +251,15 @@ async def execute(
             thresholds=config.loop,
             limits=config.tools,
             summarizer=ModelSummarizer(utility, config.models.utility.name),
+            archive=(
+                ContextArchive(
+                    store=retrieval.store,
+                    collection=config.vector.run_collection(run_id),
+                    run_id=run_id,
+                )
+                if retrieval.store is not None
+                else None
+            ),
             vcs=vcs,
             worktree=worktree,
             control=control,

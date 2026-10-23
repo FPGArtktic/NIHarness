@@ -11,9 +11,15 @@ events it is handed.
 from niharness.application.implement import ImplementationRun, RunResult, TaskResult
 from niharness.application.step_runner import RunnerLimitError, StepRunner
 from niharness.application.summarizer import ModelSummarizer, Summarizer
-from niharness.application.window import MeasurementMissingError, Window, WindowSnapshot
+from niharness.application.window import (
+    ContextArchive,
+    MeasurementMissingError,
+    Window,
+    WindowSnapshot,
+)
 
 __all__ = [
+    "ContextArchive",
     "ImplementationRun",
     "MeasurementMissingError",
     "ModelSummarizer",

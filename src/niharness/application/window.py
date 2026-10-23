@@ -19,6 +19,7 @@ refuses to do.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import structlog
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,8 +38,10 @@ from niharness.domain.context import (
 )
 from niharness.domain.identity import CallId, Digest, digest_text
 from niharness.domain.messages import Message, MessageRole, ToolCallRequest
+from niharness.domain.rag import context_chunks
 from niharness.domain.tools import ToolResult
 from niharness.ports.tokenizer import Tokenizer
+from niharness.ports.vector_store import VectorStore, VectorStoreError
 
 _log = structlog.get_logger(__name__)
 
@@ -56,6 +59,22 @@ class Entry(BaseModel):
     message: Message
 
 
+@dataclass(frozen=True)
+class ContextArchive:
+    """Where compaction puts what it drops, so `rag_query` can hand it back.
+
+    The event log keeps everything regardless - compaction is a view policy
+    and never touches it - but the *model* cannot read the event log. Indexing
+    what left the window is what makes the loss recoverable, which is the
+    promise the context design makes and the reason the run's own collection
+    is in retrieval's default search set.
+    """
+
+    store: VectorStore
+    collection: str
+    run_id: str
+
+
 class WindowSnapshot(BaseModel):
     """The window as it will be sent, with what compaction did to get there."""
 
@@ -66,6 +85,11 @@ class WindowSnapshot(BaseModel):
     fill: float = Field(ge=0.0, le=1.0)
     plan: CompactionPlan | None = None
     summary: ContextSummary | None = None
+    archived: int = Field(
+        default=0,
+        ge=0,
+        description="Chunks of dropped context written to the run's collection.",
+    )
 
     @property
     def compacted(self) -> bool:
@@ -82,6 +106,8 @@ class Window:
         policy: CompactionPolicy,
         *,
         summarizer: Summarizer | None = None,
+        archive: ContextArchive | None = None,
+        step: str = "",
     ) -> None:
         """Wire the tokenizer and the policy.
 
@@ -91,10 +117,17 @@ class Window:
             summarizer: produces a ContextSummary when the deterministic passes
                 are not enough. Without one, folded-away turns are replaced by a
                 pointer to the event log rather than summarised.
+            archive: where to put what compaction drops. Without one the
+                window still compacts and the content is still in the event
+                log; it is only the model that cannot get it back.
+            step: which step this window belongs to, for the citation on an
+                archived chunk.
         """
         self._tokenizer = tokenizer
         self._policy = policy
         self._summarizer = summarizer
+        self._archive = archive
+        self._step = step
         self._entries: list[Entry] = []
         self._counts: dict[str, int] = {}
         self._next_seq = 0
@@ -247,7 +280,7 @@ class Window:
         plan = plan_compaction(
             [entry.item for entry in self._entries], self._policy, self._lookup
         )
-        summary = await self._apply(plan)
+        summary, archived = await self._apply(plan)
         messages = tuple(entry.message for entry in self._entries)
         tokens = await self._tokenizer.count_messages(messages)
         _log.info(
@@ -257,6 +290,7 @@ class Window:
             measured=tokens,
             summarised=len(plan.summarized_ids),
             overflow=plan.overflow,
+            archived=archived,
         )
         return WindowSnapshot(
             messages=messages,
@@ -264,14 +298,20 @@ class Window:
             fill=self._fill(tokens),
             plan=plan,
             summary=summary,
+            archived=archived,
         )
 
     def _fill(self, tokens: int) -> float:
         """Return window fill as a fraction of the context window, clamped to one."""
         return min(1.0, tokens / self._policy.context_window)
 
-    async def _apply(self, plan: CompactionPlan) -> ContextSummary | None:
-        """Rewrite the window to match `plan`, summarising what it folded away."""
+    async def _apply(self, plan: CompactionPlan) -> tuple[ContextSummary | None, int]:
+        """Rewrite the window to match `plan`, summarising and archiving what it folds.
+
+        Returns:
+            The summary, when one was produced, and how many chunks of dropped
+            content were archived.
+        """
         kept = {item.id: item for item in plan.items}
         folded = [entry for entry in self._entries if entry.item.id not in kept]
         rebuilt: list[Entry] = []
@@ -289,15 +329,38 @@ class Window:
             else:
                 rebuilt.append(entry)
         self._entries = rebuilt
+        archived = await self._keep(folded)
 
         if not plan.needs_summary:
-            return None
+            return None, archived
         transcript = "\n\n".join(
             entry.message.content for entry in folded if entry.item.kind in TURN_KINDS
         )
         summary = await self._summarize(transcript, len(plan.summarized_ids))
         await self._insert_summary(summary.text, plan)
-        return summary if summary.text else None
+        return (summary if summary.text else None), archived
+
+    async def _keep(self, folded: Sequence[Entry]) -> int:
+        """Index what left the window, and never let that failure end a step.
+
+        The window is already compacted by the time this runs, so a store that
+        is down costs the model its recall and nothing else. Reporting it as a
+        step failure would trade a recoverable loss for an unrecoverable one.
+        """
+        if self._archive is None or not folded:
+            return 0
+        chunks = context_chunks(
+            [entry.message.content for entry in folded],
+            run_id=self._archive.run_id,
+            step=self._step,
+        )
+        if not chunks:
+            return 0
+        try:
+            return await self._archive.store.upsert(self._archive.collection, chunks)
+        except VectorStoreError as error:
+            _log.warning("context.not_archived", error=str(error), chunks=len(chunks))
+            return 0
 
     async def _summarize(self, transcript: str, folded: int) -> ContextSummary:
         """Summarise `transcript`, or state plainly that it was not summarised.

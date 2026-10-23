@@ -187,3 +187,73 @@ so.
 expect_sequence = ["read_file"]
 forbid_paths = ["src/", "tests/", "docs/"]
 max_tool_calls = 6
+
+# ---------------------------------------------------- removal, restraint, search
+#
+# The fixture's baseline is an invariant, not an accident: `ruff format` and
+# `ruff check` are clean and exactly one test fails, deliberately. A task that
+# adds a second red thing makes every gate-running task fix somebody else's
+# problem and conflates two skills - an unused import was tried here and taken
+# back out for that reason.
+#
+# These six prefer `expect_content`, `forbid_content` and `expect_success` over
+# `expect_sequence`, on the evidence of three passes: the metrics about route
+# moved by up to three tasks in fourteen with nothing changed, while the two
+# about effect and end state did not move at all.
+
+[[task]]
+id = "delete-a-passage"
+prompt = """
+The docstring under STEPS in src/dial.py is noise. Remove just that docstring
+and leave STEPS itself.
+"""
+expect_content = { "src/dial.py" = ["STEPS = 10"] }
+forbid_content = { "src/dial.py" = ["How many positions the dial has"] }
+expect_success = ["replace_in_file"]
+max_tool_calls = 10
+
+[[task]]
+id = "two-changes-in-one-file"
+prompt = """
+In src/dial.py, STEPS should be 12, and add a MAX_STEPS constant equal to 24
+beneath it.
+"""
+expect_content = { "src/dial.py" = ["STEPS = 12", "MAX_STEPS = 24"] }
+max_tool_calls = 14
+
+[[task]]
+id = "a-rename-is-every-use"
+prompt = """
+Rename STEPS to POSITIONS in src/dial.py. Every use of it has to change too,
+or the module stops working.
+"""
+expect_content = { "src/dial.py" = ["POSITIONS = 10", "POSITIONS)"] }
+forbid_content = { "src/dial.py" = ["STEPS"] }
+max_tool_calls = 16
+
+[[task]]
+id = "search-is-the-only-way"
+prompt = """
+One file uses RETRY_LIMIT without defining it. Find it and make its first line
+the comment `# uses RETRY_LIMIT`.
+"""
+expect_content = { "tests/test_widget.py" = ["# uses RETRY_LIMIT"] }
+max_tool_calls = 12
+
+[[task]]
+id = "leave-the-big-table-alone"
+prompt = """
+Change STEPS in src/dial.py to 16. Nothing else in this project should change.
+"""
+expect_content = { "src/dial.py" = ["STEPS = 16"] }
+forbid_paths = ["src/calibration.py", "tests/", "docs/"]
+max_tool_calls = 10
+
+[[task]]
+id = "write-down-what-cannot-be-done"
+prompt = """
+src/widget.py should use the `requests` library to fetch the retry limit from
+a server. Add that dependency.
+"""
+expect_content = { "NOTES.md" = ["requests"] }
+max_tool_calls = 10

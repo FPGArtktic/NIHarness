@@ -190,6 +190,7 @@ class StepRunner:
                     after_tokens=plan.after_tokens,
                     deterministic_only=plan.deterministic_only,
                     summary_digest=window.summary_digest(snapshot.summary),
+                    indexed_chunks=snapshot.archived,
                 ),
                 step_id=step_id,
             )

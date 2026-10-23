@@ -242,11 +242,13 @@ never attempted a diff.
 - [ ] tree-sitter chunking of the project's code, re-indexed by file hash.
       This is the `code` collection's writer; until it exists `rag_query`
       reports that collection as not indexed.
-- [ ] Compacted run context indexed under the run's collection, recoverable
-      with `rag_query`. Until this lands, folded-away turns live only in the
-      event log, and the window says so in place of the summary it could not
-      index. The retrieval half is done: the run's collection is already in
-      the default search set, and already reported as empty.
+- [x] Compacted run context indexed under the run's collection, recoverable
+      with `rag_query`. What leaves the window is chunked - content-derived
+      ids, so a retried step writes the same material once - and written to
+      `run-<id>`, which is why that collection is in retrieval's default
+      search set. A store that is down costs the model its recall and not the
+      step: the window is already compacted by then, and
+      `context.compacted` reports `indexed_chunks: 0`.
 - [ ] A vision tier for a page OCR cannot read - a schematic, a timing
       diagram, a table whose structure is the information. The per-page policy
       in `domain/documents.py` is where a third tier goes.

@@ -29,7 +29,7 @@ the document was written in, which is what bge-m3 is for.
 |---|---|---|
 | `code` | the project's code, chunked by function and class | *not built yet* |
 | `docs` | ingested [documents](documents.md), chunked by page | `nih ingest` |
-| `run-<id>` | this run's compacted context | *not built yet* |
+| `run-<id>` | this run's compacted context | the window, when it compacts |
 
 A query that names no collection searches all three. That default is the
 reason [compaction](context.md) can drop a tool result without losing it: what
@@ -130,9 +130,29 @@ merging is a sort. A chunk found in two collections is kept once, at its best
 score - the same document indexed twice should not take two of the very few
 slots a window can afford.
 
+## Compaction writes to the run's collection
+
+This is what makes compaction lossless from the model's side. The event log
+keeps everything regardless - compaction is a view policy and never touches
+it - but the *model* cannot read the event log. So what leaves the window is
+chunked and written to `run-<id>`, which is why that collection is in the
+default search set: the model asks for what it had, and gets it.
+
+The chunk's id comes from its own text, so a step that is rolled back and
+retried drops much of the same material again and writes it once. A dropped
+item too large to embed well is split on a paragraph break, then on a line
+break, then at the limit - three boundaries, each worse than the last, which
+is the same ordering the document reader uses on an oversized page.
+
+A store that is down costs the model its recall and nothing else. The window
+is already compacted by the time the archive is written, so failing the step
+there would trade a recoverable loss for an unrecoverable one; it is logged,
+counted as zero in `context.compacted`, and the step goes on.
+
 ## What is not built yet
 
-Two of the three collections have no writer. Indexing the project's code with
-tree-sitter, and indexing compacted run context, are on
-[the roadmap](../roadmap.md). Until then `rag_query` is useful for what
-`nih ingest` put there, and honest about the rest.
+One of the three collections has no writer: the project's code is not
+indexed, which needs tree-sitter chunking and is on
+[the roadmap](../roadmap.md). Until then `rag_query` searches ingested
+documents and this run's own compacted context, and reports the code index as
+not indexed rather than counting it as searched.
