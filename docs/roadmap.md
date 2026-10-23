@@ -169,9 +169,16 @@ flag on the sandbox adapter:
       ends it ([ADR 0014](adr/0014-review-starts-from-the-diff.md)).
 - [ ] The full gate tier in a run. A task the reviewer acknowledges ends with
       `full_gate_pending`; `nih gate --tier full` has to be run by hand.
-- [ ] Structured output: JSON Schema for every artifact, GBNF where the backend
-      supports it.
-- [ ] Forced finalisation two calls before the budget ends.
+- [x] Structured output: a JSON Schema for every artifact, exported under
+      `schemas/`, sent as `response_format: json_schema`, with GBNF added where
+      the backend advertises it. A live run found the one case that does not
+      compose - a schema and a tool grammar in the same request, which
+      llama.cpp refuses outright - so the artifact's schema is applied on the
+      finalising turn only.
+- [x] Forced finalisation, at `finalization_margin` calls before the budget
+      ends: `must_finalize` makes the next model call with
+      `tool_choice: none`, so a step ends with a written state rather than a
+      cut-off tool call.
 - [ ] `nih run`: plan and implement without stopping for approval.
 
 ## What the live runs showed, and what is still open
