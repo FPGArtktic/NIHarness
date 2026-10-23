@@ -3,6 +3,7 @@
 """The commands that work without a model, a container or a vector store."""
 
 import asyncio
+import difflib
 import json
 from pathlib import Path
 
@@ -228,7 +229,24 @@ def test_the_generated_files_in_the_tree_are_up_to_date(tmp_path: Path) -> None:
         for relative in generated
         if (repo / relative).read_bytes() != (tmp_path / relative).read_bytes()
     ]
-    assert not stale, f"run `nih docs generate`: {', '.join(stale)}"
+    if stale:
+        # The diff, not just the name. A page that regenerates differently on
+        # another machine is an environment dependence to be found, and "run
+        # nih docs generate" sends the reader to a command that will look like
+        # it did nothing. Two CI runs were spent guessing.
+        report: list[str] = []
+        for relative in stale:
+            report += list(
+                difflib.unified_diff(
+                    (repo / relative).read_text(encoding="utf-8").splitlines(),
+                    (tmp_path / relative).read_text(encoding="utf-8").splitlines(),
+                    fromfile=f"committed/{relative}",
+                    tofile=f"regenerated/{relative}",
+                    lineterm="",
+                    n=1,
+                ),
+            )[:40]
+        pytest.fail("run `nih docs generate`:\n" + "\n".join(report))
 
 
 def test_runs_lists_nothing_when_there_are_no_runs(tmp_path: Path) -> None:
@@ -476,7 +494,10 @@ def test_the_generated_cli_page_does_not_depend_on_the_terminal(
         monkeypatch.setenv("COLUMNS", str(width))
         rendered.append(render_cli_page(real_app))
     assert rendered[0] == rendered[1], "the page must not move with the terminal"
-    assert max(len(line) for line in rendered[0].splitlines()) <= HELP_WIDTH
+    # Reported with the offending line, because two CI runs were spent guessing
+    # which line it was from a bare `assert 188 <= 80`.
+    over = [line for line in rendered[0].splitlines() if len(line) > HELP_WIDTH]
+    assert not over, f"{len(over)} line(s) wider than {HELP_WIDTH}: {over[:3]!r}"
 
 
 def test_the_width_is_put_back_after_generating() -> None:
