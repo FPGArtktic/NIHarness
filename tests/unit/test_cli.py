@@ -449,3 +449,24 @@ def test_a_record_calls_the_tree_dirty_for_the_code_not_for_its_own_output(
 
     (repo / "src" / "a.py").write_text("x = 2\n", encoding="utf-8")
     assert _dirty(repo) is True, "a change to the code does"
+
+
+def test_the_generated_cli_page_does_not_depend_on_the_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Click wraps `--help` to the terminal, so the page has to pin a width.
+
+    Without that, the page depends on whoever ran `nih docs generate` and the
+    staleness check guarding it can never agree between two machines. It did
+    not: CI regenerated a different `cli.md` on its first run and failed,
+    correctly.
+    """
+    from niharness.cli.docs import HELP_WIDTH, render_cli_page
+    from niharness.cli.main import app as real_app
+
+    rendered = []
+    for columns in ("40", "250"):
+        monkeypatch.setenv("COLUMNS", columns)
+        rendered.append(render_cli_page(real_app))
+    assert rendered[0] == rendered[1]
+    assert max(len(line) for line in rendered[0].splitlines()) <= HELP_WIDTH

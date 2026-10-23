@@ -9,12 +9,52 @@ Models are **not** distributed with this repository. Download them yourself,
 record the license you accepted, and point the configuration at the local
 endpoint that serves them.
 
-| Role group | Model | Serving | License to verify at download |
-|---|---|---|---|
-| plan, implement, review, fix, research | Qwen3-Coder-30B-A3B-Instruct, Q4_K_M | `llama-server` | Apache-2.0 |
-| brainstorm, optional reasoning | Qwen3-30B-A3B-Thinking | `llama-server` | Apache-2.0 |
-| summaries, compaction, routing | BitNet b1.58-2B-4T | `bitnet.cpp` | MIT |
-| embeddings | bge-m3, or a BitNet embedding model on `cpu-only` | `llama-server` | MIT / Apache-2.0 |
+## What has actually been run
+
+Every record in `benchmarks/results/` names one family. The configuration's
+defaults are something else, and naming them as though they were in use would
+be describing an intention in the present tense:
+
+| Model | Used for | Serving | Measured | License to verify at download |
+|---|---|---|---|---|
+| Ternary Bonsai 2, 4B / 9B / 27B (PrismML) | every live run so far: plan execution, implement, review, fix | `llama-server`, **PrismML fork** | L0 throughput, L1 tool calling (4B) | Apache-2.0 |
+| bge-m3 | embeddings for `nih ingest` and `rag_query` | any `/v1/embeddings` endpoint | used, not benchmarked | MIT |
+
+The PrismML fork is not optional for those weights: `PQ2_0` and `PTQ1_0` are
+its packings and upstream llama.cpp does not know the tensor types. Pick
+`PQ2_0` - see the measurements below, where the denser `PTQ1_0` is 25x slower
+at prompt processing on a CPU.
+
+## What the configuration defaults to
+
+Written into the profiles and never exercised. Here because the defaults are
+real and someone will serve them, not because anything says they work:
+
+| Section | Model | Serving | Status | License to verify at download |
+|---|---|---|---|---|
+| `[models.main]` | Qwen3-Coder-30B-A3B-Instruct, Q4_K_M | `llama-server` | no run, no record | Apache-2.0 |
+| `[models.thinking]` | Qwen3-30B-A3B-Thinking | `llama-server` | the brainstormer is a stub, so unreachable | Apache-2.0 |
+| `[models.utility]` | BitNet b1.58-2B-4T | `bitnet.cpp` | no run, no record | MIT |
+| `[models.embeddings]` | a BitNet embedding model, on `cpu-only` | `llama-server` | no run; bge-m3 is what has been used | MIT |
+
+## Vision, which is not wired up
+
+There is no vision model in this harness today and no configuration section
+for one. It belongs to the document tier: `nih ingest` chooses per page
+between a text layer and OCR, and a third tier is needed for a page where
+neither works - a schematic, a timing diagram, a table whose structure *is*
+the information, which `tesseract` returns as a scatter of words in the wrong
+order.
+
+The per-page choice in `domain/documents.py` is where it goes, and the shape
+of the decision is already there: a tier is tried, and its answer has to beat
+the previous one to replace it. What is missing is the port, the adapter and
+the policy for when a rendering is worth a vision model's tokens.
+[The roadmap](../roadmap.md) tracks it. Any model served over an
+OpenAI-compatible `/v1/chat/completions` with image content would fit the
+existing inference port - Qwen3-VL and the Gemma 3 vision variants are the
+obvious candidates, both Apache-2.0 and Gemma's own license respectively, and
+neither has been tried here.
 
 <div class="refusal" markdown>
 The licenses above are what upstream published when this page was written.

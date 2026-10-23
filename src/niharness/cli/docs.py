@@ -160,9 +160,23 @@ def render_config_page() -> str:
     return "\n".join([*lines, ""])
 
 
+HELP_WIDTH = 80
+"""The width `--help` is rendered at for the generated reference page.
+
+Click wraps to the terminal, so without pinning this the page depends on
+whoever ran `nih docs generate` - and the staleness check that guards it can
+never agree between two machines. It did not: CI regenerated a different
+`cli.md` on its first run and failed, correctly.
+"""
+
+
 def _help_text(app: typer.Typer, args: Sequence[str]) -> str:
-    """Return the help output of a command, exactly as a user sees it."""
-    result = CliRunner().invoke(app, [*args, "--help"])
+    """Return the help output of a command, at a fixed width.
+
+    A user sees their own terminal's width; a committed page has to see one
+    width, or it is not reproducible.
+    """
+    result = CliRunner().invoke(app, [*args, "--help"], env={"COLUMNS": str(HELP_WIDTH)})
     return result.output.strip()
 
 
