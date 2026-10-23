@@ -13,6 +13,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Correction, and the first provenanced record of the full suite.** Three
+  passes of the 20 tasks from one clean commit put `passed_ratio` at
+  **0.65 - 0.85** - thirteen to seventeen of twenty. A single pass taken right
+  after the refusal-quoting change read 0.85, and quoting that as the result
+  took the top of a four-task range for its centre. The direction holds: the
+  one "before" pass was 0.55, below the whole of the after-range. The
+  magnitude does not, and the single pass should not have been reported
+  without the repeats - which is the same mistake `--repeat` was built to
+  prevent, made while the feature sat there unused.
+- Six of the twenty tasks pass once or twice in three, and two fail every
+  time: `two-places-must-agree`, where the model changes one of two files and
+  commits, and `write-down-what-cannot-be-done`, where the policy says to
+  record an unavailable dependency in `NOTES.md` and it does not. The second
+  is the cleanest test of obedience to a stated rule in the suite rather than
+  of any skill.
 - A degenerate response never enters the window. Refusing it in the loop was
   not enough: the executor recorded the assistant turn *before* the loop
   judged it, so the junk was already in the window and the **next**

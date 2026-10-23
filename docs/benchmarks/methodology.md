@@ -54,21 +54,27 @@ cannot carry the difference.
 
 ### Prefer an expectation about effect over one about route
 
-Three passes of the identical 14 tasks, nothing changed between them:
+Three passes of the identical suite, nothing changed between them. The
+20-task set at `6e43ea8`, on a 4B:
 
 | Metric | Range across 3 passes |
 |---|---|
-| `passed_ratio` | 0.643 - 0.857 |
-| `correct_sequence_ratio` | 0.857 - 1.0 |
-| `correct_arguments_ratio` | 0.857 - 1.0 |
-| `loop_incidents_per_task` | 0.214 - 0.571 |
-| `effective_ratio` | **0.929 - 0.929** |
-| `complete_ratio` | **0.929 - 0.929** |
+| `passed_ratio` | 0.65 - 0.85 |
+| `correct_sequence_ratio` | 0.95 - 1.0 |
+| `correct_arguments_ratio` | **1.0 - 1.0** |
+| `effective_ratio` | 0.95 - 1.0 |
+| `complete_ratio` | 0.8 - 0.9 |
+| `terminated_ratio` | 0.95 - 1.0 |
+| `loop_incidents_per_task` | 0.55 - 0.8 |
 
-The two that did not move are the two that ask about **effect** and **end
-state**; everything measuring the route varies by up to three tasks in
-fourteen. And both of the failures that repeated in all three passes were
-caught *only* by those two.
+`passed_ratio` spans four tasks in twenty with the code unchanged, which is
+the number to keep in mind before reading any single pass as a result. Six of
+the twenty passed once or twice out of three; two failed every time.
+
+An earlier three passes of the 14-task set showed the same shape and
+sharpened one point: the metrics about **effect** and **end state** did not
+move at all while the route metrics varied by up to three tasks, and both
+failures that repeated across every pass were caught *only* by those two.
 
 So a new task should prefer `expect_content` and `expect_success` over
 `expect_sequence`, and the reason is not only stability: an expectation about
