@@ -488,12 +488,26 @@ def test_the_generated_cli_page_does_not_depend_on_the_terminal(
     from niharness.cli.docs import HELP_WIDTH, render_cli_page
     from niharness.cli.main import app as real_app
 
+    # The conditions a CI runner presents, which is where this broke: rich
+    # decides it is talking to a terminal and emits ANSI, and the page arrives
+    # full of escape codes no width setting shortens.
+    for name, value in (
+        ("GITHUB_ACTIONS", "true"),
+        ("CI", "true"),
+        ("FORCE_COLOR", "1"),
+        ("TERM", "xterm-256color"),
+    ):
+        monkeypatch.setenv(name, value)
+
     rendered = []
     for width in (40, 250):
         monkeypatch.setattr(rich_utils, "MAX_WIDTH", width)
+        monkeypatch.setattr(rich_utils, "COLOR_SYSTEM", "truecolor")
+        monkeypatch.setattr(rich_utils, "FORCE_TERMINAL", True)
         monkeypatch.setenv("COLUMNS", str(width))
         rendered.append(render_cli_page(real_app))
     assert rendered[0] == rendered[1], "the page must not move with the terminal"
+    assert "\x1b" not in rendered[0], "a committed page carries no escape codes"
     # Reported with the offending line, because two CI runs were spent guessing
     # which line it was from a bare `assert 188 <= 80`.
     over = [line for line in rendered[0].splitlines() if len(line) > HELP_WIDTH]
@@ -501,12 +515,13 @@ def test_the_generated_cli_page_does_not_depend_on_the_terminal(
 
 
 def test_the_width_is_put_back_after_generating() -> None:
-    """A user's own `--help` must not inherit the page's width."""
+    """A user's own `--help` must not inherit the page's width or lose its colour."""
     from typer import rich_utils
 
     from niharness.cli.docs import render_cli_page
     from niharness.cli.main import app as real_app
 
-    before = rich_utils.MAX_WIDTH
+    before = (rich_utils.MAX_WIDTH, rich_utils.COLOR_SYSTEM, rich_utils.FORCE_TERMINAL)
     render_cli_page(real_app)
-    assert before == rich_utils.MAX_WIDTH
+    after = (rich_utils.MAX_WIDTH, rich_utils.COLOR_SYSTEM, rich_utils.FORCE_TERMINAL)
+    assert before == after

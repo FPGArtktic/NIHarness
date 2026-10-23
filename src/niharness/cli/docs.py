@@ -173,31 +173,40 @@ first run and failed, correctly.
 
 
 @contextmanager
-def _pinned_width(columns: int) -> Iterator[None]:
-    """Render Typer's help at `columns`, whatever the environment thinks.
+def _plain(columns: int) -> Iterator[None]:
+    r"""Render Typer's help as plain text at `columns`, whatever the host thinks.
 
-    Typer formats help through rich and takes the width from its own
-    `rich_utils.MAX_WIDTH`, read from `TERMINAL_WIDTH` **at import time**.
-    `COLUMNS` is not consulted at all - which is worth stating, because the
-    first attempt at fixing this set `COLUMNS` and was a no-op that passed
-    locally only because the default already happened to be 80. On a CI
-    runner rich picks its own, much wider, default and the page came out at
-    188 columns.
+    Typer formats help through rich, and two of rich's decisions have to be
+    taken away from it for a *committed* page to be reproducible.
 
-    So the module attribute is set directly and restored. Blunt, but it is the
-    value that decides, and nothing else here can be relied on to reach it.
+    The width comes from `rich_utils.MAX_WIDTH`, read from `TERMINAL_WIDTH` at
+    import time; `COLUMNS` is never consulted, which is worth stating because
+    the first attempt at this set `COLUMNS` and was a no-op that passed
+    locally only because the default already happened to be 80.
+
+    The colour comes from `rich_utils.COLOR_SYSTEM` and `FORCE_TERMINAL`. On a
+    CI runner rich decides it is talking to a terminal and emits ANSI, so the
+    page arrives full of `\x1b[1m` - lines hundreds of characters long that no
+    width setting shortens, and a file that can never match the one committed
+    from a machine without a tty. Two runs were spent blaming the width for
+    that, because the assertion only said `188 <= 80`.
+
+    Both are module attributes, set directly and restored. Blunt, and they are
+    the values that decide.
     """
-    previous = rich_utils.MAX_WIDTH
+    saved = (rich_utils.MAX_WIDTH, rich_utils.COLOR_SYSTEM, rich_utils.FORCE_TERMINAL)
     rich_utils.MAX_WIDTH = columns
+    rich_utils.COLOR_SYSTEM = None
+    rich_utils.FORCE_TERMINAL = False
     try:
         yield
     finally:
-        rich_utils.MAX_WIDTH = previous
+        rich_utils.MAX_WIDTH, rich_utils.COLOR_SYSTEM, rich_utils.FORCE_TERMINAL = saved
 
 
 def _help_text(app: typer.Typer, args: Sequence[str]) -> str:
     """Return the help output of a command, at a fixed width."""
-    with _pinned_width(HELP_WIDTH):
+    with _plain(HELP_WIDTH):
         result = CliRunner().invoke(app, [*args, "--help"])
     return result.output.strip()
 
