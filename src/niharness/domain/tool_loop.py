@@ -162,6 +162,10 @@ class LoopState(BaseModel):
     rollback_reason: str = ""
     invalid_responses: int = Field(default=0, ge=0)
     results_by_arguments: dict[str, str] = Field(default_factory=dict)
+    failures_by_arguments: frozenset[str] = Field(
+        default_factory=frozenset,
+        description="Which memoised results were refusals, so a repeat can quote them.",
+    )
     stop_reason: StopReason | None = None
     final: FinalArtifact | None = None
 
@@ -467,7 +471,11 @@ def _handle_tool_call(
     key = f"{validated.tool}:{digest}"
     previous = state.results_by_arguments.get(key)
     if previous is not None:
-        text = synthetic_result(validated.tool, previous)
+        text = synthetic_result(
+            validated.tool,
+            previous,
+            failed=key in state.failures_by_arguments,
+        )
         repeated = state.model_copy(
             update={"synthetic_for": call.call_id, "synthetic_text": text},
         )
@@ -608,10 +616,21 @@ def observe_tool(
     working = working.model_copy(
         update={
             "pending_call": None,
+            # A failed call keeps its own answer, not a digest of it: the
+            # repeat message hands it back, and a hash is nothing a model can
+            # act on. A successful one keeps the digest, which is all the
+            # message needs for "you already have this".
             "results_by_arguments": {
                 **state.results_by_arguments,
-                f"{pending.tool}:{arguments_digest}": str(digest),
+                f"{pending.tool}:{arguments_digest}": (
+                    str(digest) if result.ok else result.content
+                ),
             },
+            "failures_by_arguments": (
+                state.failures_by_arguments
+                if result.ok
+                else state.failures_by_arguments | {f"{pending.tool}:{arguments_digest}"}
+            ),
         },
     )
     working = _record(
@@ -654,6 +673,7 @@ def restarted(state: LoopState) -> Step:
         update={
             "calls": (),
             "results_by_arguments": {},
+            "failures_by_arguments": frozenset(),
             "rollback_reason": "",
             "pending_call": None,
             "synthetic_for": None,

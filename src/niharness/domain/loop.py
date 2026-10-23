@@ -291,19 +291,46 @@ def next_level(
     return InterventionLevel(highest + 1)
 
 
-def synthetic_result(tool: str, previous_summary: str) -> str:
+MAX_REPEATED_DETAIL = 1_200
+"""How much of a refused call's own answer is repeated back to the model."""
+
+
+def synthetic_result(tool: str, previous: str, *, failed: bool = False) -> str:
     """Return the level-one synthetic tool result, produced without any model call.
+
+    When the repeated call had **failed**, its own answer is given again rather
+    than described. This used to interpolate a hex digest of the previous
+    result - "Digest of the previous result: 3f9a..." - which tells a model
+    nothing it can act on, and it was handed out at exactly the moment the
+    model most needed the refusal's words repeated.
+
+    Measured: on the 20-task L1 suite every one of nine failing tasks ended
+    with the same two interventions, and the pattern was a tool refusing, the
+    model re-sending the identical call, and the loop stopping it. The
+    refusal had said what to do; the repeat told it a hash.
 
     Args:
         tool: the tool that was called again with identical arguments.
-        previous_summary: the one-line digest of the previous result.
+        previous: the previous result - its own text when that call failed, a
+            digest of it when it succeeded.
+        failed: whether the previous attempt was a refusal.
 
     Returns:
         The text handed back to the model in place of a real execution.
     """
+    if failed:
+        answer = previous.strip()
+        if len(answer) > MAX_REPEATED_DETAIL:
+            answer = f"{answer[:MAX_REPEATED_DETAIL]}... [cut]"
+        return (
+            f"This exact {tool} call was already refused in this step and was not run "
+            f"again. It was refused for this reason, which has not changed:\n\n{answer}\n\n"
+            "Repeating it will keep failing. Do what that says, or write the current "
+            "state to NOTES.md and finish."
+        )
     return (
         f"This exact {tool} call was already executed in this step; it was not run again. "
-        f"Digest of the previous result: {previous_summary}. "
+        f"Digest of the previous result: {previous}. "
         "Choose a different action, or write the current state to NOTES.md and finish."
     )
 

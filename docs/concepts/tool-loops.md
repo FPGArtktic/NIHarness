@@ -180,8 +180,18 @@ because reading eight new files changes nothing and is perfectly good work.
 Each firing climbs exactly one rung, and the rung is an event
 (`loop.intervention`):
 
-1. **Synthetic tool result**, no model call: "this exact call already ran, here
-   is the digest of its result, choose a different action".
+1. **Synthetic tool result**, no model call. For a call that succeeded: "this
+   exact call already ran, here is the digest of its result, choose a
+   different action". For one that was **refused**, the refusal's own words
+   again - because a hash is nothing a model can act on, and the reason has
+   not changed.
+
+    That second case is measured rather than reasoned. On the 20-task L1 suite
+    every one of nine failing tasks ended with the same two interventions, and
+    the pattern underneath was always the same: a tool refuses with a message
+    that says exactly what to do, the model re-sends the identical call, and
+    the ladder stops the step. The refusal's advice was already in the window
+    and the repeat handed over a digest. It now hands back the advice.
 2. **Reflection turn**: the model must say what it tried, why each attempt
    failed, and one approach that differs - no tool call is accepted in that
    turn.

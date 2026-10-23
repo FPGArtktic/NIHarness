@@ -13,6 +13,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- A repeated call that had been **refused** gets the refusal's own words back,
+  not a hash of them. The level-one intervention interpolated
+  `Digest of the previous result: 3f9a...`, which is nothing a model can act
+  on, and it did so at exactly the moment the reason most needed repeating.
+  Measured on the 20-task L1 suite: every one of nine failing tasks ended with
+  the same two interventions, and the pattern underneath was always a tool
+  refusing with a message saying what to do, the model re-sending the
+  identical call, and the ladder stopping the step. A refused result now keeps
+  its own text in the loop's memo rather than a digest, bounded, and the
+  repeat quotes it.
 - Compaction writes what it drops into the run's own collection, which is what
   makes it lossless from the model's side. The event log kept everything
   regardless - compaction is a view policy and never touches it - but the

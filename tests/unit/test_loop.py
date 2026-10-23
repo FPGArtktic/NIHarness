@@ -183,3 +183,36 @@ def test_synthetic_result_names_the_tool_and_offers_a_way_out() -> None:
     text = synthetic_result("read_file", "read_file src/a.py: 12 lines, sha abc")
     assert "read_file" in text
     assert "NOTES.md" in text
+
+
+def test_a_repeated_refusal_is_quoted_back_not_hashed() -> None:
+    """The refusal's words are the one thing that would help, and they were dropped.
+
+    This used to interpolate a hex digest - "Digest of the previous result:
+    3f9a..." - at exactly the moment a model most needed the reason repeated.
+    Measured: on the 20-task L1 suite every one of nine failing tasks ended
+    with the same two interventions, and the pattern was a tool refusing, the
+    model re-sending the identical call, and the loop stopping it.
+    """
+    reason = (
+        "that passage is not in the file. The closest line in it is:\n"
+        "```\n    def reset(self):\n```"
+    )
+    text = synthetic_result("replace_in_file", reason, failed=True)
+    assert "already refused" in text
+    assert "The closest line in it is" in text, "its own words, not a description of them"
+    assert "Digest" not in text
+    assert "Repeating it will keep failing" in text
+
+
+def test_a_repeated_success_still_gets_the_short_form() -> None:
+    """Nothing is wrong with the result, so there is nothing to quote."""
+    text = synthetic_result("read_file", "3f9adc12", failed=False)
+    assert "already executed" in text
+    assert "Digest of the previous result: 3f9adc12" in text
+
+
+def test_a_very_long_refusal_is_cut_rather_than_resent_whole() -> None:
+    text = synthetic_result("run_tests", "x" * 10_000, failed=True)
+    assert len(text) < 2_000
+    assert "[cut]" in text
