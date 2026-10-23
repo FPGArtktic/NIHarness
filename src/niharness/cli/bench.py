@@ -272,6 +272,7 @@ def record(
         "layer": score.layer,
         "date": datetime.now(tz=UTC).date().isoformat(),
         "harness_commit": _commit(config.project_root),
+        "harness_dirty": _dirty(config.project_root),
         "model": model.name,
         "quantization": model.quantization,
         "profile": config.profile,
@@ -300,6 +301,20 @@ def record(
     }
 
 
+def _dirty(root: Path) -> bool:
+    """Whether the tree had uncommitted changes when this was measured.
+
+    Without it two records can carry the same commit and not be comparable:
+    a measurement taken before and after an uncommitted change says the same
+    `harness_commit` for both, which is the one thing a record must not do.
+    A record from a dirty tree is a working note, not a result.
+    """
+    try:
+        return bool(_run(_git(), ("status", "--porcelain"), root).strip())
+    except (OSError, subprocess.CalledProcessError, SuiteError):
+        return True
+
+
 def _commit(root: Path) -> str:
     """Return the harness's short commit, or 'unknown' outside a repository."""
     try:
@@ -321,7 +336,12 @@ def human(entry: dict[str, object], score: SuiteScore) -> str:
     """Render a suite run for an operator: the table, then what failed."""
     lines = [
         f"L1 on {entry['model']} ({entry['quantization']}), {entry['tasks']} task(s) "
-        f"in {entry['wall_seconds']}s",
+        f"in {entry['wall_seconds']}s"
+        + (
+            " [uncommitted tree: a working note, not a result]"
+            if entry["harness_dirty"]
+            else ""
+        ),
         "",
     ]
     for name, value in score.metrics().items():

@@ -52,6 +52,29 @@ that were **not stable** - a task that passes once and fails once has said
 something different from one that passes every time, and a single number
 cannot carry the difference.
 
+### Prefer an expectation about effect over one about route
+
+Three passes of the identical 14 tasks, nothing changed between them:
+
+| Metric | Range across 3 passes |
+|---|---|
+| `passed_ratio` | 0.643 - 0.857 |
+| `correct_sequence_ratio` | 0.857 - 1.0 |
+| `correct_arguments_ratio` | 0.857 - 1.0 |
+| `loop_incidents_per_task` | 0.214 - 0.571 |
+| `effective_ratio` | **0.929 - 0.929** |
+| `complete_ratio` | **0.929 - 0.929** |
+
+The two that did not move are the two that ask about **effect** and **end
+state**; everything measuring the route varies by up to three tasks in
+fourteen. And both of the failures that repeated in all three passes were
+caught *only* by those two.
+
+So a new task should prefer `expect_content` and `expect_success` over
+`expect_sequence`, and the reason is not only stability: an expectation about
+route also fails a correct model that took another path, which is the mistake
+two of this suite's first tasks made.
+
 ### Scoring is a fold over the events
 
 Nothing grades a transcript. Each task is scored from the payloads its run
@@ -91,6 +114,10 @@ metric that moves with what happens to be installed is not a metric.
 
 ## Rules
 
+- A record from a working tree carries `harness_dirty: true` and is a working
+  note, not a result. Two measurements taken either side of an uncommitted
+  change otherwise report the same `harness_commit`, which is the one thing a
+  record must not do.
 - A prompt or model change without an L1-L3 run in the same change is
   incomplete. The claim "this prompt is better" has a number or it does not
   exist.

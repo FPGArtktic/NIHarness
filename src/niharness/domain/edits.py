@@ -21,6 +21,7 @@ like, when an edit is a no-op - are testable without a worktree.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from difflib import get_close_matches
 from enum import StrEnum
 
@@ -31,6 +32,12 @@ MAX_QUOTED = 400
 
 NEAR_MISS_CUTOFF = 0.6
 """`difflib` similarity below which a line is not worth suggesting."""
+
+MAX_CONTEXT_LINES = 14
+"""How far a quoted passage may be grown while looking for what distinguishes it."""
+
+MAX_OCCURRENCES_SHOWN = 3
+"""How many of an ambiguous passage's occurrences are quoted back."""
 
 
 class EditOutcome(StrEnum):
@@ -76,11 +83,7 @@ def plan_edit(text: str, find: str, replace: str) -> EditPlan:
         return EditPlan(
             outcome=EditOutcome.AMBIGUOUS,
             occurrences=occurrences,
-            detail=(
-                f"that passage occurs {occurrences} times, so it does not say which "
-                "one to change. Include a line above or below it that is unique - "
-                "the enclosing def, the preceding comment - and send the whole thing."
-            ),
+            detail=_ambiguous(text, find, occurrences),
         )
     if occurrences == 0:
         return EditPlan(outcome=EditOutcome.MISSING, detail=_missing(text, find))
@@ -99,6 +102,93 @@ def plan_edit(text: str, find: str, replace: str) -> EditPlan:
         occurrences=1,
         updated=text.replace(find, replace, 1),
     )
+
+
+def _ambiguous(text: str, find: str, occurrences: int) -> str:
+    """Explain an ambiguous passage by quoting what tells the occurrences apart.
+
+    "Include a line above or below it that is unique" is advice that is
+    sometimes *wrong*: two methods of two classes can have identical bodies,
+    identical signatures and identical docstrings, so the nearest
+    distinguishing line is five lines up and neither neighbour helps. A 4B
+    failed this on every pass of the L1 suite, which is deterministic enough
+    to be the message's fault rather than the model's.
+
+    The harness knows where the occurrences are, so it can grow each one line
+    by line until they differ and hand back the exact text to copy. That is
+    mechanical work, which is the harness's half of this bargain.
+    """
+    quoted = _distinguished(text, find)
+    head = f"that passage occurs {occurrences} times, so it does not say which one to change."
+    if not quoted:
+        return (
+            f"{head} Include a line above or below it that is unique - the enclosing "
+            "def, the preceding comment - and send the whole thing."
+        )
+    shown = "\n\n".join(
+        f"at line {line}:\n{_quote(passage)}"
+        for line, passage in quoted[:MAX_OCCURRENCES_SHOWN]
+    )
+    more = (
+        f"\n(and {len(quoted) - MAX_OCCURRENCES_SHOWN} more)"
+        if len(quoted) > MAX_OCCURRENCES_SHOWN
+        else ""
+    )
+    return (
+        f"{head} Here is each one grown until they differ - send whichever you meant, "
+        f"copied as it is:\n\n{shown}{more}"
+    )
+
+
+def _distinguished(text: str, find: str) -> tuple[tuple[int, str], ...]:
+    """Return each occurrence grown until the quoted passages are all different.
+
+    Grows symmetrically, a line at a time, and gives up at
+    `MAX_CONTEXT_LINES` - at which point the occurrences really are
+    indistinguishable by context and the caller falls back to advice.
+    """
+    lines = text.splitlines(keepends=True)
+    starts = _occurrence_lines(lines, find)
+    if len(starts) < 2:
+        return ()
+    span = len(find.splitlines()) or 1
+    # Upwards only. In code the identifying context is above - the enclosing
+    # class, the def, the comment that says which of two identical bodies this
+    # one is - and growing downwards instead finds differences for the wrong
+    # reason: one occurrence running into the *next* declaration, or simply
+    # hitting the end of the file. Growing up also leaves the passage at the
+    # end of the quote, which reads as "context, then the line I meant".
+    for grown in range(0, MAX_CONTEXT_LINES):
+        windows = [(max(0, start - grown), start + span) for start in starts]
+        # Distinctness is tested on the form that will be *shown*, not on the
+        # raw slice: two occurrences that differ only in a trailing newline -
+        # one of them being the end of the file - would otherwise be reported
+        # as distinguished while looking identical to the reader.
+        passages = ["".join(lines[first:last]).rstrip("\n") for first, last in windows]
+        if len(set(passages)) == len(passages):
+            return tuple(
+                (first + 1, passage)
+                for (first, _), passage in zip(windows, passages, strict=True)
+            )
+    return ()
+
+
+def _occurrence_lines(lines: Sequence[str], find: str) -> tuple[int, ...]:
+    """Return the zero-based line of each occurrence of `find`.
+
+    Found by offset rather than by matching lines, so a passage that starts
+    mid-line is still located at the line it starts on.
+    """
+    joined = "".join(lines)
+    offsets: list[int] = []
+    at = joined.find(find)
+    while at != -1:
+        offsets.append(at)
+        at = joined.find(find, at + 1)
+    found: list[int] = []
+    for offset in offsets:
+        found.append(joined.count("\n", 0, offset))
+    return tuple(found)
 
 
 def _missing(text: str, find: str) -> str:

@@ -34,8 +34,72 @@ def test_a_passage_that_occurs_twice_says_how_many_and_what_to_do() -> None:
     assert plan.outcome is EditOutcome.AMBIGUOUS
     assert plan.occurrences == 2
     assert "occurs 2 times" in plan.detail
-    assert "unique" in plan.detail, "say what would make it unambiguous"
     assert plan.updated == "", "nothing is written when the target is unclear"
+
+
+TWINS = (
+    "class Inlet:\n"
+    '    """The inlet gauge."""\n'
+    "\n"
+    "    def configure(self) -> dict[str, int]:\n"
+    '        return {"scale": 100}\n'
+    "\n"
+    "\n"
+    "class Outlet:\n"
+    '    """The outlet gauge."""\n'
+    "\n"
+    "    def configure(self) -> dict[str, int]:\n"
+    '        return {"scale": 100}\n'
+)
+
+
+def test_an_ambiguous_passage_is_quoted_back_grown_until_it_differs() -> None:
+    """Advice to include a unique neighbouring line is sometimes simply wrong.
+
+    Two methods of two classes can have identical bodies, signatures and
+    docstrings, so neither neighbour helps and the distinguishing line is five
+    up. A 4B failed this on every pass of the L1 suite - deterministic enough
+    to be the message's fault. The harness knows where the occurrences are, so
+    it grows each until they differ and hands back the text to copy.
+    """
+    plan = plan_edit(TWINS, '        return {"scale": 100}', '        return {"scale": 250}')
+    assert plan.outcome is EditOutcome.AMBIGUOUS
+    assert "grown until they differ" in plan.detail
+    assert '"""The inlet gauge."""' in plan.detail
+    assert '"""The outlet gauge."""' in plan.detail
+    assert "at line 2:" in plan.detail, "where each one starts"
+
+
+def test_each_quoted_occurrence_is_itself_an_unambiguous_find() -> None:
+    """The point: the model copies one back and the edit then lands."""
+    plan = plan_edit(TWINS, '        return {"scale": 100}', "x")
+    blocks = [part.strip() for part in plan.detail.split("```") if "configure" in part]
+    assert len(blocks) == 2
+    for block in blocks:
+        again = plan_edit(TWINS, block, block.replace("100", "250"))
+        assert again.outcome is EditOutcome.UNIQUE, block
+        assert again.updated.count('"scale": 250') == 1
+
+
+def test_the_context_grows_upwards_so_it_does_not_run_into_the_next_thing() -> None:
+    """Downwards finds differences for the wrong reason.
+
+    One occurrence running into the *next* declaration, or simply hitting the
+    end of the file, makes two passages differ while neither says which is
+    which - and the quoted text then ends somewhere the model did not mean.
+    """
+    plan = plan_edit(TWINS, '        return {"scale": 100}', "x")
+    assert "class Outlet" not in plan.detail.split("at line 2:")[1].split("```")[1], (
+        "the first occurrence's quote must not trail into the second's class"
+    )
+
+
+def test_occurrences_that_nothing_distinguishes_fall_back_to_advice() -> None:
+    """At which point they really are indistinguishable by context."""
+    identical = "x\n" * 40
+    plan = plan_edit(identical, "x\n", "y\n")
+    assert plan.outcome is EditOutcome.AMBIGUOUS
+    assert "Include a line above or below" in plan.detail
 
 
 def test_the_wrong_indentation_is_quoted_back_exactly() -> None:
