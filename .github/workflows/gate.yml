@@ -24,6 +24,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # `mkdocs-git-revision-date-localized` reads git history and warns on
+          # a shallow clone, which `--strict` turns into a failure. The same
+          # shallowness is why `.readthedocs.yaml` runs `git fetch --unshallow`
+          # before building.
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true

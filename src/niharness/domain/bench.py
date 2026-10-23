@@ -82,6 +82,12 @@ class L1Task(BaseModel):
         "one expectation about the *end state* rather than the route: a change that "
         "two tools could make equally well should not be scored on which was used.",
     )
+    forbid_content: dict[str, tuple[str, ...]] = Field(
+        default_factory=dict,
+        description="Per path, text that must be **gone** when the step ends. The "
+        "mirror of `expect_content`, and the only way to score a removal: asserting "
+        "what is present cannot say that something is not.",
+    )
     forbid_paths: tuple[str, ...] = Field(
         default=(),
         description="Path prefixes no call may name. For a task whose point is "
@@ -243,7 +249,8 @@ def score_task(
     Args:
         task: the expectations, from the suite.
         events: the payloads of that task's step, in order.
-        files: the content of each path in `expect_content`, read after the
+        files: the content of each path in `expect_content` or
+            `forbid_content`, read after the
             step. Absent means the task declares no end state, and a task that
             does while this is empty fails - which is the right way round: a
             caller that forgot to read the files should not score a pass.
@@ -376,6 +383,13 @@ def _complete(task: L1Task, files: Mapping[str, str]) -> tuple[bool, str]:
         for fragment in wanted:
             if fragment not in content:
                 return False, f"end state: {path} does not contain {fragment!r}"
+    for path, unwanted in sorted(task.forbid_content.items()):
+        content = files.get(path)
+        if content is None:
+            return False, f"end state: {path} was not read back, or is not there"
+        for fragment in unwanted:
+            if fragment in content:
+                return False, f"end state: {path} still contains {fragment!r}"
     return True, ""
 
 

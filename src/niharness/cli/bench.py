@@ -238,7 +238,7 @@ async def run_task(
     return score_task(
         task,
         await payloads_of(sink, run_id),
-        read_back(Path(worktree.path), task.expect_content),
+        read_back(Path(worktree.path), {**task.expect_content, **task.forbid_content}),
     )
 
 
