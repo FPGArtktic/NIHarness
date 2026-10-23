@@ -13,6 +13,39 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `nih bench --layer L1`: the first benchmark runner, and the project's first
+  measured numbers for tool calling. Each task runs in its own copy of the
+  suite's fixture - a repository of its own, because the tools need one - and
+  through the same loop that runs real work, with the same validation,
+  detectors, budgets and final artifact. Scoring is a fold over that run's
+  events, so the grader is a pure function unit-tested without a model
+  (ADR 0024). The suite grew from 5 tasks to 8 of the 20 the methodology asks
+  for, and records carry which rule refused each call, with one example of its
+  own words - a ratio says how much went wrong, that says what to change.
+- Three L1 expectations measured something other than what they claimed, which
+  only a run could find: a task pinning `grep` when listing the tree and
+  reading the file answers just as well; a refusal task failing a model for a
+  harmless call made *after* the refusal, when a refused call never executes;
+  and a task asking for `shell`, which is never offered to the role and so
+  cannot be called, leaving the rule it expected unable to fire. The first two
+  were corrected, the third removed with the reason recorded in the suite.
+- A step that demands an artifact is given that artifact's schema when the
+  caller does not pass one. The two defaults disagreed - `final_artifact`
+  defaults to `final_answer` while `response_format` was None - so a caller
+  setting neither got a step whose schema was never sent and whose every prose
+  answer was rejected until it errored. Eight benchmark tasks ran to
+  `StopReason.ERROR` before the cause was obvious. Derived rather than
+  refused, because the schema is the artifact's own and there is one right
+  value to fill in.
+- An over-long commit subject already got the overshoot and a line that fits;
+  a subject with **no type** now gets the same treatment, measured rather than
+  guessed at. On the first L1 run, seven of the nine refusals that were not
+  the benchmark's own doing were a good subject in plain English with no
+  `type:` in front. The refusal now lists the types and offers the model's own
+  words with one in place, checked against the length rule too so a suggestion
+  cannot fix one rule by breaking another. `valid_calls_ratio` moved 0.796 to
+  0.829 and interventions 0.375 to 0.0 across single runs - suggestive at that
+  sample size, not significant.
 - The sandbox's network is a deployment choice rather than a constant.
   `[sandbox] network` takes `none`, which is the default and what an air-gapped
   deployment requires, or `private` - `slirp4netns:allow_host_loopback=false`,

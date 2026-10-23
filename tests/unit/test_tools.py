@@ -19,6 +19,7 @@ from niharness.domain.tools import (
     Violation,
     confine_path,
     shortened_subject,
+    suggested_type,
     truncate_result,
     validate_call,
     validate_commit_message,
@@ -268,3 +269,76 @@ def test_whatever_is_offered_fits_and_is_still_a_conventional_subject(subject: s
 
 def test_a_subject_that_already_fits_is_returned_untouched() -> None:
     assert shortened_subject("feat(a): short enough", 72) == "feat(a): short enough"
+
+
+# --------------------------------------------------- a subject with no type
+
+
+def test_a_subject_with_no_type_is_offered_its_own_words_with_one() -> None:
+    """Measured, not guessed at.
+
+    On the first L1 run against a 4B, seven of the nine refusals that were not
+    the benchmark's own doing were this: a good subject in plain English with
+    no `type:` in front. Naming the rule is what the message did before, and
+    it was not enough.
+    """
+    result = validate_call(
+        call(
+            "git_commit",
+            message="Change RETRY_LIMIT from 3 to 5 to match test expectation\n\nbody",
+        ),
+        IMPLEMENTER,
+        LIMITS,
+    )
+    assert result.accepted is False
+    assert result.violation is Violation.COMMIT_MESSAGE
+    assert "fix: change RETRY_LIMIT from 3 to 5 to match test expectation" in result.detail
+    assert "feat, fix, docs" in result.detail, "list the types that exist"
+    assert "blank line and a body" in result.detail
+
+
+@pytest.mark.parametrize(
+    ("subject", "expected"),
+    [
+        ("Change the limit to match the failing test", "fix"),
+        ("Correct the loader", "fix"),
+        ("Add a constant", "feat"),
+        ("Introduce a cache", "feat"),
+        ("Rework the loader", "chore"),
+        ("Tidy up", "chore"),
+    ],
+)
+def test_the_suggested_type_is_a_guess_with_a_rule_behind_it(
+    subject: str,
+    expected: str,
+) -> None:
+    """Offered as an example to change, not as an answer."""
+    assert suggested_type(subject) == expected
+
+
+def test_the_offer_is_itself_a_valid_subject() -> None:
+    """A suggestion has to pass every rule, including the length one."""
+    long_one = "Change " + "the retry limit " * 10 + "to five"
+    result = validate_call(
+        call("git_commit", message=f"{long_one}\n\nbody"),
+        IMPLEMENTER,
+        LIMITS,
+    )
+    offered = next(
+        line
+        for line in result.detail.splitlines()
+        if line.startswith(("fix:", "feat:", "chore:"))
+    )
+    assert len(offered) <= LIMITS.max_commit_subject
+    assert validate_commit_message(f"{offered}\n\nbody", LIMITS) == offered
+
+
+def test_a_message_of_only_whitespace_says_what_the_first_line_is_for() -> None:
+    """Reachable through the tool server, which takes the string unvalidated.
+
+    `validate_call` never gets this far - the argument schema requires ten
+    characters - but `git_commit` on the server calls the same function with
+    whatever the model sent.
+    """
+    with pytest.raises(ValueError, match="the first line is the subject"):
+        validate_commit_message("   \n\n   ", LIMITS)

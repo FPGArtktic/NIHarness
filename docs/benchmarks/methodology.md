@@ -16,6 +16,51 @@ profile and date, and committed under `benchmarks/results/`.
 | L2 steps | gate and review on a golden set | first-attempt gate pass rate, revisions per task, reviewer precision and recall against human verdicts, diff size, highest intervention level reached |
 | L3 end-to-end | 10 tasks per language, hidden tests | pass@1, wall time, tokens, tool calls, harness overhead outside inference |
 
+## Running L1
+
+```bash
+uv run nih bench --layer L1                        # in the sandbox
+uv run nih bench --layer L1 --unsafe-local-tools   # on this host
+```
+
+Each task gets a fresh copy of `benchmarks/suites/l1/fixture/`, made into a
+git repository of its own. The tasks act on that and never on this repository:
+a target that changes with every commit makes two records incomparable, which
+is the one thing a benchmark may not do. A repository rather than a bare
+directory because the tools expect one - the gate commits, `apply_patch`
+reverses a diff to tell "already applied" from "does not apply", and the
+state-cycle detector hashes the tree.
+
+The task runs through the **same loop that runs real work**: the same
+validation, the same allowlist, the same detectors, the same budgets, and the
+same `FinalAnswer` artifact demanded at the end. Two things follow. A number
+is about the model rather than about a rig that resembles the harness, and
+"terminated the loop" means the model produced its artifact - not merely that
+something stopped.
+
+### Scoring is a fold over the events
+
+Nothing grades a transcript. Each task is scored from the payloads its run
+appended, in `niharness.domain.bench`:
+
+| From | Metric |
+|---|---|
+| `tool.called` names, in order | `correct_sequence_ratio` |
+| `tool.called` arguments | `correct_arguments_ratio` |
+| `tool.called` against `tool.rejected` | `valid_calls_ratio` |
+| `tool.rejected` violations | a refusal task's expectation |
+| `loop.intervention` | `loop_incidents_per_task` |
+| `step.finished.stop_reason` | `terminated_ratio` |
+
+That makes the grader a pure function, unit-tested on recorded sequences with
+no model involved - so a number it produces says something about the model and
+not about the grader.
+
+Extra calls around the expected ones pass: reading a file before changing it
+is not a mistake. `strict_sequence = true` turns that off. A task whose answer
+is a **refusal** expects the named `Violation` *and* that nothing was executed
+- a call that got through fails it however harmless the call looks.
+
 ## Rules
 
 - A prompt or model change without an L1-L3 run in the same change is

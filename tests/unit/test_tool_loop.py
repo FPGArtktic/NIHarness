@@ -12,11 +12,18 @@ from niharness.domain.budgets import Budgets
 from niharness.domain.events import InterventionLevel, StopReason
 from niharness.domain.identity import CallId, Digest
 from niharness.domain.loop import REFLECTION_INSTRUCTION, LoopThresholds
-from niharness.domain.messages import ChatResponse, ToolCallRequest, ToolChoice, Usage
+from niharness.domain.messages import (
+    ChatResponse,
+    ResponseFormat,
+    ToolCallRequest,
+    ToolChoice,
+    Usage,
+)
 from niharness.domain.roles import DEFAULT_ROLES, Role
 from niharness.domain.tool_loop import (
     FINALIZE_INSTRUCTION,
     MAX_INVALID_RESPONSES,
+    ArtifactKind,
     CallModel,
     ExecuteTool,
     InjectResult,
@@ -433,3 +440,48 @@ def test_an_answer_that_does_not_validate_is_asked_again_without_tools() -> None
     assert isinstance(action, CallModel)
     assert action.tool_choice is ToolChoice.NONE
     assert "did not validate" in action.instruction
+
+
+def test_a_step_that_demands_an_artifact_is_given_its_schema() -> None:
+    """The two defaults used to disagree, and the step could not end.
+
+    `final_artifact` defaults to `final_answer` while `response_format` was
+    None, so a caller setting neither asked for an artifact whose schema was
+    never sent - the schema is only attached on the turn without tools - and
+    the loop rejected every prose answer until the step errored. Found by
+    building exactly that config for `nih bench`.
+    """
+    config = LoopConfig(
+        stage="bench",
+        role=Role.IMPLEMENTER,
+        model="m",
+        allowlist=DEFAULT_ROLES[Role.IMPLEMENTER].allowlist,
+    )
+    assert config.final_artifact is ArtifactKind.FINAL_ANSWER
+    assert config.response_format is not None
+    assert config.response_format.name == ArtifactKind.FINAL_ANSWER.value
+    assert "properties" in config.response_format.json_schema
+
+
+def test_a_step_that_wants_no_artifact_is_given_no_schema() -> None:
+    config = LoopConfig(
+        stage="bench",
+        role=Role.IMPLEMENTER,
+        model="m",
+        allowlist=DEFAULT_ROLES[Role.IMPLEMENTER].allowlist,
+        final_artifact=None,
+    )
+    assert config.response_format is None
+
+
+def test_a_caller_that_brings_its_own_schema_keeps_it() -> None:
+    """A different name, or a grammar beside it, is the caller's business."""
+    mine = ResponseFormat(name="mine", json_schema={"type": "object"}, grammar='root ::= "x"')
+    config = LoopConfig(
+        stage="bench",
+        role=Role.IMPLEMENTER,
+        model="m",
+        allowlist=DEFAULT_ROLES[Role.IMPLEMENTER].allowlist,
+        response_format=mine,
+    )
+    assert config.response_format == mine

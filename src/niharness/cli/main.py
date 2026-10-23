@@ -15,6 +15,7 @@ from typing import Annotated
 import typer
 
 from niharness import __version__
+from niharness.cli import bench as bench_module
 from niharness.cli import docs as docs_module
 from niharness.cli import gate as gate_module
 from niharness.cli import implement as implement_module
@@ -311,15 +312,31 @@ def research(topic: Annotated[str, typer.Argument(help="What to research")]) -> 
 
 @app.command()
 def bench(
-    layer: Annotated[str, typer.Option("--layer", help="L0, L1, L2 or L3.")] = "L0",
+    layer: Annotated[str, typer.Option("--layer", help="L0, L1, L2 or L3.")] = "L1",
+    root: ProjectRoot = Path(),
+    profile: Annotated[
+        str | None, typer.Option("--profile", help="Override the profile.")
+    ] = None,
+    local_tools: Annotated[
+        bool,
+        typer.Option(
+            "--unsafe-local-tools",
+            help="Run the tools on this host instead of in the sandbox.",
+        ),
+    ] = False,
+    json_mode: JsonOption = False,
 ) -> None:
-    """Run a benchmark layer and append JSONL records."""
-    del layer
-    unavailable(
-        "bench",
-        "the runner; the suites already carry a task format and a seed set,\n"
-        "and the L0 numbers in benchmarks/results/ were taken by hand",
-        "docs/benchmarks/methodology.md",
+    """Run a benchmark layer and append its JSONL record.
+
+    L1 runs every task in `benchmarks/suites/l1` through the same tool loop
+    that runs real work, each in its own copy of the suite's fixture, and
+    scores them by folding the events.
+    """
+    bench_module.bench(
+        _config(root.resolve(), profile),
+        layer=layer,
+        local_tools=local_tools,
+        json_mode=json_mode,
     )
 
 

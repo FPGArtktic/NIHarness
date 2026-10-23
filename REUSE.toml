@@ -11,6 +11,7 @@ path = [
   "uv.lock",
   "schemas/**",
   "benchmarks/results/**",
+  "benchmarks/suites/*/fixture/**",
   "docs/assets/**",
   "tests/contract/cassettes/**",
   "tests/golden/prompts/**",

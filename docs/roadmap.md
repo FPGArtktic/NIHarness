@@ -288,7 +288,16 @@ never attempted a diff.
 
 ## Stage: benchmarks
 
-- [ ] `nih bench` runner and the JSONL record format.
+- [x] `nih bench` runner and the JSONL record format, for L1. Each task runs in
+      its own copy of the suite's fixture, through the same loop that runs real
+      work, and is scored by folding its events - so the grader is a pure
+      function tested without a model.
+- [ ] The remaining L1 tasks: the suite has 8 of the 20 the methodology asks
+      for. The first run found three expectations that measured something
+      other than what they claimed, so the ones that are there have been
+      through a model at least once.
+- [ ] L2 and L3 runners. L2 needs a golden set with human verdicts to score
+      reviewer precision against; L3 needs the vendored reference sets.
 - [ ] Answer the ternary question with it. A natively ternary 27B-class model at
       4-6 GB would change the profile arithmetic entirely - see
       `docs/operations/models.md` - and nothing but an L0-L3 run on this

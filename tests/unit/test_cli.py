@@ -140,7 +140,6 @@ STUBS = [
     (["run", "SPEC.md"], "planning stage"),
     (["compact", "abc"], "on demand"),
     (["research", "topic"], "sub-run"),
-    (["bench"], "runner"),
     (["plan", "spec", "SPEC.md"], "runner"),
 ]
 """Each stub and a phrase from the thing that is actually missing."""

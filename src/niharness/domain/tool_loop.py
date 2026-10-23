@@ -22,9 +22,9 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from niharness.domain import events as ev
 from niharness.domain.artifacts import FinalAnswer, Verdict
@@ -75,6 +75,10 @@ class ArtifactKind(StrEnum):
     VERDICT = "Verdict"
 
 
+DEFAULT_ARTIFACT = ArtifactKind.FINAL_ANSWER
+"""What ends a step unless the caller says otherwise."""
+
+
 ARTIFACT_MODELS: dict[ArtifactKind, type[FinalAnswer] | type[Verdict]] = {
     ArtifactKind.FINAL_ANSWER: FinalAnswer,
     ArtifactKind.VERDICT: Verdict,
@@ -97,7 +101,7 @@ class LoopConfig(BaseModel):
     thresholds: LoopThresholds = LoopThresholds()
     limits: ToolLimits = ToolLimits()
     final_artifact: ArtifactKind | None = Field(
-        default=ArtifactKind.FINAL_ANSWER,
+        default=DEFAULT_ARTIFACT,
         description="The artifact that ends this step; None means any prose answer does.",
     )
     task_id: str | None = None
@@ -108,6 +112,37 @@ class LoopConfig(BaseModel):
         description="Structured output constraint for the role's artifact, when it has one.",
     )
     seed: int | None = Field(default=None, description="Determinism knob, passed through.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _artifact_brings_its_schema(cls, data: Any) -> Any:  # noqa: ANN401 - pydantic's raw input
+        """Give a step that demands an artifact the schema for it, if none was passed.
+
+        The two defaults disagreed: `final_artifact` is `final_answer` while
+        `response_format` was None, so a caller setting neither got a step that
+        demanded an artifact whose schema was never sent - and the loop then
+        rejected every prose answer until the step errored. Found by building
+        exactly that config for `nih bench`, where eight tasks ran to
+        `StopReason.ERROR` before the cause was obvious.
+
+        Derived rather than refused, because the schema is not a choice: it is
+        the artifact's own and there is exactly one right value to fill in. A
+        caller wanting a different name, or a GBNF grammar beside it, still
+        passes its own and this leaves it alone.
+        """
+        if not isinstance(data, dict) or data.get("response_format") is not None:
+            return data
+        raw = data.get("final_artifact", DEFAULT_ARTIFACT)
+        if raw is None:
+            return data
+        kind = ArtifactKind(raw)
+        return {
+            **data,
+            "response_format": ResponseFormat(
+                name=kind.value,
+                json_schema=ARTIFACT_MODELS[kind].model_json_schema(),
+            ),
+        }
 
 
 class LoopState(BaseModel):

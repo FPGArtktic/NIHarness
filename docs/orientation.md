@@ -58,6 +58,10 @@ suggestion. See [Architecture](concepts/architecture.md) and
 - CLI commands that need no model: `nih init`, `nih config`, `nih gate`,
   `nih status`, `nih tools`, `nih plan check`, `nih plan import` (for
   conforming plans), and `nih docs generate`.
+- `nih bench --layer L1`: runs the tool-calling suite through the same loop
+  that runs real work, each task in its own copy of the suite's fixture, and
+  scores it by folding the events. Records land in `benchmarks/results/`.
+  L2 and L3 have a methodology and no runner.
 - `nih implement`: with a model served and the sandbox image built, it executes
   an approved plan task by task, each commit going through the gate.
 - The control plane: `nih runs`, `nih cancel`, `nih resume`, `--detach`,

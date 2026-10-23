@@ -39,7 +39,7 @@ Usage: nih [OPTIONS] COMMAND [ARGS]...
 │ compact     Compact a run's window now, instead of waiting for the           │
 │             threshold.                                                       │
 │ research    Run a read-only researcher sub-run over the index.               │
-│ bench       Run a benchmark layer and append JSONL records.                  │
+│ bench       Run a benchmark layer and append its JSONL record.               │
 │ plan        Plan a spec, validate a plan, or import one written elsewhere.   │
 │ docs        Documentation and generated reference material.                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -50,11 +50,22 @@ Usage: nih [OPTIONS] COMMAND [ARGS]...
 ```text
 Usage: nih bench [OPTIONS]                                                     
                                                                                 
- Run a benchmark layer and append JSONL records.                                
+ Run a benchmark layer and append its JSONL record.                             
+                                                                                
+ L1 runs every task in `benchmarks/suites/l1` through the same tool loop        
+ that runs real work, each in its own copy of the suite's fixture, and          
+ scores them by folding the events.                                             
                                                                                 
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --layer        <str>  L0, L1, L2 or L3. [default: L0]                        │
-│ --help                Show this message and exit.                            │
+│ --layer                       <str>   L0, L1, L2 or L3. [default: L1]        │
+│ --project-root        -C      <path>  The project to operate on.             │
+│                                       [default: (.)]                         │
+│ --profile                     <str>   Override the profile.                  │
+│ --unsafe-local-tools                  Run the tools on this host instead of  │
+│                                       in the sandbox.                        │
+│ --json                                Print one JSON object instead of the   │
+│                                       human form.                            │
+│ --help                                Show this message and exit.            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 

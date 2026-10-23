@@ -151,7 +151,7 @@ def _retrieval_line(config: HarnessConfig, retrieval: Retrieval) -> str:
     return f"{config.vector.url}, searching {where} and this run's own context"
 
 
-def _backend(model: ModelConfig) -> OpenAiCompatBackend:
+def backend_for(model: ModelConfig) -> OpenAiCompatBackend:
     """Build a client for one served model."""
     return OpenAiCompatBackend(
         model.base_url,
@@ -194,8 +194,8 @@ async def execute(
 
     sink = JsonlEventSink(config.runs_dir, run_id)
     control = JsonlControlChannel(config.runs_dir, run_id)
-    main = _backend(config.models.main)
-    utility = _backend(config.models.utility)
+    main = backend_for(config.models.main)
+    utility = backend_for(config.models.utility)
     mode: Literal["sandbox", "local"] = "local" if local_tools else "sandbox"
 
     if not quiet:

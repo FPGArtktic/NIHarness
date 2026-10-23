@@ -631,6 +631,65 @@ class PathConfinementError(ValueError):
         super().__init__(f"{violation.value}: {candidate!r}")
 
 
+COMMIT_TYPES: tuple[str, ...] = (
+    "feat",
+    "fix",
+    "docs",
+    "style",
+    "refactor",
+    "perf",
+    "test",
+    "build",
+    "ci",
+    "chore",
+    "revert",
+)
+"""The types `COMMIT_SUBJECT` accepts, in one place so a message can list them."""
+
+_FIX_WORDS = ("fix", "correct", "repair", "restore", "match", "fail", "bug", "wrong")
+_FEAT_WORDS = ("add", "introduce", "create", "support", "implement", "record")
+
+
+def suggested_type(subject: str) -> str:
+    """Return the Conventional Commits type that best fits a prefix-less subject.
+
+    A guess, offered as an example for the model to change rather than as an
+    answer. Two words decide it in practice - a subject about making a test
+    pass is a fix, one about adding something is a feature - and anything else
+    is `chore`, which is the type that claims least.
+    """
+    words = subject.lower()
+    if any(word in words for word in _FIX_WORDS):
+        return "fix"
+    if any(words.startswith(word) or f" {word}" in words for word in _FEAT_WORDS):
+        return "feat"
+    return "chore"
+
+
+def _not_conventional(subject: str, limits: ToolLimits) -> str:
+    """Explain a subject with no type, and offer the model's own words with one.
+
+    Measured rather than guessed at: on the first L1 run against a 4B, seven of
+    the nine refusals that were not the benchmark's own doing were this - a
+    perfectly good subject in plain English with no `type:` in front. Naming
+    the rule it broke is what the message did before and it was not enough, so
+    it now carries a line that can be copied.
+    """
+    if not subject:
+        return "the commit message is empty; the first line is the subject"
+    body = subject.split(":", 1)[1].strip() if ":" in subject else subject
+    lowered = (body[:1].lower() + body[1:]) if body else body
+    candidate = f"{suggested_type(subject)}: {lowered}"
+    offer = shortened_subject(candidate, limits.max_commit_subject)
+    return (
+        f"subject is not Conventional Commits: {subject!r}. It needs a type and a "
+        f"colon first - one of: {', '.join(COMMIT_TYPES)} - optionally with a scope, "
+        f"as in `fix(gate): ...`. Use this if the type fits, or the same line with a "
+        f"type that does:\n{offer}\n"
+        "Then a blank line and a body saying why."
+    )
+
+
 def validate_commit_message(message: str, limits: ToolLimits) -> str:
     """Return the commit subject.
 
@@ -648,8 +707,7 @@ def validate_commit_message(message: str, limits: ToolLimits) -> str:
     lines = message.strip().splitlines()
     subject = lines[0].strip() if lines else ""
     if not COMMIT_SUBJECT.match(subject):
-        msg = f"subject is not Conventional Commits: {subject!r}"
-        raise ValueError(msg)
+        raise ValueError(_not_conventional(subject, limits))
     if len(subject) > limits.max_commit_subject:
         raise ValueError(_too_long(subject, limits.max_commit_subject))
     body = "\n".join(lines[1:]).strip()
