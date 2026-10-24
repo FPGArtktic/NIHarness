@@ -377,6 +377,12 @@ the change and stop.
       reviewer. A NAK is scored on where and why, and a verdict claiming the
       tests passed has to point at a green `run_tests` call in its own step
       ([ADR 0027](adr/0027-a-review-case-is-a-tree-and-its-verdict-must-be-earned.md)).
+- [ ] Tighten L2's `mentions_any` to the tokens that discriminate. The first
+      three passes put `reasoned_ratio` at 1.0 throughout, which means it
+      distinguished nothing: some tokens appear on the line that changed, so a
+      note anchored there scores as reasoned almost regardless of what it
+      says. Not changed between a before and an after measurement, because
+      moving the answer key makes the two incomparable.
 - [ ] The implementer half of L2 that §11 asks for: first-attempt gate pass
       rate and revisions per task over a golden set of tasks. That needs
       implement, gate, review and fix run end to end, which is closer to L3's

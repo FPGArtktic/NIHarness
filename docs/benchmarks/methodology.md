@@ -264,6 +264,16 @@ A NAK case without both is rejected when the suite loads. Without that rule
 the suite would score "said NAK", which a reviewer that refuses everything
 passes with full marks.
 
+`mentions_any` is currently **lenient**, and the first three passes show it:
+`reasoned_ratio` was 1.0 throughout, which means it distinguished nothing.
+Some of the tokens appear in the diff itself - `LOWER_BOUND` is on the line
+that changed - so a note anchored there is scored as reasoned almost
+regardless of what it says. Tightening it to the tokens that actually
+discriminate (`inclusive`, `lower bound`, `limits.md`) would make the metric
+informative, and is deliberately not done between a before and an after
+measurement: changing the answer key makes the two incomparable. It is on
+[the roadmap](../roadmap.md).
+
 ### The reviewer's own claim is not evidence
 
 The reviewer exists because an implementer's claim is not evidence. The same
