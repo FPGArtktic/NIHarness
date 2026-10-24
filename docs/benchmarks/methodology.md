@@ -654,13 +654,30 @@ accept. Keeping `passed` separate from `handback_ratio` is what makes that
 visible: the first says the work was right, the second says the pipeline could
 not tell.
 
-And one failure dominates every pass: `exact_repeat` nine to fourteen times,
-on `replace_in_file`. The model re-sends a refused edit, falls back to
-`apply_patch`, and in one task reported the file left with "duplicate content
-from failed `replace_in_file` operations" - after which nothing could recover
-it. What the tool actually said is the one thing the record did not keep, so
-`violations` and one refusal's own words per rule are in it now, as L1 has had
-from the start.
+And one failure dominates every pass. The first reading of it was wrong, and
+wrong in the way this whole page is about: the model's own prose blamed
+`replace_in_file` - "the file was left with duplicate content from failed
+`replace_in_file` operations" - and that was believed before the record could
+check it.
+
+Then `violations` reached this layer, and the refusals are **all
+`commit_message`**: two, six and six per pass, every one of them the subject
+length.
+
+> subject is 84 characters, which is 12 too many. Use this, or something
+> shorter: `feat: add debits alongside credits - return negative entries
+> separately`. Keep the explanation in the body, which has no limit.
+
+The model tries to commit, is refused on length, and re-sends an over-long
+subject - with a subject that fits sitting in the refusal it just read. So the
+gate never ran and nothing landed, on tasks whose trees the hidden tests
+accept. The harness shortens the subject itself now and keeps the model's line
+as the body's first
+([ADR 0029](../adr/0029-the-harness-shortens-a-commit-subject-it-can-shorten.md)),
+because a character count is bookkeeping §15 says not to ask a model for.
+
+Taking a model's self-report over the record, in a session about exactly that
+mistake, is worth recording as plainly as the finding it delayed.
 
 ### Three tasks is not ten per language
 

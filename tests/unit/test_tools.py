@@ -117,7 +117,6 @@ def test_diff_at_the_limit_is_accepted() -> None:
     [
         "add a thing\n\nbecause we need it",
         "feat: add a thing",
-        "feat: " + "x" * 100 + "\n\nbody",
         "wip: add a thing\n\nbody",
     ],
 )
@@ -129,7 +128,7 @@ def test_bad_commit_messages_are_rejected(message: str) -> None:
 
 def test_conventional_commit_with_body_is_accepted() -> None:
     message = "fix(gate): stop trusting the implementer's test claims\n\nThe reviewer re-runs."
-    assert validate_commit_message(message, LIMITS).startswith("fix(gate):")
+    assert validate_commit_message(message, LIMITS).subject.startswith("fix(gate):")
     result = validate_call(call("git_commit", message=message), IMPLEMENTER, LIMITS)
     assert isinstance(result, AcceptedCall)
 
@@ -229,20 +228,25 @@ def test_the_reviewer_cannot_replace_anything() -> None:
 LONG = "feat(clk9000): add the VDDC_VOLTS core supply constant taken from the datasheet erratum"
 
 
-def test_an_over_long_subject_is_told_the_overshoot_and_offered_one_that_fits() -> None:
-    """Counting characters is the same task as counting hunk lines.
+def test_an_over_long_subject_is_shortened_rather_than_refused() -> None:
+    """Counting characters is the harness's job (§15), not a judgement.
 
-    Observed on a live run: everything about the step was green, and a 4B was
-    told the 72-character limit three times and answered 99, then 78, then 78.
-    Restating the limit is arithmetic; the overshoot and a usable subject are
-    not.
+    Telling the model better was the half-measure and it was measured: on a
+    live run a 4B was told the 72-character limit three times and answered 99,
+    then 78, then 78. Three L3 passes then refused six commits apiece on
+    length alone, with `committed_ratio` 0.0 - and the refusal handed over a
+    subject that fits, verbatim, which was re-sent over-long anyway.
     """
-    result = validate_call(call("git_commit", message=f"{LONG}\n\nbody"), IMPLEMENTER, LIMITS)
-    assert result.accepted is False
-    assert result.violation is Violation.COMMIT_MESSAGE
-    assert "15 too many" in result.detail
-    assert "feat(clk9000): add the VDDC_VOLTS core supply constant" in result.detail
-    assert "body, which has no limit" in result.detail
+    repaired = validate_commit_message(f"{LONG}\n\nbody", LIMITS)
+    assert len(repaired.subject) <= LIMITS.max_commit_subject
+    assert repaired.subject == "feat(clk9000): add the VDDC_VOLTS core supply constant"
+    assert repaired.message.startswith(repaired.subject)
+    assert LONG in repaired.message, "every word the model wrote is kept"
+    assert "body" in repaired.message
+    assert "15 over the limit" in repaired.repaired, "and the repair is reported"
+
+    accepted = validate_call(call("git_commit", message=f"{LONG}\n\nbody"), IMPLEMENTER, LIMITS)
+    assert accepted.accepted is True, "the loop no longer refuses it either"
 
 
 def test_a_shortened_subject_does_not_end_on_a_dangling_word() -> None:
@@ -322,21 +326,14 @@ def test_the_suggested_type_is_a_guess_with_a_rule_behind_it(
     assert suggested_type(subject) == expected
 
 
-def test_the_offer_is_itself_a_valid_subject() -> None:
-    """A suggestion has to pass every rule, including the length one."""
-    long_one = "Change " + "the retry limit " * 10 + "to five"
-    result = validate_call(
-        call("git_commit", message=f"{long_one}\n\nbody"),
-        IMPLEMENTER,
-        LIMITS,
-    )
-    offered = next(
-        line
-        for line in result.detail.splitlines()
-        if line.startswith(("fix:", "feat:", "chore:"))
-    )
-    assert len(offered) <= LIMITS.max_commit_subject
-    assert validate_commit_message(f"{offered}\n\nbody", LIMITS) == offered
+def test_the_shortened_subject_is_itself_a_valid_subject() -> None:
+    """What the harness writes has to pass every rule, including its own."""
+    long_one = "feat: " + "the retry limit " * 10 + "to five"
+    repaired = validate_commit_message(f"{long_one}\n\nbody", LIMITS)
+    assert len(repaired.subject) <= LIMITS.max_commit_subject
+    again = validate_commit_message(f"{repaired.subject}\n\nbody", LIMITS)
+    assert again.subject == repaired.subject, "and repairing it twice changes nothing"
+    assert again.repaired == ""
 
 
 def test_a_message_of_only_whitespace_says_what_the_first_line_is_for() -> None:

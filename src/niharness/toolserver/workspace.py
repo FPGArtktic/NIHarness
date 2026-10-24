@@ -837,7 +837,7 @@ class Workspace:
                 caller gets the failing output and no commit.
         """
         try:
-            subject = validate_commit_message(message, self._limits)
+            validated = validate_commit_message(message, self._limits)
         except ValueError as error:
             raise WorkspaceError(str(error)) from error
         if not await self.changed_paths():
@@ -861,12 +861,16 @@ class Workspace:
         staged = await self._git(("add", "-A"))
         if not staged.ok:
             raise WorkspaceError(f"git add failed:\n{staged.output.strip()}")
-        committed = await self._run_with_stdin(("git", "commit", "-F", "-"), message)
+        committed = await self._run_with_stdin(("git", "commit", "-F", "-"), validated.message)
         if not committed.ok:
             raise WorkspaceError(f"git commit failed:\n{committed.output.strip()}")
         head = await self._git(("rev-parse", "--short", "HEAD"))
-        _log.info("gate.green", subject=subject, sha=head.stdout.strip())
-        return f"committed {head.stdout.strip()}: {subject}\n\n{self.render_gate(result)}"
+        _log.info("gate.green", subject=validated.subject, sha=head.stdout.strip())
+        repair = f"{validated.repaired}\n\n" if validated.repaired else ""
+        return (
+            f"committed {head.stdout.strip()}: {validated.subject}\n\n"
+            f"{repair}{self.render_gate(result)}"
+        )
 
 
 def _porcelain_paths(output: str) -> tuple[str, ...]:

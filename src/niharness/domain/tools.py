@@ -696,31 +696,74 @@ def _not_conventional(subject: str, limits: ToolLimits) -> str:
     )
 
 
-def validate_commit_message(message: str, limits: ToolLimits) -> str:
-    """Return the commit subject.
+class CommitMessage(BaseModel):
+    """A message the gate will accept, and what the harness repaired to get it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    subject: str
+    message: str = Field(description="What to commit, after any repair.")
+    repaired: str = Field(
+        default="",
+        description="What was changed and why, for the tool's result. Empty when the "
+        "message arrived usable.",
+    )
+
+
+def validate_commit_message(message: str, limits: ToolLimits) -> CommitMessage:
+    """Return a message the gate will accept, shortening the subject if it must.
+
+    Two of the three rules are judgements only the model can make, so they are
+    refusals: the Conventional Commits type says what kind of change this is,
+    and the body says why it was made. Neither can be invented here.
+
+    The subject's **length** is not a judgement. It is a character count, and
+    §15 says not to ask a model for bookkeeping the harness can do - the same
+    rule that stopped asking for hunk headers (ADR 0022). The suggestion was
+    the half-measure: this function already computed a subject that fits and
+    then asked the model to apply it. A 4B was told the limit three times on a
+    live run and answered 99, then 78, then 78 characters; three L3 passes then
+    refused six commits apiece on length alone, with `committed_ratio` 0.0, and
+    in them the refusal's own shortened subject was handed over verbatim and
+    re-sent over-long anyway.
+
+    So the harness shortens it and keeps every word the model wrote: the
+    original subject becomes the body's first line, which has no limit. The
+    repair is reported rather than silent, exactly as `apply_patch` reports a
+    diff it repaired.
 
     Args:
         message: the full commit message.
         limits: caps in force for this step.
 
     Returns:
-        The validated subject line.
+        The subject, the message to commit, and what was repaired.
 
     Raises:
-        ValueError: if the subject is not a Conventional Commits subject, is
-            too long, or the message has no body explaining why.
+        ValueError: if the subject is not a Conventional Commits subject, or
+            the message has no body explaining why.
     """
     lines = message.strip().splitlines()
     subject = lines[0].strip() if lines else ""
     if not COMMIT_SUBJECT.match(subject):
         raise ValueError(_not_conventional(subject, limits))
-    if len(subject) > limits.max_commit_subject:
-        raise ValueError(_too_long(subject, limits.max_commit_subject))
     body = "\n".join(lines[1:]).strip()
     if not body:
         msg = "commit message has no body; the body explains why the change is made"
         raise ValueError(msg)
-    return subject
+    if len(subject) <= limits.max_commit_subject:
+        return CommitMessage(subject=subject, message=message)
+    fitted = shortened_subject(subject, limits.max_commit_subject)
+    over = len(subject) - limits.max_commit_subject
+    return CommitMessage(
+        subject=fitted,
+        message=f"{fitted}\n\n{subject}\n\n{body}",
+        repaired=(
+            f"the subject was {len(subject)} characters, {over} over the limit, so it "
+            f"was shortened to {fitted!r} and your line kept as the body's first. "
+            "Counting characters is the harness's job, not yours."
+        ),
+    )
 
 
 DANGLING_WORDS: frozenset[str] = frozenset(
@@ -778,27 +821,6 @@ def shortened_subject(subject: str, limit: int) -> str:
     # `fix:`, and stripping that colon offers something the next check would
     # refuse. A suggestion has to pass every rule, not just the one it is for.
     return candidate if COMMIT_SUBJECT.match(candidate) else hard
-
-
-def _too_long(subject: str, limit: int) -> str:
-    """Explain an over-long subject by showing one that fits, and by how much.
-
-    Counting characters is the same kind of task as counting the lines in a
-    hunk header, and a small model is no better at one than the other:
-    observed on a live run, a 4B was told the limit three times and answered
-    99, then 78, then 78 characters, with everything else about the step
-    green. So the limit is not merely restated. The overshoot is given as a
-    number, because "drop fifteen characters" is actionable where "the limit
-    is 72" is arithmetic, and a subject that does fit is offered outright.
-    The body is untouched and has no limit, so a shorter first line loses
-    nothing.
-    """
-    over = len(subject) - limit
-    return (
-        f"subject is {len(subject)} characters, which is {over} too many. Use this, or "
-        f"something shorter:\n{shortened_subject(subject, limit)}\n"
-        "Keep the explanation in the body, which has no limit."
-    )
 
 
 def validate_call(

@@ -11,6 +11,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **The harness shortens an over-long commit subject instead of refusing it.**
+  Measured: `commit_message` refused two, six and six calls per L3 pass, every
+  one on subject length, with `committed_ratio` 0.0 - and the refusal handed
+  over a subject that fits, verbatim, which was re-sent over-long anyway. A
+  subject's length is a character count, which §15 says not to ask a model for,
+  and `shortened_subject` already computed the answer before asking. So that
+  becomes the subject and the model's line becomes the body's first, where
+  there is no limit; the repair is reported, as `apply_patch` reports a diff it
+  repaired. The type and the body stay refusals: neither is a judgement the
+  harness can make
+  (ADR 0029, `docs/adr/0029-the-harness-shortens-a-commit-subject-it-can-shorten.md`).
+- A commit subject in history may now be the harness's shortening rather than
+  the model's sentence. The full line is the first thing in the body, so
+  nothing written is lost.
+- **Correction**: the previous entry blamed `replace_in_file` for the dominant
+  L3 failure. That came from the model's own prose in its unticked checklist
+  and was believed before the record could check it - the refusal tally shows
+  every refusal was a commit message. Recorded rather than quietly fixed,
+  because taking a self-report over the record is the mistake this layer exists
+  to catch.
+
 ### Added
 
 - **L3 finished two whole tasks in one pass**: committed through the gate on
