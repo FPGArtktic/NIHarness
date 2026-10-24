@@ -58,12 +58,20 @@ suggestion. See [Architecture](concepts/architecture.md) and
 - CLI commands that need no model: `nih init`, `nih config`, `nih gate`,
   `nih status`, `nih tools`, `nih plan check`, `nih plan import` (for
   conforming plans), and `nih docs generate`.
+- `nih bench --layer L0`: throughput, through the port the harness uses.
+  Three timed requests per context size; the server's prefix cache is the
+  instrument rather than the enemy. It agrees with `llama-bench` to about 1%.
 - `nih bench --layer L1`: runs the tool-calling suite through the same loop
   that runs real work, each task in its own copy of the suite's fixture, and
-  scores it by folding the events. Records land in `benchmarks/results/`.
-  L2 and L3 have a methodology and no runner.
-- `nih plan SPEC.md`: entry B. Validates the spec, runs the planner over the
-  code with read-only tools, writes `PLAN.md`, and leaves it for a human.
+  scores it by folding the events.
+- `nih bench --layer L2`: review. Eight golden cases with the verdict a human
+  gave each one, scored on precision and recall, on whether a refusal landed
+  in the right place for the right reason, and on whether the verdict's claim
+  that the tests passed was earned. Records land in `benchmarks/results/`.
+  L3 has a methodology and no runner.
+- `nih plan SPEC.md`: entry B. Runs both halves of the spec gate - the schema
+  check offline, then one reviewer pass over the spec - then the planner over
+  the code with read-only tools, writes `PLAN.md`, and leaves it for a human.
   `nih plan approve PLAN.md` records that decision by digest.
 - `nih implement`: with a model served and the sandbox image built, it executes
   an approved plan task by task, each commit going through the gate.
@@ -157,5 +165,19 @@ uv run reuse lint                    # SPDX headers
 uv run nih docs generate             # regenerate schemas and reference pages
 uv run mkdocs build --strict         # docs are part of the gate
 ```
+
+And the ones that need a model served:
+
+```bash
+uv run nih bench --layer L0 --repeat 3                     # throughput
+uv run nih bench --layer L1 --repeat 3 --unsafe-local-tools # tool calling
+uv run nih bench --layer L2 --repeat 3 --unsafe-local-tools # review
+uv run nih plan SPEC.md && uv run nih plan approve PLAN.md
+uv run nih implement --unsafe-local-tools
+```
+
+`--repeat 3` is not optional for anything you intend to quote. One pass of L1
+differs from the next by four tasks in twenty with nothing changed in
+between, and the human output names the units that were not stable.
 
 Run the quick gate before proposing a commit. Do not rely on CI to tell you.
