@@ -397,12 +397,14 @@ the change and stop.
       other cases in those same passes ran the tests green, which the ACKs
       and `evidence_ratio` 1.0 together prove. Needs a case that provokes it,
       because two occurrences are a pattern and not a number.
-- [ ] Tighten L2's `mentions_any` to the tokens that discriminate. The first
-      three passes put `reasoned_ratio` at 1.0 throughout, which means it
-      distinguished nothing: some tokens appear on the line that changed, so a
-      note anchored there scores as reasoned almost regardless of what it
-      says. Not changed between a before and an after measurement, because
-      moving the answer key makes the two incomparable.
+- [x] Tighten L2's `mentions_any` to the tokens that discriminate. Six
+      passes put `reasoned_ratio` at 1.0 throughout, which means it
+      distinguished nothing: `LOWER_BOUND`, `except` and `ValueError` are on
+      lines their cases change, so quoting the diff scored. One rule now
+      governs the key - no token may appear in the case's own diff - and a
+      test checks it against the case files rather than leaving it to be
+      remembered. It waited for the evidence check's before-and-after to
+      conclude, because moving an answer key makes two records incomparable.
 - [ ] The implementer half of L2 that §11 asks for: first-attempt gate pass
       rate and revisions per task over a golden set of tasks. That needs
       implement, gate, review and fix run end to end, which is closer to L3's

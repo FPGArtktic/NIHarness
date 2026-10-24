@@ -19,6 +19,16 @@
 # looks like (`mentions_any`, any one token suffices). Without both, the suite
 # would score "said NAK", which a reviewer that refuses everything passes with
 # full marks.
+#
+# One rule governs `mentions_any`: **no token may appear in the case's own
+# diff or sources.** The first version broke it - `LOWER_BOUND`, `except` and
+# `ValueError` are all on lines the case changes, so a note that quoted the
+# diff scored as reasoned without having understood anything, and
+# `reasoned_ratio` read 1.0 across every pass while distinguishing nothing.
+# What is left is a generous set of ways to name the defect, because a review
+# is free text and demanding a phrasing measures vocabulary rather than
+# judgement - but every way of naming it requires having seen what the diff
+# does not say.
 
 [metrics]
 record = [
@@ -44,7 +54,12 @@ intent = "a single bad reading should not stop a whole run from being averaged"
 commit_type = "fix"
 verdict = "NAK"
 defect_files = ["src/sampler.py"]
-mentions_any = ["LOWER_BOUND", "except", "ValueError", "silently", "swallow", "0.5"]
+# Not `except`, `ValueError` or `LOWER_BOUND`: all three are on the lines this
+# case adds, so quoting the diff would score.
+mentions_any = [
+  "silently", "quietly", "swallow", "substitut", "replac", "masks", "hides",
+  "garbage", "unreported", "indistinguishable",
+]
 why = """An unparseable reading is substituted with the bottom of the band, so
 garbage quietly moves the average instead of being reported. The tests never
 hand over a bad reading, so they stay green."""
@@ -56,7 +71,13 @@ intent = "a run with one wild reading needs a statistic the outlier cannot move"
 commit_type = "feat"
 verdict = "NAK"
 defect_files = ["tests/test_sampler.py"]
-mentions_any = ["isinstance", "regardless", "does not test", "value", "weak", "float"]
+# Not `isinstance` or `float`: both are in the test this case adds. Not
+# `value` either - it appears in almost any sentence about a sampler.
+mentions_any = [
+  "regardless", "cannot fail", "would pass", "would still pass", "always pass",
+  "weak", "does not test", "untested", "tautolog", "vacuous", "only the type",
+  "the return type", "type rather than", "type instead of",
+]
 why = """The median is correct, and its only test asserts that the result is a
 float - which it would be if the function returned the mean, or zero. The
 behaviour is untested and the test cannot fail."""
@@ -68,7 +89,10 @@ intent = "readings below 1.0 are noise on this hardware and should not be averag
 commit_type = "fix"
 verdict = "NAK"
 defect_files = ["docs/limits.md", "src/limits.py"]
-mentions_any = ["limits.md", "docs", "documentation", "0.5", "document"]
+# `limits.md` and `docs` are discriminating here *because* they are absent
+# from the diff: the whole defect is a file this change did not touch. Only
+# `0.5` is dropped, which is on the line the diff removes.
+mentions_any = ["limits.md", "docs", "documentation", "document", "out of date", "stale"]
 why = """The code says 1.0 and `docs/limits.md` still says 0.5. Two places have
 to agree and only one was changed; no test can see it."""
 
@@ -79,7 +103,12 @@ intent = "the band check is the one place that decides what is kept, so it is wo
 commit_type = "refactor"
 verdict = "NAK"
 defect_files = ["src/sampler.py"]
-mentions_any = ["in_range", "lower bound", "LOWER_BOUND", "inclusive", "included", "0.5"]
+# Not `in_range`, `LOWER_BOUND` or `0.5`: the one line this case changes
+# contains all three.
+mentions_any = [
+  "inclusive", "inclusively", "excludes", "excluded", "exclusive",
+  "lower bound", "docstring", "boundary", "off by one",
+]
 why = """`in_range` now excludes exactly the lower bound while its own docstring
 still says the bounds are included. A reading of 0.5 is silently dropped, and
 the tests only exercise the middle of the band."""

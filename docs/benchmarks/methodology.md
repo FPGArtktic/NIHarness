@@ -265,15 +265,25 @@ A NAK case without both is rejected when the suite loads. Without that rule
 the suite would score "said NAK", which a reviewer that refuses everything
 passes with full marks.
 
-`mentions_any` is currently **lenient**, and the first three passes show it:
-`reasoned_ratio` was 1.0 throughout, which means it distinguished nothing.
-Some of the tokens appear in the diff itself - `LOWER_BOUND` is on the line
-that changed - so a note anchored there is scored as reasoned almost
-regardless of what it says. Tightening it to the tokens that actually
-discriminate (`inclusive`, `lower bound`, `limits.md`) would make the metric
-informative, and is deliberately not done between a before and an after
-measurement: changing the answer key makes the two incomparable. It is on
-[the roadmap](../roadmap.md).
+`mentions_any` was **lenient**, and six passes showed it: `reasoned_ratio`
+read 1.0 throughout, which means it distinguished nothing. `LOWER_BOUND`,
+`except` and `ValueError` are all on lines their cases change, so a note that
+quoted the diff scored as reasoned without having understood anything.
+
+One rule now governs the key: **no token may appear in the case's own diff**,
+on either side of it. A test checks it against the case files rather than
+leaving it to be remembered, because the next case will be added by somebody
+who has not read this paragraph. What is left is a generous set of ways to
+name each defect - a review is free text, and demanding a phrasing would
+measure vocabulary instead of judgement - but every way of naming it requires
+having seen what the diff does not say. `docs` and `limits.md` stay in the
+stale-document case *because* they are absent from the diff: the defect is a
+file the change did not touch.
+
+`reasoned_ratio` before and after this is **not comparable**, which is why it
+waited for the evidence check's before-and-after to conclude. Everything else
+in the record is unaffected: the key is only read for that one ratio and for
+a NAK case's `passed`.
 
 ### The reviewer's own claim is not evidence
 

@@ -24,6 +24,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   document left stale. When it did catch one it named the thing every time, so
   the gap is detection rather than articulation, which says the prompt is not
   where to look.
+### Changed
+
+- **L2's answer key no longer scores a quoted diff.** `reasoned_ratio` read
+  1.0 across six passes while distinguishing nothing, because `LOWER_BOUND`,
+  `except` and `ValueError` are all on lines their cases change. One rule now
+  governs `mentions_any` - no token may appear in the case's own diff, either
+  side - and a test checks it against the case files, because the next case
+  will be added by somebody who has not read the paragraph. The replacement
+  tokens are a generous set of ways to name each defect, since demanding a
+  phrasing would measure vocabulary instead of judgement. `reasoned_ratio`
+  before and after this is not comparable; it waited for the evidence check's
+  before-and-after to conclude.
+
+### Added
+
 - **The tally's first run answered the question the ratios could not.** Three
   L2 passes at `c63c5b6`: every intervention in those twenty-four reviews was
   `exact_repeat`, and `unbacked_claim` does not appear once. The evidence

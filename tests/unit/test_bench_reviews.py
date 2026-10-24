@@ -395,3 +395,35 @@ def test_every_case_is_green_which_is_the_suites_premise(tmp_path: Path) -> None
                 red.append(f"{name}: {' '.join(argv)}\n{done.stdout[-600:]}")
                 break
     assert not red, "every case must pass the fixture's gate:\n" + "\n".join(red)
+
+
+def test_no_answer_key_token_can_be_quoted_from_the_diff() -> None:
+    """`mentions_any` has to need the defect understood, not the diff copied.
+
+    The first version of the key failed this: `LOWER_BOUND`, `except` and
+    `ValueError` are on lines their cases change, so a note that quoted the
+    diff scored as reasoned and `reasoned_ratio` read 1.0 across every pass
+    while distinguishing nothing. The rule is checked here rather than
+    remembered, because the next case added to the suite will be written by
+    somebody who has not read that paragraph.
+    """
+    suite = ROOT / "benchmarks" / "suites" / "l2"
+    cases, _ = load_l2(ROOT)
+    checked = 0
+    for case in cases:
+        if not case.mentions_any:
+            continue
+        checked += 1
+        both_sides: list[str] = []
+        root = suite / "cases" / case.id
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            both_sides.append(path.read_text(encoding="utf-8"))
+            original = suite / "fixture" / path.relative_to(root)
+            if original.is_file():
+                both_sides.append(original.read_text(encoding="utf-8"))
+        diff_text = " ".join(both_sides).lower()
+        quotable = [token for token in case.mentions_any if token.lower() in diff_text]
+        assert not quotable, f"{case.id}: {quotable} can be copied out of the diff"
+    assert checked == 4, "every NAK case carries an answer key"
