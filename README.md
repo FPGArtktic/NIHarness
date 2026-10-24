@@ -133,12 +133,17 @@ threads is slower than 8, because the E-cores contend.
 move with nothing changed between passes, so a single pass is not a measurement, and
 the suite cannot see a one-task change in its headline number.
 
-**L2** - review. Eight golden cases with human verdicts, one pass, same model:
-**precision 1.0, recall 0.25**. It refused no correct change and caught one defect in
-four. That is the small-model reviewer profile in one line - agreeable - and it is
-why precision alone would have looked excellent. One ACK in eight claimed the tests
-passed without ever running them, which is the failure a reviewer exists to prevent,
-committed by the reviewer.
+**L2** - review. Eight golden cases with human verdicts, three passes, same model:
+**precision 1.0 - 1.0, recall 0.25 - 0.5**. It never refused a correct change and
+missed half to three-quarters of the defects. That is not a good reviewer, it is an
+agreeable one, and precision alone would have read as excellent.
+
+What it caught and what it missed divide cleanly. The defect it found every pass is
+visible in the diff - a comparison operator changed. The three it missed every pass
+are defined by something **absent**: an error swallowed and replaced with a plausible
+value, a test that asserts a type instead of a behaviour, a document left stale. A
+diff shows what changed; those are about what did not. When it did catch one it named
+the thing correctly every time, so the gap is detection, not articulation.
 
 Records: [`benchmarks/results/`](benchmarks/results/), one JSONL line each, tagged with
 the harness commit, model, quantization, profile, host and date.

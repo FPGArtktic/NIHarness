@@ -272,6 +272,44 @@ standard applies to it: a verdict that says the tests passed has to point at a
 how often that was true, and a case fails without it however right the
 decision was.
 
+### What the first L2 runs said
+
+Ternary Bonsai 2 4B in `PQ2_0`, three passes over the eight cases, at
+`50a13ef`:
+
+| Metric | Range across 3 passes |
+|---|---|
+| `reviewer_precision` | **1.0 - 1.0** |
+| `reviewer_recall` | 0.25 - 0.5 |
+| `decision_ratio` | 0.5 - 0.75 |
+| `located_ratio` | 0.5 - 1.0 |
+| `reasoned_ratio` | 1.0 - 1.0 |
+| `evidence_ratio` | 1.0 - 1.0 |
+| `passed_ratio` | 0.5 - 0.625 |
+
+Three findings, and the first is the one worth the suite:
+
+**It never refused a correct change, and missed half to three-quarters of the
+defects.** Precision 1.0 with recall 0.25 is not a good reviewer; it is an
+agreeable one. Precision alone would have read as excellent, which is why the
+confusion matrix is in the record and not just a pass rate.
+
+**What it caught and what it missed divide cleanly.** The one case it found
+every pass - `the-band-lost-its-lower-bound` - is a defect *visible in the
+diff*: a comparison operator changed. The three it missed every pass are
+defects defined by something **absent**: an error swallowed and replaced with a
+plausible value, a test that asserts a type instead of a behaviour, a document
+that was not updated. A diff shows what changed; those three are about what
+did not.
+
+**When it did catch one, it caught it properly.** `reasoned_ratio` was 1.0
+throughout: the notes named the thing. The failure is detection, not
+articulation - which says the prompt is not the problem.
+
+One review in thirty-two claimed the tests passed without running them. That
+is rare rather than routine, and it is also [checked by the harness
+now](../concepts/tool-loops.md) - a claim the harness can verify, it verifies.
+
 ### What L2 does not measure yet
 
 §11 asks L2 for the implementer's side too - first-attempt gate pass rate and

@@ -13,6 +13,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **The first L2 numbers, and what they say.** Three passes of the eight cases
+  on a 4B: precision **1.0 - 1.0**, recall **0.25 - 0.5**. It never refused a
+  correct change and missed half to three-quarters of the defects - not a good
+  reviewer but an agreeable one, and precision alone would have read as
+  excellent. What it caught and what it missed divide cleanly: the defect it
+  found every pass is visible in the diff, and the three it missed every pass
+  are defined by something *absent* - an error swallowed and replaced with a
+  plausible value, a test that asserts a type instead of a behaviour, a
+  document left stale. When it did catch one it named the thing every time, so
+  the gap is detection rather than articulation, which says the prompt is not
+  where to look.
 - **A verdict's claims are checked against its own step.** `Verdict` asserts
   that the build and the tests passed, §4 has always said the reviewer runs
   both itself, and nothing checked whether it did. A verdict whose claims no
