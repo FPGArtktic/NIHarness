@@ -27,7 +27,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from niharness.domain import events as ev
-from niharness.domain.artifacts import FinalAnswer, PlanDraft, SpecVerdict, Verdict
+from niharness.domain.artifacts import FinalAnswer, PlanDraft, Spec, SpecVerdict, Verdict
 from niharness.domain.budgets import Budgets, BudgetState
 from niharness.domain.events import EventBody, InterventionLevel, StopReason
 from niharness.domain.identity import CallId, Digest, digest_text
@@ -66,9 +66,9 @@ FINALIZE_INSTRUCTION = (
 MAX_INVALID_RESPONSES = 3
 """How often a malformed final answer may be re-requested before the step fails."""
 
-FinalArtifact = FinalAnswer | Verdict | PlanDraft | SpecVerdict
+FinalArtifact = FinalAnswer | Verdict | PlanDraft | SpecVerdict | Spec
 """What a step may end with: work reported done, a verdict on a commit or on a
-spec, or a plan."""
+spec, a plan, or a spec itself."""
 
 
 class ArtifactKind(StrEnum):
@@ -78,6 +78,7 @@ class ArtifactKind(StrEnum):
     VERDICT = "Verdict"
     PLAN_DRAFT = "PlanDraft"
     SPEC_VERDICT = "SpecVerdict"
+    SPEC = "Spec"
 
 
 DEFAULT_ARTIFACT = ArtifactKind.FINAL_ANSWER
@@ -89,6 +90,7 @@ ARTIFACT_MODELS: dict[ArtifactKind, type[FinalArtifact]] = {
     ArtifactKind.VERDICT: Verdict,
     ArtifactKind.PLAN_DRAFT: PlanDraft,
     ArtifactKind.SPEC_VERDICT: SpecVerdict,
+    ArtifactKind.SPEC: Spec,
 }
 """The model each kind validates against."""
 
@@ -205,6 +207,11 @@ class LoopState(BaseModel):
     def spec_verdict(self) -> SpecVerdict | None:
         """The step's SpecVerdict, when that is what ended it."""
         return self.final if isinstance(self.final, SpecVerdict) else None
+
+    @property
+    def spec(self) -> Spec | None:
+        """The step's Spec, when that is what ended it."""
+        return self.final if isinstance(self.final, Spec) else None
 
     @property
     def next_seq(self) -> int:

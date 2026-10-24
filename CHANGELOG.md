@@ -68,6 +68,26 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **L3's first scorer had two bugs, and its own second use found both.**
+  `first_attempt_gate_ratio` folded `gate.finished`, but the gate's commands
+  run inside the tool server, which appends to its own sink - so those events
+  never reach the run's log and the metric read **0.0 on every task of every
+  pass**, a dead number that looked like a finding. It is now folded from the
+  `git_commit` call and whether its result came back ok, which is what the
+  harness logs, and `git_commit` is the gate.
+- **The grade is taken on `HEAD`, not on the working tree.** A task committed,
+  a fix step then damaged the worktree, and the damage was graded instead of
+  the commit - the opposite of what the gate exists to guarantee. When nothing
+  was committed the working tree is still graded, and recorded separately as
+  `uncommitted_would_pass`: work that was done and never offered to the gate
+  reads the same as work that was wrong, and those are different failures.
+- The four L3 records taken before both fixes were **discarded rather than
+  committed**. They were clean-tree records and would have read as results,
+  with one metric meaningless and one grade taken on the wrong tree; a record
+  of a bug is not a measurement of a model. Said here rather than left to be
+  noticed from a gap in the file.
+
+
 - **The wall-clock budget was never spent, so it never fired.** `observe_tool`
   has always taken a `wall_seconds` argument and its one caller never passed
   it; inference time was not charged at all. So `budget.wall_seconds_used`

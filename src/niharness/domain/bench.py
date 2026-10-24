@@ -27,7 +27,6 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from niharness.domain.artifacts import Decision, NonEmpty, Verdict
 from niharness.domain.events import (
-    GateFinished,
     LoopIntervention,
     ModelResponse,
     Payload,
@@ -1579,7 +1578,19 @@ class BuildScore(BaseModel):
         "committed, too: work that did not land is work that did not happen.",
     )
     committed: bool = False
-    gate_attempts: int = Field(default=0, ge=0)
+    uncommitted_would_pass: bool = Field(
+        default=False,
+        description="Only when nothing was committed: whether the hidden tests pass "
+        "on the working tree anyway. Work that was done and not offered to the gate "
+        "is a different failure from work that was wrong, and this is the difference.",
+    )
+    gate_attempts: int = Field(
+        default=0,
+        ge=0,
+        description="`git_commit` calls. That tool *is* the gate, and it is what the "
+        "harness logs: the gate's own events are written inside the tool server and "
+        "never reach this log, so folding them counted zero every time.",
+    )
     gate_passes: int = Field(default=0, ge=0)
     revisions: int = Field(default=0, ge=0)
     handed_back: bool = Field(
@@ -1691,6 +1702,7 @@ def score_build(
     events: Sequence[Payload],
     *,
     hidden_tests_passed: bool,
+    uncommitted_would_pass: bool = False,
 ) -> BuildScore:
     """Score one whole task by folding the run's events plus the hidden verdict.
 
@@ -1702,14 +1714,27 @@ def score_build(
         task: the task and what it said done means.
         events: the payloads the run appended, in order.
         hidden_tests_passed: whether the hidden tests passed on the committed
-            tree.
+            tree - `HEAD`, not the working tree. A task that committed and then
+            had a fix step damage the worktree had its *damage* graded while
+            this read the working tree, which is the opposite of what the gate
+            exists to guarantee.
+        uncommitted_would_pass: when nothing was committed, whether the hidden
+            tests pass on the working tree regardless. Work done and never
+            offered to the gate is a different failure from work that was
+            wrong.
 
     Returns:
         The score, with a note for anything that did not go as asked.
     """
-    gates = [body for body in events if isinstance(body, GateFinished)]
     called = [body for body in events if isinstance(body, ToolCalled)]
     responses = [body for body in events if isinstance(body, ModelResponse)]
+    # `git_commit` is the gate (§4), and the gate's own events are appended by
+    # the tool server's own sink, not this run's. Folding `gate.finished` here
+    # counted zero on every task of every pass.
+    commits = {body.call_id for body in called if body.name == ToolName.GIT_COMMIT.value}
+    attempts = [
+        body for body in events if isinstance(body, ToolReturned) and body.call_id in commits
+    ]
     finished = next(
         (body for body in events if isinstance(body, TaskFinished) and body.task_id == task.id),
         None,
@@ -1723,15 +1748,16 @@ def score_build(
         notes.append(f"handed back: {finished.reason or 'no reason recorded'}")
     if committed and not hidden_tests_passed:
         notes.append("committed work that the hidden tests refuse")
-    if not committed and hidden_tests_passed:
-        notes.append("the hidden tests pass on a tree nothing was committed to")
+    if not committed and uncommitted_would_pass:
+        notes.append("the work was right and was never committed, so it did not happen")
 
     return BuildScore(
         task_id=task.id,
         hidden_tests_passed=hidden_tests_passed,
+        uncommitted_would_pass=not committed and uncommitted_would_pass,
         committed=committed,
-        gate_attempts=len(gates),
-        gate_passes=sum(1 for body in gates if body.passed),
+        gate_attempts=len(attempts),
+        gate_passes=sum(1 for body in attempts if body.ok),
         revisions=finished.revisions if finished else 0,
         handed_back=bool(finished and finished.outcome == "handoff"),
         calls=len(called),

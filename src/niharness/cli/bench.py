@@ -1536,12 +1536,15 @@ async def run_build(
     The only thing this function adds is the grade, and it adds it after the
     run has ended and its commits are made.
 
-    The hidden tests run against the **working tree**, not against `HEAD`, and
-    `BuildScore.passed` separately requires that something was committed. That
-    keeps two facts apart which a reset would merge: whether the work was
-    right, and whether it got through the gate. A tree that would pass and was
-    never committed is a gate problem; a commit that fails is a work problem;
-    and both read as "failed" with a note saying which.
+    The grade is taken on **`HEAD`** - the committed tree - because that is
+    what the gate guarantees and what a human would merge. The first version
+    graded the working tree, and its second pass showed why that is wrong: a
+    task committed, a fix step then damaged the worktree, and the damage was
+    graded instead of the commit.
+
+    When nothing was committed the working tree is graded separately and
+    recorded as `uncommitted_would_pass`, because work that was done and never
+    offered to the gate is a different failure from work that was wrong.
 
     Raises:
         SuiteError: when the fixture or the hidden tests cannot be staged.
@@ -1592,14 +1595,33 @@ async def run_build(
             sandbox_network=config.sandbox.network,
         )
 
-    staged = stage_hidden(config.project_root, task, Path(worktree.path))
-    passed, tail = hidden_verdict(Path(worktree.path))
-    scored = score_build(task, await payloads_of(sink, run_id), hidden_tests_passed=passed)
-    if not passed:
-        return scored.model_copy(
-            update={"notes": (*scored.notes, f"{staged} hidden file(s): {tail}")}
-        )
-    return scored
+    repo = Path(worktree.path)
+    payloads = await payloads_of(sink, run_id)
+    landed = await vcs.head(worktree)
+
+    # The working tree first, while it still exists, and only to answer "was
+    # the work right even though it never reached the gate".
+    staged = stage_hidden(config.project_root, task, repo)
+    loose, loose_tail = hidden_verdict(repo)
+
+    # `reset --hard` plus `clean -fd`: it takes the staged hidden tests with it,
+    # and any file the model wrote and never committed, which is the point.
+    await vcs.rollback(worktree, landed)
+    stage_hidden(config.project_root, task, repo)
+    passed, tail = hidden_verdict(repo)
+
+    scored = score_build(
+        task,
+        payloads,
+        hidden_tests_passed=passed,
+        uncommitted_would_pass=loose,
+    )
+    if passed:
+        return scored
+    detail = tail if scored.committed else loose_tail
+    return scored.model_copy(
+        update={"notes": (*scored.notes, f"{staged} hidden file(s) on {landed[:7]}: {detail}")}
+    )
 
 
 def record_builds(
@@ -1642,6 +1664,7 @@ def record_builds(
                 "passed": build.passed,
                 "committed": build.committed,
                 "hidden_tests_passed": build.hidden_tests_passed,
+                "uncommitted_would_pass": build.uncommitted_would_pass,
                 "first_attempt_gate": build.first_attempt_gate,
                 "gate_attempts": build.gate_attempts,
                 "revisions": build.revisions,

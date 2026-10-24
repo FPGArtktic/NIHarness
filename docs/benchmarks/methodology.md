@@ -551,11 +551,25 @@ tests. `committed_ratio` is the ceiling on it: work that did not land did not
 happen, and the two apart say whether a failure was a wrong answer or no
 answer.
 
-The tests run against the working tree rather than against `HEAD`, which
-keeps those two facts separate. A tree that would have passed and was never
-committed is a gate problem, a commit that fails the tests is a work problem,
-and resetting to `HEAD` first would report both as the same thing. Both read
-as a failure, with a note saying which one it was.
+The grade is taken on **`HEAD`**, because that is what the gate guarantees
+and what a human would merge. The first version graded the working tree, and
+its second pass showed why that is wrong: a task committed, a fix step then
+damaged the worktree, and the damage was graded instead of the commit.
+
+When nothing was committed the working tree is graded as well, and the result
+recorded separately as `uncommitted_would_pass`. Work that was done and never
+offered to the gate reads the same as work that was wrong, and those are not
+the same failure - the first run had a task whose work the hidden tests
+accepted on a tree nothing was committed to.
+
+### The gate is counted from the call, not from the gate's own events
+
+`git_commit` **is** the gate (§4), and the gate's commands run inside the tool
+server, which appends to its own sink. Those `gate.finished` events never
+reach the run's log, so the first version of `first_attempt_gate_ratio` folded
+them and read **0.0 on every task of every pass** - a dead metric that looked
+like a finding. It is folded from the `git_commit` call and whether its result
+came back ok, both of which the harness does log.
 
 ### A task is only fair if its brief says what the tests check
 

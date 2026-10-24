@@ -30,7 +30,6 @@ from niharness.domain.bench import (
     throughput,
 )
 from niharness.domain.events import (
-    GateFinished,
     InterventionLevel,
     LoopIntervention,
     Payload,
@@ -819,8 +818,28 @@ def test_a_drawing_names_no_colour_of_its_own() -> None:
 # -------------------------------------------------------------------- L3
 
 
-def gate(*, passed: bool, tier: str = "quick") -> GateFinished:
-    return GateFinished(tier="quick" if tier == "quick" else "full", passed=passed)
+def gate(*, passed: bool, call_id: str = "g1") -> tuple[Payload, ...]:
+    """A `git_commit` call and its result. That tool is the gate (§4).
+
+    The gate's own `gate.finished` events are appended by the tool server's
+    own sink and never reach the run's log, so a fold over them counted zero
+    on every task of every pass.
+    """
+    return (
+        ToolCalled(
+            call_id=CallId(call_id),
+            name="git_commit",
+            arguments={"message": "feat: do the thing"},
+            arguments_digest=digest_json({"m": call_id}),
+        ),
+        ToolReturned(
+            call_id=CallId(call_id),
+            ok=passed,
+            result_digest=digest_json({"ok": passed}),
+            truncated=False,
+            summary="committed" if passed else "gate red",
+        ),
+    )
 
 
 def task_finished(
@@ -858,8 +877,8 @@ def test_a_task_without_acceptance_criteria_cannot_be_graded() -> None:
 
 def test_a_task_passes_when_it_committed_and_the_hidden_tests_agree() -> None:
     events = (
-        gate(passed=False),
-        gate(passed=True),
+        *gate(passed=False, call_id="g1"),
+        *gate(passed=True, call_id="g2"),
         task_finished("a-task", outcome="completed", revisions=1, commits=("abc1234",)),
     )
     scored = score_build(build_task(), events, hidden_tests_passed=True)
@@ -879,7 +898,7 @@ def test_committed_work_the_hidden_tests_refuse_is_a_failure_with_a_reason() -> 
     """
     scored = score_build(
         build_task(),
-        (gate(passed=True), task_finished("a-task", commits=("abc1234",))),
+        (*gate(passed=True), task_finished("a-task", commits=("abc1234",))),
         hidden_tests_passed=False,
     )
     assert scored.committed is True
@@ -892,7 +911,7 @@ def test_a_handback_is_counted_as_itself() -> None:
     """The designed ending when the fix loop runs out, not a crash."""
     scored = score_build(
         build_task(),
-        (gate(passed=False), task_finished("a-task", outcome="handoff", reason="fix limit")),
+        (*gate(passed=False), task_finished("a-task", outcome="handoff", reason="fix limit")),
         hidden_tests_passed=False,
     )
     assert scored.handed_back is True
@@ -903,12 +922,12 @@ def test_a_handback_is_counted_as_itself() -> None:
 def test_the_suite_reports_what_landed_and_what_was_right() -> None:
     passed = score_build(
         build_task(id="one"),
-        (gate(passed=True), task_finished("one", commits=("a",))),
+        (*gate(passed=True), task_finished("one", commits=("a",))),
         hidden_tests_passed=True,
     )
     wrong = score_build(
         build_task(id="two"),
-        (gate(passed=True), task_finished("two", commits=("b",))),
+        (*gate(passed=True), task_finished("two", commits=("b",))),
         hidden_tests_passed=False,
     )
     score = score_builds((passed, wrong))
@@ -917,3 +936,51 @@ def test_the_suite_reports_what_landed_and_what_was_right() -> None:
     assert score.first_attempt_gate_ratio == 1.0, "the gate is not the measure"
     assert score.outcomes() == (("one", True), ("two", False))
     assert set(score.metrics()) >= {"pass_at_1_ratio", "committed_ratio", "revisions_per_task"}
+
+
+def test_the_gate_is_counted_from_the_call_the_harness_logs() -> None:
+    """A fold over `gate.finished` counted zero on every task of every pass.
+
+    The gate runs inside the tool server, which appends to its own sink, so
+    those events never reach the run's log. `git_commit` is the gate, and the
+    call and its result are logged - which is where the number has to come
+    from.
+    """
+    scored = score_build(
+        build_task(),
+        (
+            *gate(passed=False, call_id="g1"),
+            *gate(passed=True, call_id="g2"),
+            task_finished("a-task", commits=("abc1234",)),
+        ),
+        hidden_tests_passed=True,
+    )
+    assert scored.gate_attempts == 2
+    assert scored.gate_passes == 1
+    assert scored.first_attempt_gate is False, "the first offer was red"
+
+
+def test_work_done_and_never_committed_is_said_in_those_words() -> None:
+    """It did not happen, and it is a different failure from being wrong.
+
+    The grade is `HEAD`. This is the only reason the working tree is looked at
+    at all: a task that did the work and never offered it to the gate reads
+    the same as one that got it wrong, and they are not the same thing.
+    """
+    scored = score_build(
+        build_task(),
+        (task_finished("a-task", outcome="handoff", reason="implement failed"),),
+        hidden_tests_passed=False,
+        uncommitted_would_pass=True,
+    )
+    assert scored.passed is False
+    assert scored.uncommitted_would_pass is True
+    assert "never committed" in " ".join(scored.notes)
+
+    landed = score_build(
+        build_task(),
+        (*gate(passed=True), task_finished("a-task", commits=("abc1234",))),
+        hidden_tests_passed=True,
+        uncommitted_would_pass=True,
+    )
+    assert landed.uncommitted_would_pass is False, "it committed; the worktree is not the story"
