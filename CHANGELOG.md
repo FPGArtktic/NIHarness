@@ -13,6 +13,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **A step that writes nothing never rolls back.** Level three resets the
+  worktree to the last green commit and restarts the step with a summary,
+  which for an implementer is a way out of a mess it made. A reviewer, a
+  planner or a brainstormer made no mess - there is nothing to roll back - and
+  the restart throws away everything it read. Measured on L2: a reviewer
+  reached level three, decided its case correctly, and anchored its note
+  nowhere, `located_ratio` 0.0 for that pass. A read-only step now goes from
+  the reflection turn to step failure, and the loop derives which kind it is
+  from the allowlist rather than being told.
+- **The evidence nudge says it is about the evidence, not the decision.** The
+  tally caught the risk named when the check was added: `unbacked_claim` fired
+  and the reviewer then refused a correct change, `a-helper-extracted` NAK
+  against ACK with precision 0.5 for that pass. Two of six passes since show
+  that shape. The instruction now says outright that a change it cannot run is
+  something to note in the summary rather than grounds for refusing the
+  change.
+
+### Fixed
+
 - **The turn after a reflection asks for the different thing.** Letting the
   loop continue past a reflection turn left two consecutive assistant messages
   at the end of the window, which llama.cpp's template refuses - `400 Cannot

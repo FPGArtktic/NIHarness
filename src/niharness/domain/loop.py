@@ -342,15 +342,28 @@ def degenerate_output(
 def next_level(
     applied: Sequence[InterventionLevel],
     findings: Sequence[LoopFinding],
+    *,
+    writes: bool = True,
 ) -> InterventionLevel | None:
     """Return the next rung of the intervention ladder.
 
-    The ladder never goes down and never skips a rung: each detector firing
-    moves the step one level further, and level four is step failure.
+    The ladder never goes down, and it skips exactly one rung in exactly one
+    case: **a step that writes nothing never rolls back.** Level three resets
+    the worktree to the last green commit and restarts the step with a
+    summary, which for an implementer is a way out of a mess it made. A
+    reviewer, a planner or a brainstormer made no mess - there is nothing to
+    roll back - and the restart throws away everything it had read.
+
+    Measured on L2: a reviewer reached level three, decided the case
+    correctly, and anchored its note nowhere, with `located_ratio` 0.0 for
+    that pass. It had re-reviewed a diff from a cleared window.
 
     Args:
         applied: the levels already applied in this step, in order.
         findings: the findings of the current evaluation.
+        writes: whether this step can change a file. False skips level three,
+            because rolling back nothing and discarding the reading is all it
+            would do.
 
     Returns:
         The level to apply now, or None when nothing fired.
@@ -362,7 +375,10 @@ def next_level(
         return InterventionLevel.SYNTHETIC_RESULT
     if highest is InterventionLevel.STEP_FAILURE:
         return InterventionLevel.STEP_FAILURE
-    return InterventionLevel(highest + 1)
+    climbed = InterventionLevel(highest + 1)
+    if climbed is InterventionLevel.ROLLBACK_RESTART and not writes:
+        return InterventionLevel.STEP_FAILURE
+    return climbed
 
 
 MAX_REPEATED_DETAIL = 1_200

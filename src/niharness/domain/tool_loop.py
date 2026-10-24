@@ -54,6 +54,7 @@ from niharness.domain.messages import ChatResponse, ResponseFormat, ToolChoice
 from niharness.domain.roles import Role
 from niharness.domain.tools import (
     EMPTY_CATALOG,
+    READ_ONLY_TOOLS,
     AcceptedCall,
     RejectedCall,
     ToolCall,
@@ -138,6 +139,17 @@ class LoopConfig(BaseModel):
         "state into NOTES.md, which is right for a step that was cut off and wrong "
         "for one whose only turn was always going to be the artifact.",
     )
+
+    @property
+    def writes(self) -> bool:
+        """Whether this step can change a file.
+
+        Derived from the allowlist rather than declared, because it is already
+        there: a step offered only read-only tools cannot have written
+        anything, whatever it was asked to do.
+        """
+        return not self.allowlist <= READ_ONLY_TOOLS
+
     requires_commit: bool = Field(
         default=REQUIRES_COMMIT_DEFAULT,
         description="Whether reporting this step done also claims a commit. True for "
@@ -439,7 +451,7 @@ def _intervene(state: LoopState) -> tuple[LoopState, tuple[EventBody, ...]]:
     findings = evaluate(state.calls, state.config.thresholds)
     if not findings:
         return state, ()
-    level = next_level(state.interventions, findings)
+    level = next_level(state.interventions, findings, writes=state.config.writes)
     if level is None:  # pragma: no cover - findings imply a level
         return state, ()
     leading = findings[0]
@@ -885,7 +897,10 @@ def _ask_for_the_evidence(
             "pending_instruction": (
                 f"That verdict claims evidence this step does not have: {detail}. "
                 "Run it yourself and answer again. A reviewer that takes a claim on "
-                "trust is the thing a reviewer is for."
+                "trust is the thing a reviewer is for.\n\n"
+                "This is about the evidence, not the decision. If the change is good, "
+                "say so with the run behind you; if you cannot run it, say that in the "
+                "summary rather than refusing the change for it."
             ),
         },
     )

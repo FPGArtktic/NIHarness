@@ -9,6 +9,7 @@ from niharness.domain.events import InterventionLevel
 from niharness.domain.identity import Digest
 from niharness.domain.loop import (
     CallRecord,
+    LoopFinding,
     LoopThresholds,
     Pathology,
     degenerate_output,
@@ -216,3 +217,35 @@ def test_a_very_long_refusal_is_cut_rather_than_resent_whole() -> None:
     text = synthetic_result("run_tests", "x" * 10_000, failed=True)
     assert len(text) < 2_000
     assert "[cut]" in text
+
+
+def test_a_step_that_writes_nothing_never_rolls_back() -> None:
+    """Level three resets the worktree and restarts the step with a summary.
+
+    For an implementer that is a way out of a mess it made. A reviewer made no
+    mess - there is nothing to roll back - and the restart throws away
+    everything it read. Measured on L2: a reviewer reached level three,
+    decided its case correctly, and anchored its note nowhere, with
+    `located_ratio` 0.0 for that pass.
+    """
+    fired = (
+        LoopFinding(
+            pathology=Pathology.EXACT_REPEAT,
+            observed=2,
+            threshold=2,
+            evidence="read_file called twice with identical arguments",
+        ),
+    )
+    climbed = [InterventionLevel.SYNTHETIC_RESULT, InterventionLevel.REFLECTION_TURN]
+
+    assert next_level(climbed, fired) is InterventionLevel.ROLLBACK_RESTART
+    assert next_level(climbed, fired, writes=True) is InterventionLevel.ROLLBACK_RESTART
+    assert next_level(climbed, fired, writes=False) is InterventionLevel.STEP_FAILURE
+
+    # The rungs below it are the same either way: a repeat message and a
+    # reflection cost a read-only step nothing it cannot afford.
+    assert next_level([], fired, writes=False) is InterventionLevel.SYNTHETIC_RESULT
+    assert (
+        next_level([InterventionLevel.SYNTHETIC_RESULT], fired, writes=False)
+        is InterventionLevel.REFLECTION_TURN
+    )

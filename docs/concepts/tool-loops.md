@@ -282,7 +282,14 @@ Each firing climbs exactly one rung, and the rung is an event
    that answers "what else could you try" by re-sending the same call has
    earned the next rung.
 3. **Rollback and restart** the step from the last green commit, with a
-   `ContextSummary` of the failed attempts so they are not repeated.
+   `ContextSummary` of the failed attempts so they are not repeated. **Only
+   for a step that can write.** A reviewer, a planner or a brainstormer made
+   no mess to roll back, and the restart would throw away everything it had
+   read: measured on L2, where a reviewer reached this rung, decided its case
+   correctly and anchored its note nowhere, with `located_ratio` 0.0 for that
+   pass. A read-only step goes from the reflection turn to step failure, and
+   the loop derives which kind it is from the allowlist rather than being
+   told.
 4. **Step failure**: the task goes back to the human with the diagnostics in
    `NOTES.md`.
 
