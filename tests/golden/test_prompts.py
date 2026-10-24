@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from niharness.domain.roles import DEFAULT_ROLES, Role
+from niharness.domain.roles import DEFAULT_ROLES, SPEC_GATE_LAYERS, Role
 from niharness.prompts import assemble, available_layers, load_layer
 
 pytestmark = pytest.mark.golden
@@ -24,6 +24,17 @@ GOLDEN = Path(__file__).parent / "prompts"
 def test_assembled_prompt_matches_its_snapshot(role: Role) -> None:
     expected = (GOLDEN / f"{role.value}.md").read_text(encoding="utf-8")
     assert assemble(DEFAULT_ROLES[role].prompt_layers) == expected
+
+
+def test_the_spec_gates_prompt_matches_its_snapshot() -> None:
+    """One step's stack is not a role's, so it needs its own snapshot.
+
+    The spec gate reviews a document nobody has implemented. The reviewer
+    layer is about one committed change - re-run the build, anchor each note
+    to a line - and would be instructions for the wrong job.
+    """
+    expected = (GOLDEN / "spec-gate.md").read_text(encoding="utf-8")
+    assert assemble(SPEC_GATE_LAYERS) == expected
 
 
 def test_license_headers_never_reach_the_model() -> None:

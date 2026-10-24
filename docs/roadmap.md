@@ -193,11 +193,13 @@ flag on the sandbox adapter:
       ([ADR 0026](adr/0026-the-planner-writes-the-work-the-harness-binds-the-spec.md)).
 - [x] `nih plan approve`: approval recorded by digest, which is what
       `nih implement` then runs. The decision stays a human one.
-- [ ] The reviewer half of the spec gate - one ACK/NAK pass over `SPEC.md`
-      before planning starts. The schema half runs today and is not a
-      formality: an acceptance criterion whose verification only restates an
-      intention is rejected offline. `spec.accepted` carries `reviewed: false`
-      until the other half exists, rather than implying a review nobody ran.
+- [x] The reviewer half of the spec gate: one pass, no tools, over `SPEC.md`
+      before planning starts, looking for what the schema cannot see - a
+      criterion that would hold whether or not the work was done. It answers
+      with a `SpecVerdict` rather than a `Verdict`, because an ACK on the
+      latter has to stand on a green build and green tests and a spec has
+      neither; and a NAK must name what is missing. `spec.accepted` carries
+      `reviewed`, so a run with `--no-spec-review` says so.
 - [x] `nih run`: plan and implement without stopping for approval. It chains
       the two fresh runs and approves the plan on your behalf - and refuses to
       implement a plan whose `open_questions` are not empty, because the one

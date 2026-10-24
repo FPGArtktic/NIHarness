@@ -9,20 +9,21 @@ Run this deliberately, as part of the commit that changes a prompt:
 
 from pathlib import Path
 
-from niharness.domain.roles import DEFAULT_ROLES
+from niharness.domain.roles import DEFAULT_ROLES, SPEC_GATE_LAYERS
 from niharness.prompts import assemble
 
 GOLDEN = Path(__file__).parent / "prompts"
 
 
 def main() -> None:
-    """Write one snapshot per role."""
+    """Write one snapshot per role, plus the one step whose stack is not a role's."""
     GOLDEN.mkdir(parents=True, exist_ok=True)
     for role, spec in DEFAULT_ROLES.items():
         (GOLDEN / f"{role.value}.md").write_text(
             assemble(spec.prompt_layers),
             encoding="utf-8",
         )
+    (GOLDEN / "spec-gate.md").write_text(assemble(SPEC_GATE_LAYERS), encoding="utf-8")
 
 
 if __name__ == "__main__":

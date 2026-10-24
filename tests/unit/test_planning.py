@@ -8,16 +8,18 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from niharness.application import PlanningRun, StepRunner
+from niharness.application import PlanningResult, PlanningRun, StepRunner
 from niharness.application.planning import render_spec
 from niharness.cli.main import app
 from niharness.domain import events as ev
 from niharness.domain.artifacts import (
     AcceptanceCriterion,
+    Decision,
     Plan,
     PlanDraft,
     Spec,
     SpecOrigin,
+    SpecVerdict,
     Task,
 )
 from niharness.domain.context import CompactionPolicy
@@ -101,11 +103,44 @@ def build(
     )
 
 
-async def planned(backend: FakeBackend, tools: FakeTools, sink: FakeSink) -> Plan | None:
-    result = await build(backend, tools, sink).run(
-        spec(), RUN, branch="harness/run-x", profile="cpu-only"
+async def ran(
+    backend: FakeBackend,
+    tools: FakeTools,
+    sink: FakeSink,
+    *,
+    control: FakeControl | None = None,
+    review_spec: bool = False,
+) -> PlanningResult:
+    """Run the planning stage; the spec gate is off unless a test wants it.
+
+    Off by default because most of these tests are about the plan step, and a
+    gate in front of it would mean every one of them feeding the model a
+    verdict it is not examining.
+    """
+    return await build(backend, tools, sink, control=control).run(
+        spec(),
+        RUN,
+        branch="harness/run-x",
+        profile="cpu-only",
+        review_spec=review_spec,
     )
-    return result.plan
+
+
+async def planned(backend: FakeBackend, tools: FakeTools, sink: FakeSink) -> Plan | None:
+    return (await ran(backend, tools, sink)).plan
+
+
+def gate(decision: Decision, *missing: str) -> ChatResponse:
+    """The spec gate's answer."""
+    return ChatResponse(
+        content=SpecVerdict(
+            decision=decision,
+            summary="every criterion names a command" if decision is Decision.ACK else "two",
+            missing=missing,
+        ).model_dump_json(),
+        finish_reason="stop",
+        usage=Usage(prompt_tokens=600, completion_tokens=90),
+    )
 
 
 # ------------------------------------------------------------------ the artifact
@@ -142,9 +177,7 @@ def test_the_window_gets_the_spec_once_and_the_file_gets_it_twice() -> None:
 
 async def test_a_planning_run_produces_a_plan_bound_to_its_spec() -> None:
     backend, tools, sink = FakeBackend(drafted()), FakeTools(), FakeSink()
-    result = await build(backend, tools, sink).run(
-        spec(), RUN, branch="harness/run-x", profile="cpu-only"
-    )
+    result = await ran(backend, tools, sink)
 
     assert result.outcome is RunOutcome.COMPLETED
     assert result.plan is not None
@@ -164,7 +197,7 @@ async def test_the_run_records_the_spec_it_planned_and_which_gate_ran() -> None:
 
     assert started[0].spec_digest == spec().digest()
     assert started[0].plan_digest is None, "a planning run is seeded by a spec"
-    assert accepted[0].reviewed is False, "the reviewer half of the spec gate does not exist"
+    assert accepted[0].reviewed is False, "this run skipped the reviewer pass"
     assert created[0].task_count == 2
     assert created[0].imported is False
     assert finished[0].outcome is RunOutcome.COMPLETED
@@ -189,9 +222,7 @@ async def test_the_planner_is_offered_read_only_tools() -> None:
 async def test_a_plan_that_does_not_hold_together_goes_back_to_the_human() -> None:
     backend = FakeBackend(drafted(forward_dependency=True))
     tools, sink = FakeTools(), FakeSink()
-    result = await build(backend, tools, sink).run(
-        spec(), RUN, branch="harness/run-x", profile="cpu-only"
-    )
+    result = await ran(backend, tools, sink)
 
     assert result.plan is None
     assert result.outcome is RunOutcome.FAILED
@@ -222,9 +253,7 @@ def test_the_plan_draft_brings_its_own_schema_and_not_the_digest() -> None:
 async def test_a_planning_run_can_be_cancelled_like_any_other() -> None:
     backend, tools, sink = FakeBackend(drafted()), FakeTools(), FakeSink()
     inbox = FakeControl(CancelRun(run_id=RUN, source=Driver.CLI, reason="enough planning"))
-    result = await build(backend, tools, sink, control=inbox).run(
-        spec(), RUN, branch="harness/run-x", profile="cpu-only"
-    )
+    result = await ran(backend, tools, sink, control=inbox)
 
     assert result.outcome is RunOutcome.CANCELLED
     assert result.reason == "enough planning"
@@ -318,3 +347,59 @@ def test_run_refuses_to_implement_a_plan_the_planner_guessed_at(
     assert payload["open_questions"] == list(guessed.open_questions)
     assert "--ignore-open-questions" in payload["error"]
     assert Path(payload["approved"]).is_file(), "the plan is approved and ready to implement"
+
+
+# ------------------------------------------------------------------ the spec gate
+
+
+async def test_an_acked_spec_is_planned_and_the_event_says_it_was_reviewed() -> None:
+    backend = FakeBackend(gate(Decision.ACK), drafted())
+    tools, sink = FakeTools(), FakeSink()
+    result = await ran(backend, tools, sink, review_spec=True)
+
+    assert result.plan is not None
+    assert result.spec_verdict is not None
+    assert result.spec_verdict.decision is Decision.ACK
+    accepted = [body for body in sink.bodies if isinstance(body, ev.SpecAccepted)]
+    assert accepted[0].reviewed is True
+
+
+async def test_a_naked_spec_is_never_planned_and_the_reason_is_actionable() -> None:
+    refusal = gate(Decision.NAK, "c2 cannot fail: `git log` would match any commit")
+    backend = FakeBackend(refusal, drafted())
+    tools, sink = FakeTools(), FakeSink()
+    result = await ran(backend, tools, sink, review_spec=True)
+
+    assert result.plan is None
+    assert result.outcome is RunOutcome.FAILED
+    assert "cannot fail" in result.reason, "the author is told what to change"
+    assert not [body for body in sink.bodies if isinstance(body, ev.SpecAccepted)]
+    assert not [body for body in sink.bodies if isinstance(body, ev.PlanCreated)]
+    assert len(backend.requests) == 1, "the plan step never ran"
+
+
+async def test_the_spec_gate_gets_no_tools() -> None:
+    backend = FakeBackend(gate(Decision.ACK), drafted())
+    tools, sink = FakeTools(), FakeSink()
+    await ran(backend, tools, sink, review_spec=True)
+
+    assert tools.offered[0] == frozenset(), "a document needs no tools to read"
+    assert ToolName.READ_FILE in tools.offered[1], "the planner still gets them"
+
+
+async def test_the_spec_gate_reads_the_gates_own_prompt_not_the_reviewers() -> None:
+    backend = FakeBackend(gate(Decision.ACK), drafted())
+    tools, sink = FakeTools(), FakeSink()
+    await ran(backend, tools, sink, review_spec=True)
+
+    system = backend.requests[0].messages[0].content
+    assert "spec gate" in system
+    assert "cannot fail" in system, "the defect it exists to find is named"
+    assert "run_build" not in system, "the reviewer's instructions are about a commit"
+
+
+def test_a_refused_spec_has_to_say_what_is_missing() -> None:
+    with pytest.raises(ValueError, match="name what is missing"):
+        SpecVerdict(decision=Decision.NAK, summary="not good enough")
+    with pytest.raises(ValueError, match="cannot also be missing"):
+        SpecVerdict(decision=Decision.ACK, summary="fine", missing=("something",))

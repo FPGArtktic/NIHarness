@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_LAYERS = 9
+EXPECTED_LAYERS = 10
 """The prompt layers under `src/niharness/prompts`, excluding `__init__.py`."""
 
 

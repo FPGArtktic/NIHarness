@@ -359,18 +359,28 @@ Usage: nih plan spec [OPTIONS] {SPEC.md}
 │ *    SPEC.md      <path>  Path to SPEC.md [required]                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --project-root        -C      <path>  The project to operate on.             │
-│                                       [default: (.)]                         │
-│ --profile                     <str>   Override the profile.                  │
-│ --output              -o      <path>  Where to write the plan.               │
-│                                       [default: PLAN.md]                     │
-│ --unsafe-local-tools                  Run the tool server on this host       │
-│                                       instead of in the sandbox.             │
-│ --approve                             Approve the plan at once, skipping the │
-│                                       human stop.                            │
-│ --json                                Print one JSON object instead of the   │
-│                                       human form.                            │
-│ --help                                Show this message and exit.            │
+│ --project-root        -C                      <path>  The project to operate │
+│                                                       on.                    │
+│                                                       [default: (.)]         │
+│ --profile                                     <str>   Override the profile.  │
+│ --output              -o                      <path>  Where to write the     │
+│                                                       plan.                  │
+│                                                       [default: PLAN.md]     │
+│ --unsafe-local-tools                                  Run the tool server on │
+│                                                       this host instead of   │
+│                                                       in the sandbox.        │
+│ --approve                                             Approve the plan at    │
+│                                                       once, skipping the     │
+│                                                       human stop.            │
+│ --spec-review             --no-spec-review            Run the spec gate's    │
+│                                                       reviewer pass before   │
+│                                                       planning.              │
+│                                                       [default: spec-review] │
+│ --json                                                Print one JSON object  │
+│                                                       instead of the human   │
+│                                                       form.                  │
+│ --help                                                Show this message and  │
+│                                                       exit.                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 

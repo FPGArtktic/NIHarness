@@ -13,6 +13,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **The spec gate's reviewer half.** One pass, no tools, over `SPEC.md` before
+  planning starts, looking for what the schema cannot see: a criterion that
+  would hold whether or not the work was done, a goal nothing would detect the
+  absence of, a contradiction between the goal and the constraints.
+- It answers with a `SpecVerdict`, not a `Verdict`. An ACK on a `Verdict` has
+  to stand on a green build and green tests, and a spec has neither - an
+  artifact whose required fields are meaningless for the thing it describes
+  gets filled in with whatever validates. A NAK has to name what is missing,
+  enforced by the model, because a refusal the author cannot act on is worse
+  than no refusal.
+- Its prompt stack is the policy plus `15-gate-spec.md` and not the reviewer
+  role's: that layer is about one committed change, and would be instructions
+  for the wrong job. One step's stack is therefore not a role's, which is now
+  a snapshot of its own in the golden set.
 - **Entry B works: `nih plan SPEC.md` plans a spec.** The spec is validated
   offline, a worktree is made, the planner reads the code with read-only tools,
   and `PLAN.md` is written and stored by digest. `nih plan approve PLAN.md`

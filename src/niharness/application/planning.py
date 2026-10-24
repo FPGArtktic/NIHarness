@@ -29,14 +29,14 @@ from niharness.application.step_runner import StepRunner
 from niharness.application.summarizer import Summarizer
 from niharness.application.window import ContextArchive, Window
 from niharness.domain import events as ev
-from niharness.domain.artifacts import Plan, Spec
+from niharness.domain.artifacts import Decision, Plan, Spec, SpecVerdict
 from niharness.domain.budgets import fit_to_host
 from niharness.domain.context import CompactionPolicy
 from niharness.domain.events import RunOutcome, StopReason
 from niharness.domain.identity import RunId, StepId, derive_id
 from niharness.domain.loop import LoopThresholds
 from niharness.domain.pipeline import Stage, step_for
-from niharness.domain.roles import DEFAULT_ROLES, Role
+from niharness.domain.roles import DEFAULT_ROLES, SPEC_GATE_LAYERS, Role
 from niharness.domain.tool_loop import ArtifactKind, LoopConfig, LoopState
 from niharness.domain.tools import EMPTY_CATALOG, ToolCatalog, ToolLimits
 from niharness.ports.control_channel import ControlChannel
@@ -65,6 +65,10 @@ class PlanningResult(BaseModel):
     tool_calls: int = Field(ge=0)
     tokens: int = Field(ge=0)
     plan: Plan | None = None
+    spec_verdict: SpecVerdict | None = Field(
+        default=None,
+        description="The spec gate's reviewer pass, when one ran.",
+    )
     reason: str = ""
 
     @property
@@ -173,6 +177,7 @@ class PlanningRun:
         profile: str,
         tools: Literal["sandbox", "local"] = "sandbox",
         sandbox_network: Literal["none", "private"] = "none",
+        review_spec: bool = True,
     ) -> PlanningResult:
         """Plan `spec`, and record what happened.
 
@@ -186,6 +191,10 @@ class PlanningRun:
             profile: the hardware profile in force.
             tools: where the tool server ran.
             sandbox_network: whether the sandbox had a network.
+            review_spec: run the spec gate's reviewer pass before planning.
+                On by default; what it costs is one no-tool step and what it
+                buys is a spec that somebody read before work was planned
+                from it.
 
         Returns:
             The plan, or the reason there is none.
@@ -200,7 +209,14 @@ class PlanningRun:
                 sandbox_network=sandbox_network,
             ),
         )
-        await self._events.append(ev.SpecAccepted(spec_digest=spec.digest(), reviewed=False))
+        reviewed: SpecVerdict | None = None
+        if review_spec:
+            reviewed = await self._review_spec(spec, run_id)
+            if reviewed is None or reviewed.decision is Decision.NAK:
+                return await self._refused(run_id, spec, reviewed)
+        await self._events.append(
+            ev.SpecAccepted(spec_digest=spec.digest(), reviewed=reviewed is not None),
+        )
         for server in self._catalog.servers():
             await self._events.append(
                 ev.ToolsAttached(
@@ -225,6 +241,7 @@ class PlanningRun:
                 tool_calls=state.budget.tool_calls_used,
                 tokens=state.budget.tokens_used,
                 plan=plan,
+                spec_verdict=reviewed,
             )
 
         cancelled = self._control.cancelled
@@ -271,6 +288,7 @@ class PlanningRun:
         tool_calls: int,
         tokens: int,
         plan: Plan | None = None,
+        spec_verdict: SpecVerdict | None = None,
     ) -> PlanningResult:
         """Record the run's terminal event and assemble the result."""
         await self._events.append(ev.RunFinished(outcome=outcome, reason=reason))
@@ -282,7 +300,67 @@ class PlanningRun:
             tool_calls=tool_calls,
             tokens=tokens,
             plan=plan,
+            spec_verdict=spec_verdict,
             reason=reason,
+        )
+
+    async def _review_spec(self, spec: Spec, run_id: RunId) -> SpecVerdict | None:
+        """Run the spec gate's reviewer pass: one step, no tools, no code.
+
+        Returns:
+            The verdict, or None when the step produced none - which is itself
+            a refusal to proceed, because planning from an unreviewed spec is
+            what `--no-spec-review` is for and it has to be asked for.
+        """
+        definition = step_for(Stage.SPEC_GATE)
+        step_id = StepId(derive_id(run_id, Stage.SPEC_GATE.value, str(spec.digest())))
+        window = Window(
+            self._tokenizer,
+            self._policy,
+            summarizer=self._summarizer,
+            archive=self._archive,
+            step=str(step_id),
+        )
+        await window.add_prompt(assemble(SPEC_GATE_LAYERS))
+        await window.add_task(render_spec(spec))
+        state = await self._runner.run(
+            LoopConfig(
+                stage=Stage.SPEC_GATE.value,
+                role=Role.REVIEWER,
+                model=self._model,
+                allowlist=frozenset(),
+                budgets=fit_to_host(definition.budgets, self._generation_tps),
+                thresholds=self._thresholds,
+                limits=self._limits,
+                temperature=0.0,
+                final_artifact=ArtifactKind.SPEC_VERDICT,
+            ),
+            window,
+            step_id=step_id,
+        )
+        return state.spec_verdict
+
+    async def _refused(
+        self,
+        run_id: RunId,
+        spec: Spec,
+        verdict: SpecVerdict | None,
+    ) -> PlanningResult:
+        """Finish without planning, saying what the spec is missing."""
+        if verdict is None:
+            reason = "the spec gate produced no verdict, so the spec was not reviewed"
+        else:
+            listed = "; ".join(verdict.missing)
+            reason = f"the spec gate refused it: {verdict.summary} Missing: {listed}"
+        _log.warning("spec.refused", run_id=run_id, digest=str(spec.digest())[:12])
+        return await self._finish(
+            run_id,
+            RunOutcome.FAILED,
+            reason,
+            StopReason.FINAL_ANSWER if verdict else StopReason.ERROR,
+            tool_calls=0,
+            tokens=0,
+            spec_verdict=verdict,
         )
 
     async def _plan_step(self, spec: Spec, run_id: RunId) -> LoopState:

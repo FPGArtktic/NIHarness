@@ -30,8 +30,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 >   mount - is asserted by tests over the container's argument vector rather than by
 >   having withstood anything. Treat it as a reasonable default, not as a boundary you
 >   have audited.
-> - **Two of three entry points work.** You can hand it a `SPEC.md` and get a
->   plan, or bring a finished `PLAN.md` and have it executed. `nih brainstorm`
+> - **Two of three entry points work.** You can hand it a `SPEC.md`, have it
+>   gated and planned, and bring a finished `PLAN.md` to execute. `nih brainstorm`
 >   is still a stub that exits 69 and says so.
 > - **The central question is half answered.** L1 (tool calling) and L2 (review)
 >   have runners and numbers; L3 (whole tasks) has a methodology and no runner.
@@ -194,7 +194,7 @@ unattended. Everything below is the detail of that sentence.
 | **Tools** | `read_file`, `list_tree`, `grep`, `replace_in_file` (creates too), `apply_patch` with its clerical repairs, `format_code`, `run_lint`/`run_build`/`run_tests`, `git_commit` as the gate, `rag_query`, `add_dependency` writing the request to `NOTES.md`, the LSP symbol tools | `diagnostics`; `add_dependency` asks the installed environment, not a real mirror index |
 | **Sandbox** | the image, built from a pinned wheelhouse and published to [GHCR](https://github.com/FPGArtktic/NIHarness/pkgs/container/niharness-sandbox); the hardened argument vector, two network modes, `--unsafe-local-tools` as the escape hatch; a benchmark pass runs inside it under `--network=none` | Quadlet units not rendered; no Rust or Go language server in the image |
 | **Run loop** | `nih implement`, review and fix stages, structured output with GBNF, window building and compaction, resume, cancel | the full gate tier inside a run; a producer for `questions.asked` |
-| **Pipeline entries** | **B**: `nih plan SPEC.md` plans a spec, `nih plan approve` records the decision, `nih run` does both halves at once; **C**: bring a `PLAN.md` and execute it | **A** (`nih brainstorm`) needs an interactive session loop; the reviewer half of the spec gate |
+| **Pipeline entries** | **B**: `nih plan SPEC.md` runs both halves of the spec gate and plans, `nih plan approve` records the decision, `nih run` does everything at once; **C**: bring a `PLAN.md` and execute it | **A** (`nih brainstorm`) needs an interactive session loop |
 | **Retrieval** | Qdrant over REST, embeddings over `/v1/embeddings`, `nih ingest` reading PDFs with OCR and citing pages, `rag_query` over documents and over what compaction dropped | the code index (needs tree-sitter chunking); `nih compact` and `nih research` are stubs |
 | **Management** | `nih mcp`, `nih runs`, `nih status`, `nih cancel`, `nih resume`, `--json`, `--detach` | answering `Questions` from outside |
 | **TUI** | follows a live run's event log, writes the control inbox, cancels | the questions picker and plan approval |
@@ -202,7 +202,7 @@ unattended. Everything below is the detail of that sentence.
 
 Three things block the rest, in order: **L3** (whole tasks are still unmeasured),
 **brainstorm** (the last entry point, and the only interactive one), and **the code
-index** (the one retrieval collection nothing writes to). 33 of 65 roadmap items are
+index** (the one retrieval collection nothing writes to). 34 of 65 roadmap items are
 done; the count is a poor measure, because the remaining ones are the large ones.
 
 [`docs/orientation.md`](docs/orientation.md) is the long version of this table,

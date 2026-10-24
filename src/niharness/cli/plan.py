@@ -121,6 +121,7 @@ async def execute(
     spec: Spec,
     *,
     local_tools: bool,
+    review_spec: bool = True,
     quiet: bool = False,
 ) -> PlanningResult:
     """Make a worktree, start the tools, and run the planning step.
@@ -203,6 +204,7 @@ async def execute(
                 profile=config.profile,
                 tools="local" if local_tools else "sandbox",
                 sandbox_network=config.sandbox.network,
+                review_spec=review_spec,
             )
     raise AssertionError("unreachable: the context manager always returns")  # pragma: no cover
 
@@ -228,13 +230,28 @@ def plan_spec(
         bool,
         typer.Option("--approve", help="Approve the plan at once, skipping the human stop."),
     ] = False,
+    review_spec: Annotated[
+        bool,
+        typer.Option(
+            "--spec-review/--no-spec-review",
+            help="Run the spec gate's reviewer pass before planning.",
+        ),
+    ] = True,
     json_mode: JsonOption = False,
 ) -> None:
     """Run the planning stage on a spec, producing PLAN.md for approval."""
     config = HarnessConfig.load(root.resolve(), profile=profile)
     spec = load_spec(spec_file, json_mode=json_mode)
     try:
-        result = blocking(execute(config, spec, local_tools=local_tools, quiet=json_mode))
+        result = blocking(
+            execute(
+                config,
+                spec,
+                local_tools=local_tools,
+                review_spec=review_spec,
+                quiet=json_mode,
+            ),
+        )
     except AirGapViolationError as error:
         fail(str(error), json_mode=json_mode, code=EX_UNAVAILABLE)
         raise typer.Exit(EX_UNAVAILABLE) from error
@@ -250,6 +267,7 @@ def plan_spec(
         raise typer.Exit(EX_UNAVAILABLE) from error
 
     if result.plan is None:
+        refused = result.spec_verdict
         fail(
             f"no plan: {result.reason}",
             {
@@ -258,6 +276,11 @@ def plan_spec(
                 "stop_reason": result.stop_reason.value,
                 "tool_calls": result.tool_calls,
                 "tokens": result.tokens,
+                **(
+                    {"spec_missing": list(refused.missing), "spec_summary": refused.summary}
+                    if refused is not None
+                    else {}
+                ),
             },
             json_mode=json_mode,
         )

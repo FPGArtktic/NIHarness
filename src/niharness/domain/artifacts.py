@@ -271,6 +271,39 @@ class Verdict(Artifact):
         return self
 
 
+class SpecVerdict(Artifact):
+    """The spec gate's answer: is this spec worth planning from?
+
+    Not a :class:`Verdict`. That one is about a commit and requires an ACK to
+    stand on a green build and green tests; a spec has neither, and an artifact
+    whose required fields are meaningless for the thing it describes is an
+    artifact that will be filled in with whatever validates.
+
+    A NAK has to name what is missing. A refusal that does not say what would
+    make it pass is a wall with no door, and this project has spent a week
+    taking those down - from a tool that refused without naming the way out to
+    a benchmark case that scored "said NAK".
+    """
+
+    decision: Decision
+    summary: NonEmpty
+    missing: tuple[NonEmpty, ...] = Field(
+        default=(),
+        description="What has to be added or made testable before planning starts.",
+    )
+
+    @model_validator(mode="after")
+    def _a_refusal_names_the_way_out(self) -> Self:
+        """A NAK lists what is missing; an ACK lists nothing."""
+        if self.decision is Decision.NAK and not self.missing:
+            msg = "a NAK must name what is missing, or the author cannot act on it"
+            raise ValueError(msg)
+        if self.decision is Decision.ACK and self.missing:
+            msg = f"an ACK cannot also be missing {len(self.missing)} thing(s)"
+            raise ValueError(msg)
+        return self
+
+
 class FailedAttempt(Artifact):
     """What was tried and why it did not work; carried across a step restart."""
 
@@ -348,6 +381,7 @@ ARTIFACT_MODELS: tuple[type[Artifact], ...] = (
     Questions,
     Answer,
     Verdict,
+    SpecVerdict,
     ContextSummary,
     FinalAnswer,
 )

@@ -1,0 +1,47 @@
+{
+  "$defs": {
+    "Decision": {
+      "description": "The reviewer's verdict.",
+      "enum": [
+        "ACK",
+        "NAK"
+      ],
+      "title": "Decision",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The spec gate's answer: is this spec worth planning from?\n\nNot a :class:`Verdict`. That one is about a commit and requires an ACK to\nstand on a green build and green tests; a spec has neither, and an artifact\nwhose required fields are meaningless for the thing it describes is an\nartifact that will be filled in with whatever validates.\n\nA NAK has to name what is missing. A refusal that does not say what would\nmake it pass is a wall with no door, and this project has spent a week\ntaking those down - from a tool that refused without naming the way out to\na benchmark case that scored \"said NAK\".",
+  "properties": {
+    "decision": {
+      "$ref": "#/$defs/Decision"
+    },
+    "missing": {
+      "default": [],
+      "description": "What has to be added or made testable before planning starts.",
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Missing",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "summary": {
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "decision",
+    "summary"
+  ],
+  "title": "SpecVerdict",
+  "type": "object"
+}

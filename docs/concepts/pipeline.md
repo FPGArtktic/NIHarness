@@ -62,11 +62,24 @@ at the moment of binding, so a draft whose dependencies point forwards is
 reported as the planning error it is, with the offending id named. See
 [ADR 0026](../adr/0026-the-planner-writes-the-work-the-harness-binds-the-spec.md).
 
-The spec gate's schema half runs before a model is started, and it is not a
-formality: every acceptance criterion has to say how it is verified, and a
-verification that only restates an intention is rejected. The reviewer half -
-one ACK/NAK pass over the spec - is not built yet, so `spec.accepted` carries
-`reviewed: false` rather than implying a review nobody ran.
+The spec gate has two halves and both run. The **schema** half runs before a
+model is started, and it is not a formality: every acceptance criterion has to
+say how it is verified, and a verification that only restates an intention is
+rejected offline. The **reviewer** half is one pass with no tools over the
+spec itself, looking for what a schema cannot see - a criterion that would
+hold whether or not the work was done, a goal nothing would detect the absence
+of, a contradiction between the goal and the constraints.
+
+It answers with a `SpecVerdict`, not a `Verdict`: an ACK on a `Verdict` has to
+stand on a green build and green tests, and a spec has neither. A NAK must
+name what is missing, because a refusal the author cannot act on is worse than
+no refusal. `spec.accepted` carries `reviewed`, which says whether that half
+ran - `--no-spec-review` turns it off, and the event then says so instead of
+implying a review nobody performed.
+
+The gate's own prompt stack is the policy plus `15-gate-spec.md`, and not the
+reviewer role's: that layer is about one committed change - re-run the build,
+anchor each note to a line - which would be instructions for the wrong job.
 
 Then the plan waits. `nih plan approve PLAN.md` records the decision by digest,
 which is what `nih implement` runs. Approval is a human action and stays one;

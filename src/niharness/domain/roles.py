@@ -48,6 +48,16 @@ POLICY_LAYER = "00-policy.md"
 DOD_LAYER = "20-checklist-dod.md"
 """The Definition of Done checklist, appended for roles that must finish something."""
 
+SPEC_GATE_LAYERS: tuple[str, ...] = (POLICY_LAYER, "15-gate-spec.md")
+"""The spec gate's prompt stack: the policy, then the gate's own instructions.
+
+Not the reviewer's stack. The reviewer layer is about one committed change -
+re-run the build, read the output, anchor every note to a file and a line -
+and none of that applies to a document nobody has implemented yet. A step's
+stack is a property of the step, and this is the one step whose stack is not a
+role's.
+"""
+
 
 class RoleSpec(BaseModel):
     """Everything that distinguishes one role from another."""

@@ -27,7 +27,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from niharness.domain import events as ev
-from niharness.domain.artifacts import FinalAnswer, PlanDraft, Verdict
+from niharness.domain.artifacts import FinalAnswer, PlanDraft, SpecVerdict, Verdict
 from niharness.domain.budgets import Budgets, BudgetState
 from niharness.domain.events import EventBody, InterventionLevel, StopReason
 from niharness.domain.identity import CallId, Digest, digest_text
@@ -65,8 +65,9 @@ FINALIZE_INSTRUCTION = (
 MAX_INVALID_RESPONSES = 3
 """How often a malformed final answer may be re-requested before the step fails."""
 
-FinalArtifact = FinalAnswer | Verdict | PlanDraft
-"""What a step may end with: work reported done, a review's verdict, or a plan."""
+FinalArtifact = FinalAnswer | Verdict | PlanDraft | SpecVerdict
+"""What a step may end with: work reported done, a verdict on a commit or on a
+spec, or a plan."""
 
 
 class ArtifactKind(StrEnum):
@@ -75,16 +76,18 @@ class ArtifactKind(StrEnum):
     FINAL_ANSWER = "FinalAnswer"
     VERDICT = "Verdict"
     PLAN_DRAFT = "PlanDraft"
+    SPEC_VERDICT = "SpecVerdict"
 
 
 DEFAULT_ARTIFACT = ArtifactKind.FINAL_ANSWER
 """What ends a step unless the caller says otherwise."""
 
 
-ARTIFACT_MODELS: dict[ArtifactKind, type[FinalAnswer] | type[Verdict] | type[PlanDraft]] = {
+ARTIFACT_MODELS: dict[ArtifactKind, type[FinalArtifact]] = {
     ArtifactKind.FINAL_ANSWER: FinalAnswer,
     ArtifactKind.VERDICT: Verdict,
     ArtifactKind.PLAN_DRAFT: PlanDraft,
+    ArtifactKind.SPEC_VERDICT: SpecVerdict,
 }
 """The model each kind validates against."""
 
@@ -191,6 +194,11 @@ class LoopState(BaseModel):
     def plan_draft(self) -> PlanDraft | None:
         """The step's PlanDraft, when that is what ended it."""
         return self.final if isinstance(self.final, PlanDraft) else None
+
+    @property
+    def spec_verdict(self) -> SpecVerdict | None:
+        """The step's SpecVerdict, when that is what ended it."""
+        return self.final if isinstance(self.final, SpecVerdict) else None
 
     @property
     def next_seq(self) -> int:
