@@ -27,11 +27,18 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from niharness.domain import events as ev
-from niharness.domain.artifacts import FinalAnswer, PlanDraft, Spec, SpecVerdict, Verdict
+from niharness.domain.artifacts import (
+    FinalAnswer,
+    PlanDraft,
+    SpecDraft,
+    SpecVerdict,
+    Verdict,
+)
 from niharness.domain.budgets import Budgets, BudgetState
 from niharness.domain.events import EventBody, InterventionLevel, StopReason
 from niharness.domain.identity import CallId, Digest, digest_text
 from niharness.domain.loop import (
+    AFTER_REFLECTION_INSTRUCTION,
     REFLECTION_INSTRUCTION,
     CallRecord,
     LoopFinding,
@@ -67,7 +74,7 @@ FINALIZE_INSTRUCTION = (
 MAX_INVALID_RESPONSES = 3
 """How often a malformed final answer may be re-requested before the step fails."""
 
-FinalArtifact = FinalAnswer | Verdict | PlanDraft | SpecVerdict | Spec
+FinalArtifact = FinalAnswer | Verdict | PlanDraft | SpecVerdict | SpecDraft
 """What a step may end with: work reported done, a verdict on a commit or on a
 spec, a plan, or a spec itself."""
 
@@ -79,7 +86,7 @@ class ArtifactKind(StrEnum):
     VERDICT = "Verdict"
     PLAN_DRAFT = "PlanDraft"
     SPEC_VERDICT = "SpecVerdict"
-    SPEC = "Spec"
+    SPEC_DRAFT = "SpecDraft"
 
 
 REQUIRES_COMMIT_DEFAULT = False
@@ -101,7 +108,7 @@ ARTIFACT_MODELS: dict[ArtifactKind, type[FinalArtifact]] = {
     ArtifactKind.VERDICT: Verdict,
     ArtifactKind.PLAN_DRAFT: PlanDraft,
     ArtifactKind.SPEC_VERDICT: SpecVerdict,
-    ArtifactKind.SPEC: Spec,
+    ArtifactKind.SPEC_DRAFT: SpecDraft,
 }
 """The model each kind validates against."""
 
@@ -123,6 +130,13 @@ class LoopConfig(BaseModel):
     final_artifact: ArtifactKind | None = Field(
         default=DEFAULT_ARTIFACT,
         description="The artifact that ends this step; None means any prose answer does.",
+    )
+    closing_instruction: str = Field(
+        default="",
+        description="What to say on the turn that must produce the artifact. The "
+        "shipped default tells a model its tool budget is spent and to write its "
+        "state into NOTES.md, which is right for a step that was cut off and wrong "
+        "for one whose only turn was always going to be the artifact.",
     )
     requires_commit: bool = Field(
         default=REQUIRES_COMMIT_DEFAULT,
@@ -187,6 +201,11 @@ class LoopState(BaseModel):
     synthetic_text: str = ""
     rollback_reason: str = ""
     invalid_responses: int = Field(default=0, ge=0)
+    final_text: str = Field(
+        default="",
+        description="What the model said on a step that demanded no artifact. Empty "
+        "when the step ends on one, because then the artifact is the answer.",
+    )
     reflecting: bool = Field(
         default=False,
         description="Whether the next turn is the reflection turn. It withholds tools "
@@ -238,9 +257,9 @@ class LoopState(BaseModel):
         return self.final if isinstance(self.final, SpecVerdict) else None
 
     @property
-    def spec(self) -> Spec | None:
-        """The step's Spec, when that is what ended it."""
-        return self.final if isinstance(self.final, Spec) else None
+    def spec_draft(self) -> SpecDraft | None:
+        """The step's SpecDraft, when that is what ended it."""
+        return self.final if isinstance(self.final, SpecDraft) else None
 
     @property
     def next_seq(self) -> int:
@@ -367,7 +386,11 @@ def next_action(state: LoopState) -> Action:
     if state.budget.must_finalize:
         return CallModel(
             tool_choice=ToolChoice.NONE,
-            instruction=state.pending_instruction or FINALIZE_INSTRUCTION,
+            instruction=(
+                state.pending_instruction
+                or state.config.closing_instruction
+                or FINALIZE_INSTRUCTION
+            ),
             expects_artifact=True,
         )
     return CallModel(
@@ -522,7 +545,14 @@ def observe_model(state: LoopState, response: ChatResponse, *, seconds: float = 
         # came back handed over with the reflection's own words as its unticked
         # Definition of Done. The rung meant to get a model unstuck was
         # terminating its task instead.
-        pass
+        #
+        # What follows it has to be said out loud. Half an intervention asks
+        # what the model would try differently and never asks for it; and a
+        # turn that adds nothing to the window leaves two assistant messages
+        # at its end, which the backend's template refuses.
+        working = working.model_copy(
+            update={"pending_instruction": AFTER_REFLECTION_INSTRUCTION},
+        )
     else:
         working, answer_events = _handle_final_answer(working, response)
         emitted.extend(answer_events)
@@ -704,7 +734,12 @@ def _handle_final_answer(
     """Accept the step's artifact, or ask once more when it does not validate."""
     kind = state.config.final_artifact
     if kind is None:
-        stopped = _finish(state, StopReason.FINAL_ANSWER)
+        # A step that demands no artifact ends on prose, and the prose is the
+        # answer - so it is kept. Without it the only way to read what a
+        # conversational step said would be to re-derive the window, and
+        # `final_artifact=None` would document an answer nobody can reach.
+        said = state.model_copy(update={"final_text": response.content.strip()})
+        stopped = _finish(said, StopReason.FINAL_ANSWER)
         return stopped.state, stopped.events
     try:
         artifact = ARTIFACT_MODELS[kind].model_validate_json(response.content)

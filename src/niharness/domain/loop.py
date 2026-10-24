@@ -417,3 +417,17 @@ REFLECTION_INSTRUCTION = (
     "No tool call is accepted in this turn."
 )
 """The level-two intervention: a mandatory reflection turn, no tools offered."""
+
+AFTER_REFLECTION_INSTRUCTION = (
+    "Now do the different thing you just described. Tools are available again."
+)
+"""What follows the reflection turn.
+
+Two reasons it is not optional. The rung exists to get a model moving, and
+"say what you would try differently" with no "now try it" is half an
+intervention. And a turn has to add something: two model calls with nothing
+between them leave two assistant messages at the end of the window, which
+llama.cpp's template refuses outright - `400 Cannot have 2 or more assistant
+messages at the end of the list`, observed the first time a reflection turn
+was allowed to continue instead of ending the step.
+"""

@@ -764,3 +764,20 @@ def test_a_call_proposed_on_the_reflection_turn_still_climbs_the_ladder() -> Non
     """The instruction says none is accepted; repeating one has earned the next rung."""
     third = observe_model(reflecting(), proposes("read_file", {"path": "src/a.py"}))
     assert isinstance(next_action(third.state), Rollback)
+
+
+def test_the_turn_after_a_reflection_asks_for_the_different_thing() -> None:
+    """Half an intervention asks what to try and never asks for it.
+
+    And a turn that adds nothing to the window leaves two assistant messages
+    at its end, which llama.cpp's template refuses outright: `400 Cannot have
+    2 or more assistant messages at the end of the list`, crashing a live L3
+    run the first time a reflection turn was allowed to continue rather than
+    end the step.
+    """
+    answered = observe_model(reflecting(), answers(done=False, content="I will patch it."))
+    action = next_action(answered.state)
+    assert isinstance(action, CallModel)
+    assert action.tool_choice is ToolChoice.AUTO
+    assert action.instruction, "the window gets a user turn, not a second assistant one"
+    assert "different thing" in action.instruction
