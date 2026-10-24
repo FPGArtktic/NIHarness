@@ -210,11 +210,11 @@ unattended. Everything below is the detail of that sentence.
 | **Retrieval** | Qdrant over REST, embeddings over `/v1/embeddings`, `nih ingest` reading PDFs with OCR and citing pages, `rag_query` over documents and over what compaction dropped | the code index (needs tree-sitter chunking); `nih compact` and `nih research` are stubs |
 | **Management** | `nih mcp`, `nih runs`, `nih status`, `nih cancel`, `nih resume`, `--json`, `--detach` | answering `Questions` from outside |
 | **TUI** | follows a live run's event log, writes the control inbox, cancels | the questions picker and plan approval |
-| **Benchmarks** | `nih bench --layer L0` (throughput, two timed requests per context size), `--layer L1` (twenty tool-calling tasks) and `--layer L2` (eight golden review cases with human verdicts, scored on precision, recall, where, why and whether the evidence was gathered), each unit in its own fixture copy, scored by folding its event log, `--repeat` for variance | **L3 has no runner**; L2's implementer half; load time; no vendored reference sets |
+| **Benchmarks** | `nih bench --layer L0` (throughput, three timed requests per context size, using the server's prefix cache as the instrument), `--layer L1` (twenty tool-calling tasks) and `--layer L2` (eight golden review cases with human verdicts, scored on precision, recall, where, why and whether the evidence was gathered), each unit in its own fixture copy, scored by folding its event log, `--repeat` for variance, `nih bench report` for the records as a table per commit | **L3 has no runner**; L2's implementer half; load time; no vendored reference sets |
 
 Three things block the rest, in order: **L3** (whole tasks are still unmeasured),
 **brainstorm** (the last entry point, and the only interactive one), and **the code
-index** (the one retrieval collection nothing writes to). 34 of 67 roadmap items are
+index** (the one retrieval collection nothing writes to). 36 of 72 roadmap items are
 done; the count is a poor measure, because the remaining ones are the large ones.
 
 [`docs/orientation.md`](docs/orientation.md) is the long version of this table,
