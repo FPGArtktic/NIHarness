@@ -13,6 +13,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `add_dependency` exists. It was in the domain and in two roles' allowlists
+  and the tool server had **never registered it**, so a model that called it
+  got "the tool server failed to run add_dependency" - the same
+  allowlisted-but-absent hole `rag_query` had, left behind for the other name.
+  It now does what §4 documented all along: refuses to install anything,
+  because the run is air-gapped, and records the request in `NOTES.md` for
+  somebody to decide about later. Asking twice does not write it twice, and
+  asking for something already present says so instead of filing a note.
+- Its answer is deliberately **not** a failure. What the model asked for
+  cannot happen, so a red result invites it to ask again, and this week's
+  measurements are largely a record of models repeating refused calls. "Nothing
+  installed, recorded, carry on with what is here" ends the dead end instead
+  of looping on it.
+- This is also the first code in the project that writes `NOTES.md`. The
+  prompts point at it, the refusal messages point at it, the event catalogue
+  has `notes.appended` - and nothing had ever created the file.
 - **Correction, and the first provenanced record of the full suite.** Three
   passes of the 20 tasks from one clean commit put `passed_ratio` at
   **0.65 - 0.85** - thirteen to seventeen of twenty. A single pass taken right

@@ -28,6 +28,7 @@ from niharness.domain.language_servers import ServerCandidate
 from niharness.domain.roles import DEFAULT_ROLES, Role
 from niharness.domain.tools import (
     AcceptedCall,
+    AddDependencyArgs,
     ApplyPatchArgs,
     FileOutlineArgs,
     FindReferencesArgs,
@@ -46,7 +47,7 @@ from niharness.domain.tools import (
 from niharness.ports.sandbox import ProcessResult
 from niharness.toolserver.lsp import LanguageServers
 from niharness.toolserver.server import build_server
-from niharness.toolserver.workspace import Workspace, subprocess_runner
+from niharness.toolserver.workspace import Workspace, WorkspaceError, subprocess_runner
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -172,6 +173,7 @@ async def test_the_server_offers_exactly_the_tools_the_role_may_use(worktree: Pa
         "run_build",
         "run_tests",
         "git_commit",
+        "add_dependency",
     }
 
 
@@ -717,6 +719,111 @@ async def test_a_diff_of_nothing_but_context_is_refused_rather_than_applied(
     assert "VALUE = 8" not in (worktree / "src" / "a.py").read_text(encoding="utf-8")
 
 
+def dependency_runner(*available: str) -> object:
+    """A runner where only `available` is installed.
+
+    The gate runner answers every non-git command green, which makes an
+    availability probe always say yes - so these tests need one that can say
+    no. git stays real, because `NOTES.md` lands in a worktree.
+    """
+
+    async def run(argv: Sequence[str], cwd: Path, timeout: int) -> ProcessResult:
+        if argv[0] == "git":
+            return await subprocess_runner(argv, cwd, timeout)
+        asked = next((name for name in available if name in " ".join(argv)), "")
+        if asked:
+            return ProcessResult(
+                argv=tuple(argv), exit_code=0, stdout=f"{asked}-1.0", duration_seconds=0.0
+            )
+        return ProcessResult(
+            argv=tuple(argv), exit_code=1, stdout="not found", duration_seconds=0.0
+        )
+
+    return run
+
+
+async def test_asking_for_a_dependency_records_it_and_installs_nothing(
+    worktree: Path,
+) -> None:
+    """The documented behaviour, which had no implementation at all.
+
+    `add_dependency` was in the domain and in two roles' allowlists, and the
+    tool server never registered it - so a model that called it got "the tool
+    server failed to run add_dependency", blaming the server for a tool that
+    did not exist. The same hole `rag_query` had, left behind for the other
+    name.
+    """
+    async with connected(worktree, runner=dependency_runner()) as provider:
+        result = await call(
+            provider,
+            ToolName.ADD_DEPENDENCY,
+            AddDependencyArgs(name="requests", version=">=2.32", ecosystem="python"),
+        )
+    assert result.ok, "what it asked for cannot happen, and the asking is not a failure"
+    assert "nothing was installed" in result.content
+    assert "NOTES.md" in result.content
+    notes = (worktree / "NOTES.md").read_text(encoding="utf-8")
+    assert "requests >=2.32" in notes
+    assert "python" in notes
+
+
+async def test_asking_twice_does_not_write_the_request_twice(worktree: Path) -> None:
+    """A model that repeats itself should not grow the file."""
+    async with connected(worktree, runner=dependency_runner()) as provider:
+        first = await call(
+            provider,
+            ToolName.ADD_DEPENDENCY,
+            AddDependencyArgs(name="requests", ecosystem="python"),
+        )
+        second = await call(
+            provider,
+            ToolName.ADD_DEPENDENCY,
+            AddDependencyArgs(name="requests", ecosystem="python"),
+        )
+    assert first.ok
+    assert second.ok
+    assert "already in NOTES.md" in second.content
+    notes = (worktree / "NOTES.md").read_text(encoding="utf-8")
+    assert notes.count("requests") == 1
+
+
+async def test_a_dependency_that_is_already_here_is_not_a_request(worktree: Path) -> None:
+    """Asking for what is installed should say so, not file a note about it."""
+    async with connected(worktree, runner=dependency_runner("pydantic")) as provider:
+        result = await call(
+            provider,
+            ToolName.ADD_DEPENDENCY,
+            AddDependencyArgs(name="pydantic", ecosystem="python"),
+        )
+    assert result.ok
+    assert "already available" in result.content
+    assert not (worktree / "NOTES.md").exists(), "nothing to record"
+
+
+async def test_an_unknown_ecosystem_is_refused_with_the_ones_that_exist(
+    worktree: Path,
+) -> None:
+    async with connected(worktree, runner=dependency_runner()) as provider:
+        result = await call(
+            provider,
+            ToolName.ADD_DEPENDENCY,
+            AddDependencyArgs(name="libfoo", ecosystem="python"),
+        )
+    assert result.ok, "python is known; this is the control for the next assertion"
+    outcome = await guarded_ecosystem(worktree, "haskell")
+    assert "unknown ecosystem" in outcome
+    assert "python, rust, system" in outcome
+
+
+async def guarded_ecosystem(worktree: Path, ecosystem: str) -> str:
+    """Call the workspace directly: the args model forbids an unknown ecosystem."""
+    workspace = Workspace(worktree, runner=dependency_runner())  # type: ignore[arg-type]
+    try:
+        return await workspace.add_dependency("libfoo", ecosystem=ecosystem)
+    except WorkspaceError as error:
+        return str(error)
+
+
 async def test_a_patch_that_is_already_applied_is_not_a_failure(worktree: Path) -> None:
     # A live 9B re-sent the same patch for a file it had already written,
     # twice, until the loop detectors stopped the step. "does not apply" was
@@ -725,7 +832,7 @@ async def test_a_patch_that_is_already_applied_is_not_a_failure(worktree: Path) 
         "--- a/src/a.py\n+++ b/src/a.py\n@@ -1,2 +1,3 @@\n"
         " def add(x, y):\n     return x + y  # TODO: types\n+VALUE = 6\n"
     )
-    async with connected(worktree) as provider:
+    async with connected(worktree, runner=dependency_runner()) as provider:
         first = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=diff))
         again = await call(provider, ToolName.APPLY_PATCH, ApplyPatchArgs(diff=diff))
     assert first.ok

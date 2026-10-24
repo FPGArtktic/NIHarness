@@ -249,6 +249,11 @@ expect_content = { "src/dial.py" = ["STEPS = 16"] }
 forbid_paths = ["src/calibration.py", "tests/", "docs/"]
 max_tool_calls = 10
 
+# This failed every pass of the first provenanced three-pass run, and the
+# reason was not the model: `add_dependency` was in the allowlist with no
+# implementation at all, so a model that reached for it got "the tool server
+# failed to run add_dependency". The tool now records the request in NOTES.md
+# itself, which is what it was documented as doing, so one call satisfies this.
 [[task]]
 id = "write-down-what-cannot-be-done"
 prompt = """

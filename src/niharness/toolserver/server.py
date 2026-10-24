@@ -168,6 +168,19 @@ def _register_writing(server: MCPServer, workspace: Workspace) -> None:
         return await guarded(workspace.format_code(path))
 
     @server.tool()
+    async def add_dependency(
+        name: str, version: str = "", ecosystem: str = "python"
+    ) -> Outcome:
+        """Request a dependency. Nothing is ever installed; the request is recorded.
+
+        This run is air-gapped, so a package that is not already here cannot
+        arrive during it. Asking records the request in `NOTES.md` for somebody
+        to decide about later, and says so - there is no point asking twice.
+        `ecosystem` is `python`, `rust` or `system`.
+        """
+        return await guarded(workspace.add_dependency(name, version, ecosystem))
+
+    @server.tool()
     async def git_commit(message: str) -> Outcome:
         """Attempt a commit. This is the gate: format, lint, build and quick tests.
 

@@ -75,6 +75,9 @@ writes when it has counted by eye. Neither changes what the diff may do.
 """
 
 DIFF_LINE_PREFIXES: frozenset[str] = frozenset({" ", "+", "-", "\\"})
+
+ECOSYSTEMS: frozenset[str] = frozenset({"python", "rust", "system"})
+"""What `add_dependency` knows how to look for. Mirrors `AddDependencyArgs`."""
 """What a line inside a hunk may start with."""
 
 _log = structlog.get_logger(__name__)
@@ -435,6 +438,104 @@ class Workspace:
             return "(git would not render the new file; read it back if you are unsure)"
         content, _ = truncate_result(body, self._limits)
         return content
+
+    async def add_dependency(
+        self,
+        name: str,
+        version: str = "",
+        ecosystem: str = "python",
+    ) -> str:
+        """Record a request for a dependency. Nothing is ever installed.
+
+        The run is air-gapped, so a package that is not already here cannot
+        arrive during it - and the request is still worth keeping, because
+        somebody has to decide about it later. So the tool writes it to
+        `NOTES.md`, which is what the policy tells the model to do by hand and
+        what this tool was documented as doing all along.
+
+        The answer is **not** a failure. What the model asked for cannot
+        happen, so a red result invites it to ask again, and today's
+        measurements are mostly a record of models repeating refused calls.
+        Saying "recorded, nothing installed, carry on with what is here" ends
+        the dead end instead of looping on it.
+
+        Raises:
+            WorkspaceError: if `NOTES.md` cannot be written, or the ecosystem
+                is not one this harness knows.
+        """
+        if ecosystem not in ECOSYSTEMS:
+            known = ", ".join(sorted(ECOSYSTEMS))
+            raise WorkspaceError(f"unknown ecosystem {ecosystem!r}; known: {known}")
+        present = await self._already_available(name, ecosystem)
+        if present:
+            return f"{name} is already available here ({present}); nothing to add."
+        wanted = f"{name} {version}".strip()
+        recorded = await self._note(
+            f"dependency requested: `{wanted}` ({ecosystem}) - not available in this "
+            "run, so the work that needs it is not done.",
+        )
+        return (
+            f"nothing was installed: this run is air-gapped and {name} is not here. "
+            f"The request is {'recorded in' if recorded else 'already in'} NOTES.md, "
+            "which is where it goes for somebody to decide about later. Continue with "
+            "what is available, and say in your answer what you could not do."
+        )
+
+    async def _already_available(self, name: str, ecosystem: str) -> str:
+        """Return how `name` is already present, or empty when it is not."""
+        if ecosystem == "python":
+            found = await self._runner(
+                (
+                    "python3",
+                    "-c",
+                    f"import importlib.metadata as m,sys;print(m.version({name!r}))",
+                ),
+                self._root,
+                self._timeout,
+            )
+            return f"python {found.stdout.strip()}" if found.ok else ""
+        if ecosystem == "rust":
+            lock = self._root / "Cargo.lock"
+            try:
+                body = lock.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return ""
+            return "in Cargo.lock" if f'name = "{name}"' in body else ""
+        found = await self._runner(("which", name), self._root, self._timeout)
+        return found.stdout.strip() if found.ok else ""
+
+    async def _note(self, line: str) -> bool:
+        """Append one line to `NOTES.md`, and say whether it was new.
+
+        The first writer of this file in the project, which is why it creates
+        it: everything else - the prompts, the refusal messages, the event
+        catalogue's `notes.appended` - has been pointing at a file nothing
+        wrote.
+
+        Raises:
+            WorkspaceError: when the file cannot be written.
+        """
+        target = self.resolve("NOTES.md")
+        try:
+            existing = (
+                await asyncio.to_thread(target.read_text, "utf-8", "replace")
+                if target.is_file()
+                else ""
+            )
+            if line in existing:
+                return False
+            head = existing if existing.endswith("\n") or not existing else f"{existing}\n"
+            opening = "" if head else "# Notes\n\nWhat could not be done, and why.\n\n"
+            await asyncio.to_thread(
+                target.write_text,
+                f"{opening}{head}- {line}\n",
+                encoding="utf-8",
+            )
+        except OSError as error:
+            raise WorkspaceError(f"cannot write NOTES.md: {error}") from error
+        if self._servers is not None:
+            await self._servers.changed(("NOTES.md",))
+        return True
 
     async def _shown_diff(self, path: str) -> str:
         """Return the diff of one path, so a model sees the change it caused.
