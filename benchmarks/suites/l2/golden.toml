@@ -1,33 +1,122 @@
 # SPDX-FileCopyrightText: 2026 Mateusz Okulanis
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# L2: steps. A golden set of diffs with human verdicts, used to measure the
-# reviewer against a human and the implementer against the gate.
+# L2: review. A golden set of changes with the verdict a human gave each one.
+#
+# A case is `fixture/` plus the files in `cases/<id>/`, committed as one
+# change. Not a stored patch: a patch stops applying when the fixture moves,
+# and a golden set whose cases silently fail to apply is worse than none. The
+# diff the reviewer reads is produced by git from the two trees, which is also
+# how a real review gets one.
+#
+# Every case is green on format, lint and tests. That is the suite's
+# invariant, and it is not a convenience: the gate runs before review, so a
+# defect the tests catch never reaches a reviewer in the real pipeline. Every
+# NAK below is a defect no test catches, which is the only kind a reviewer is
+# for.
+#
+# A NAK case must say where the defect is (`defect_files`) and what naming it
+# looks like (`mentions_any`, any one token suffices). Without both, the suite
+# would score "said NAK", which a reviewer that refuses everything passes with
+# full marks.
 
 [metrics]
 record = [
-  "first_attempt_gate_pass_rate",
-  "revisions_per_task",
   "reviewer_precision",
   "reviewer_recall",
-  "median_diff_lines",
+  "decision_ratio",
+  "located_ratio",
+  "reasoned_ratio",
+  "evidence_ratio",
+  "terminated_ratio",
+  "passed_ratio",
+  "loop_incidents_per_case",
   "highest_intervention_level",
+  "median_diff_lines",
 ]
 
-[[case]]
-id = "drops-error-return"
-diff = "cases/drops-error-return.patch"
-human_verdict = "NAK"
-human_blockers = ["error from the inner call is discarded"]
+# ----------------------------------------------------------------- NAK cases
 
 [[case]]
-id = "correct-small-fix"
-diff = "cases/correct-small-fix.patch"
-human_verdict = "ACK"
-human_blockers = []
+id = "swallows-a-bad-reading"
+title = "Keep averaging when one line cannot be parsed"
+intent = "a single bad reading should not stop a whole run from being averaged"
+commit_type = "fix"
+verdict = "NAK"
+defect_files = ["src/sampler.py"]
+mentions_any = ["LOWER_BOUND", "except", "ValueError", "silently", "swallow", "0.5"]
+why = """An unparseable reading is substituted with the bottom of the band, so
+garbage quietly moves the average instead of being reported. The tests never
+hand over a bad reading, so they stay green."""
 
 [[case]]
-id = "test-weakened-to-pass"
-diff = "cases/test-weakened-to-pass.patch"
-human_verdict = "NAK"
-human_blockers = ["assertion relaxed instead of fixing the cause"]
+id = "a-test-that-passes-regardless"
+title = "Add a median alongside the average"
+intent = "a run with one wild reading needs a statistic the outlier cannot move"
+commit_type = "feat"
+verdict = "NAK"
+defect_files = ["tests/test_sampler.py"]
+mentions_any = ["isinstance", "regardless", "does not test", "value", "weak", "float"]
+why = """The median is correct, and its only test asserts that the result is a
+float - which it would be if the function returned the mean, or zero. The
+behaviour is untested and the test cannot fail."""
+
+[[case]]
+id = "documentation-left-behind"
+title = "Raise the lower bound to 1.0"
+intent = "readings below 1.0 are noise on this hardware and should not be averaged"
+commit_type = "fix"
+verdict = "NAK"
+defect_files = ["docs/limits.md", "src/limits.py"]
+mentions_any = ["limits.md", "docs", "documentation", "0.5", "document"]
+why = """The code says 1.0 and `docs/limits.md` still says 0.5. Two places have
+to agree and only one was changed; no test can see it."""
+
+[[case]]
+id = "the-band-lost-its-lower-bound"
+title = "Tighten the in-range check"
+intent = "the band check is the one place that decides what is kept, so it is worth reading twice"
+commit_type = "refactor"
+verdict = "NAK"
+defect_files = ["src/sampler.py"]
+mentions_any = ["in_range", "lower bound", "LOWER_BOUND", "inclusive", "included", "0.5"]
+why = """`in_range` now excludes exactly the lower bound while its own docstring
+still says the bounds are included. A reading of 0.5 is silently dropped, and
+the tests only exercise the middle of the band."""
+
+# ----------------------------------------------------------------- ACK cases
+
+[[case]]
+id = "a-constant-with-its-test"
+title = "Cap how many readings one average may cover"
+intent = "a whole day's log averaged as one run gives a reasonable-looking wrong answer"
+commit_type = "feat"
+verdict = "ACK"
+why = """The constant is named and documented, the limit is enforced where the
+decision is made, and both sides of the boundary are tested."""
+
+[[case]]
+id = "a-guard-with-both-sides-tested"
+title = "Say which emptiness it was"
+intent = "no readings at all and no reading in range are different faults and said the same thing"
+commit_type = "fix"
+verdict = "ACK"
+why = """Two distinguishable errors now say which one happened, and each has a
+test that fails without the change."""
+
+[[case]]
+id = "a-rename-that-reached-every-use"
+title = "Rename parse_reading to reading_from"
+intent = "the name said how it works rather than what it returns"
+commit_type = "refactor"
+verdict = "ACK"
+why = """Every use is renamed, including the test's; nothing else imports it."""
+
+[[case]]
+id = "a-helper-extracted"
+title = "Extract the in-band filter"
+intent = "a caller wanting the readings themselves had to repeat the filter"
+commit_type = "refactor"
+verdict = "ACK"
+why = """A pure extraction. The tests are untouched and still pass, which for a
+refactor is the evidence that matters."""

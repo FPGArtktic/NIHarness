@@ -1,0 +1,31 @@
+import pytest
+
+from limits import MAX_READINGS
+from sampler import average, in_range, parse_reading
+
+
+def test_a_reading_is_parsed() -> None:
+    assert parse_reading("1.5") == 1.5
+
+
+def test_the_band_excludes_what_is_outside_it() -> None:
+    assert in_range(1.0)
+    assert not in_range(12.0)
+
+
+def test_the_average_ignores_what_is_out_of_range() -> None:
+    assert average(["1.0", "3.0", "40.0"]) == 2.0
+
+
+def test_nothing_in_range_is_an_error() -> None:
+    with pytest.raises(ValueError, match="in range"):
+        average(["40.0"])
+
+
+def test_more_readings_than_one_run_is_an_error() -> None:
+    with pytest.raises(ValueError, match="more than one run"):
+        average(["1.0"] * (MAX_READINGS + 1))
+
+
+def test_exactly_the_limit_is_allowed() -> None:
+    assert average(["2.0"] * MAX_READINGS) == 2.0

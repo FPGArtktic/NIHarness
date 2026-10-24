@@ -12,6 +12,7 @@ path = [
   "schemas/**",
   "benchmarks/results/**",
   "benchmarks/suites/*/fixture/**",
+  "benchmarks/suites/*/cases/**",
   "docs/assets/**",
   "tests/contract/cassettes/**",
   "tests/golden/prompts/**",

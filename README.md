@@ -33,8 +33,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 > - **Two of three entry points work.** You can hand it a `SPEC.md` and get a
 >   plan, or bring a finished `PLAN.md` and have it executed. `nih brainstorm`
 >   is still a stub that exits 69 and says so.
-> - **The central question is unanswered.** L1 (tool calling) has numbers as of
->   today; L2 and L3 have a methodology and no runner. One model family, one host.
+> - **The central question is half answered.** L1 (tool calling) and L2 (review)
+>   have runners and numbers; L3 (whole tasks) has a methodology and no runner.
+>   One model family, one host.
 > - **Nothing is stable.** Event schemas, the config, the artifact contracts and the
 >   tool surface all change without notice, and there has been no release.
 >
@@ -181,7 +182,7 @@ unattended. Everything below is the detail of that sentence.
 | **Retrieval** | Qdrant over REST, embeddings over `/v1/embeddings`, `nih ingest` reading PDFs with OCR and citing pages, `rag_query` over documents and over what compaction dropped | the code index (needs tree-sitter chunking); `nih compact` and `nih research` are stubs |
 | **Management** | `nih mcp`, `nih runs`, `nih status`, `nih cancel`, `nih resume`, `--json`, `--detach` | answering `Questions` from outside |
 | **TUI** | follows a live run's event log, writes the control inbox, cancels | the questions picker and plan approval |
-| **Benchmarks** | `nih bench --layer L1`: all twenty tasks, each in its own fixture copy, scored by folding its event log, `--repeat` for variance; L0 numbers taken by hand | **L2 and L3 have no runner**; `--layer L0` is not wired; no vendored reference sets |
+| **Benchmarks** | `nih bench --layer L1` (twenty tool-calling tasks) and `--layer L2` (eight golden review cases with human verdicts, scored on precision, recall, where, why and whether the evidence was gathered), each unit in its own fixture copy, scored by folding its event log, `--repeat` for variance; L0 numbers taken by hand | **L3 has no runner**; L2's implementer half; `--layer L0` is not wired; no vendored reference sets |
 
 Three things block the rest, in order: **L2 and L3** (review quality and whole tasks
 are unmeasured), **brainstorm** (the last entry point, and the only interactive one),

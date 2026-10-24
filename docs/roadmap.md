@@ -329,8 +329,19 @@ never attempted a diff.
       rather than the state reached - so every task has been through a model at
       least once. The fixture's baseline is an invariant of the suite: format
       clean, lint clean, exactly one deliberate test failure.
-- [ ] L2 and L3 runners. L2 needs a golden set with human verdicts to score
-      reviewer precision against; L3 needs the vendored reference sets.
+- [x] `nih bench --layer L2`: the review half. Eight golden cases, four of
+      each verdict, each one the fixture plus a directory of replacement files
+      committed as one change - so a case cannot stop applying and can be read
+      rather than reconstructed from hunks. Every case is green, because the
+      gate runs before review and a defect the tests catch never reaches a
+      reviewer. A NAK is scored on where and why, and a verdict claiming the
+      tests passed has to point at a green `run_tests` call in its own step
+      ([ADR 0027](adr/0027-a-review-case-is-a-tree-and-its-verdict-must-be-earned.md)).
+- [ ] The implementer half of L2 that §11 asks for: first-attempt gate pass
+      rate and revisions per task over a golden set of tasks. That needs
+      implement, gate, review and fix run end to end, which is closer to L3's
+      shape than to the review half's.
+- [ ] The L3 runner, and the vendored reference sets it needs.
 - [ ] Answer the ternary question with it. A natively ternary 27B-class model at
       4-6 GB would change the profile arithmetic entirely - see
       `docs/operations/models.md` - and nothing but an L0-L3 run on this

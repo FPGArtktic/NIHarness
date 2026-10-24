@@ -118,6 +118,84 @@ Neither is host-dependent, which is why the symbol tools have no tasks here:
 `find_symbol` and `file_outline` need a language server in the image, and a
 metric that moves with what happens to be installed is not a metric.
 
+## Running L2
+
+```bash
+uv run nih bench --layer L2                        # in the sandbox
+uv run nih bench --layer L2 --unsafe-local-tools   # on this host
+uv run nih bench --layer L2 --repeat 3             # and the spread
+```
+
+L2 measures **review**: given a change and the task it claims to do, does the
+reviewer reach the verdict a human reached, in the right place, for the right
+reason, on evidence it gathered itself.
+
+### A case is a tree, not a patch
+
+A case is `benchmarks/suites/l2/fixture/` plus the files in
+`benchmarks/suites/l2/cases/<id>/`, committed as one change. The diff the
+reviewer reads is produced by git from those two trees.
+
+Not a stored `.patch`, for two reasons. A patch stops applying the moment the
+fixture moves, and a golden set whose cases silently fail to apply is worse
+than no golden set. And a case written as replacement files is a case somebody
+can *read*: the question "what is wrong with this change" is answered by
+looking at the file, not by reconstructing it from hunks.
+
+### Every case is green
+
+Format, lint and tests pass on the baseline fixture **and after every case**.
+That is the suite's invariant, and it follows from where review sits in the
+pipeline: the gate runs first, so a defect the tests catch never reaches a
+reviewer. Every NAK in this suite is a defect no test catches - a swallowed
+error, a test that cannot fail, a document left behind, a boundary that no
+longer matches its own docstring. Those are the defects a reviewer is for.
+
+The L1 fixture, by contrast, carries one deliberate test failure. Reusing it
+here would make every honest verdict a NAK, because `Verdict` refuses an ACK
+over red evidence.
+
+### NAK is the positive class
+
+The reviewer's job is finding the defect, so a NAK is a detection:
+
+- **precision** - of the changes it refused, how many deserved it
+- **recall** - of the defects that were there, how many it found
+
+Read the other way round the numbers mean the opposite, so the suite states
+the choice rather than leaving it to be inferred.
+
+A case that produced **no verdict** - a step that ran out of budget - is
+counted as neither. Folding it into recall would make a model that was absent
+look cautious.
+
+### A NAK has to be for the right reason
+
+| In the suite | What it checks |
+|---|---|
+| `verdict = "NAK"` | the decision matched the human's |
+| `defect_files` | a note is anchored to one of them. Several are allowed: a stale document and the code that outdated it are both right answers |
+| `mentions_any` | at least one token appears in the reviewer's own words. *Any*, not all, because a review is free text and demanding a phrasing measures vocabulary |
+
+A NAK case without both is rejected when the suite loads. Without that rule
+the suite would score "said NAK", which a reviewer that refuses everything
+passes with full marks.
+
+### The reviewer's own claim is not evidence
+
+The reviewer exists because an implementer's claim is not evidence. The same
+standard applies to it: a verdict that says the tests passed has to point at a
+`run_tests` call *in its own step* that returned green. `evidence_ratio` is
+how often that was true, and a case fails without it however right the
+decision was.
+
+### What L2 does not measure yet
+
+§11 asks L2 for the implementer's side too - first-attempt gate pass rate and
+revisions per task over a golden set of tasks. That needs implement, gate,
+review and fix run end to end, which is closer to L3's shape than to this
+one. The review half is what exists; see [the roadmap](../roadmap.md).
+
 ## Rules
 
 - A record from a working tree carries `harness_dirty: true` and is a working

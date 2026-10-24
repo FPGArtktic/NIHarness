@@ -18,6 +18,32 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   and `PLAN.md` is written and stored by digest. `nih plan approve PLAN.md`
   records the decision, which is what `nih implement` then runs. Two of three
   entry points now work end to end.
+- **`nih bench --layer L2`: the review layer.** Eight golden cases, four ACK
+  and four NAK, each one the fixture plus a directory of replacement files
+  committed as one change - so the reviewer reads a diff git produced, a case
+  cannot stop applying, and a case can be read rather than reconstructed from
+  hunks. Every case is green on format, lint and tests, which follows from
+  where review sits: the gate runs first, so a defect the tests catch never
+  reaches a reviewer. Every NAK is a defect no test can catch.
+- Precision and recall take NAK as the positive class, stated rather than
+  inferred, and a case that produced no verdict at all is counted as neither -
+  folding an absent reviewer into recall makes it look cautious.
+- A NAK is scored on *where* and *why*: a note anchored to one of the case's
+  `defect_files`, and one of several `mentions_any` tokens in the reviewer's
+  own words. The `L2Case` model refuses a NAK case that declares neither, so
+  the suite cannot grow a case whose answer key is "said NAK" - which a
+  reviewer that refuses everything would pass with full marks.
+- `evidence_ratio`: a verdict claiming the tests passed has to point at a green
+  `run_tests` call in its own step. The reviewer exists because an
+  implementer's claim is not evidence, and this is the same standard applied to
+  the reviewer; a case fails without it however right the decision was
+  (ADR 0027, `docs/adr/0027-a-review-case-is-a-tree-and-its-verdict-must-be-earned.md`).
+- The suite's green invariant is a test, not a habit: each case is copied over
+  the fixture and put through the fixture's own gate. A planted syntax error
+  fails it, which is the only way to know a check like that is doing anything.
+- The previous `benchmarks/suites/l2/golden.toml` declared three cases pointing
+  at `.patch` files that were never written - the same declared-but-absent hole
+  `rag_query` and `add_dependency` had. It is now a real suite.
 - `nih run SPEC.md`: both halves of the pipeline, with no approval stop. It
   chains the two fresh runs and approves the plan for you - and refuses to
   implement a plan whose `open_questions` are not empty. The only stop this

@@ -84,6 +84,12 @@ packages = ["src/niharness"]
 line-length = 96
 target-version = "py312"
 src = ["src", "tests"]
+# A benchmark case is a fragment of a fixture, not harness source. The fixture
+# itself is skipped because it carries its own pyproject; the case directories
+# have none, so they would otherwise be linted against this project's rules -
+# which is the wrong gate. The gate a case has to pass is the fixture's, and
+# the suite's invariant is that every one of them does.
+extend-exclude = ["benchmarks/suites/*/cases"]
 
 [tool.ruff.lint]
 select = [

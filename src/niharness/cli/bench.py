@@ -31,6 +31,7 @@ from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Protocol
 
 import typer
 
@@ -46,7 +47,18 @@ from niharness.cli.retrieval import open_retrieval
 from niharness.cli.unavailable import EX_UNAVAILABLE
 from niharness.cli.wiring import backend_for, server_parameters
 from niharness.config import HarnessConfig, ModelConfig
-from niharness.domain.bench import L1Task, SuiteScore, TaskScore, score_suite, score_task
+from niharness.domain.bench import (
+    CaseScore,
+    L1Task,
+    L2Case,
+    L2Score,
+    SuiteScore,
+    TaskScore,
+    score_case,
+    score_reviews,
+    score_suite,
+    score_task,
+)
 from niharness.domain.budgets import Budgets, fit_to_host
 from niharness.domain.events import Payload
 from niharness.domain.identity import RunId, StepId
@@ -117,8 +129,8 @@ def load_l1(root: Path) -> tuple[tuple[L1Task, ...], tuple[str, ...]]:
     return tasks, tuple(str(name) for name in metrics)
 
 
-def prepare_fixture(root: Path, into: Path) -> Worktree:
-    """Copy the suite's fixture into `into` and make it a git repository.
+def prepare_fixture(root: Path, into: Path, *, suite: str = "l1") -> Worktree:
+    """Copy a suite's fixture into `into` and make it a git repository.
 
     A repository rather than a bare directory because the tools expect one:
     the gate commits, `apply_patch` reverses a diff to tell "already applied"
@@ -127,9 +139,9 @@ def prepare_fixture(root: Path, into: Path) -> Worktree:
     Raises:
         SuiteError: when the fixture is missing or git refuses it.
     """
-    fixture = root / SUITES / "l1" / "fixture"
+    fixture = root / SUITES / suite / "fixture"
     if not fixture.is_dir():
-        msg = f"no L1 fixture at {fixture}"
+        msg = f"no {suite.upper()} fixture at {fixture}"
         raise SuiteError(msg)
     git = _git()
     shutil.copytree(fixture, into, dirs_exist_ok=True, ignore=shutil.ignore_patterns(*LITTER))
@@ -267,6 +279,166 @@ def read_back(root: Path, wanted: Mapping[str, tuple[str, ...]]) -> dict[str, st
     return found
 
 
+CASE_TEMPLATE = """## Review `{id}`
+
+What this change claims to do:
+
+**{title}** - {intent}
+
+Review the commit below. This is one review on its own: there is nothing to
+fix afterwards and no next task.
+"""
+
+
+def load_l2(root: Path) -> tuple[tuple[L2Case, ...], tuple[str, ...]]:
+    """Return the L2 golden cases and the metric names the suite declares.
+
+    Raises:
+        SuiteError: when the file is missing or does not parse into cases.
+    """
+    path = root / SUITES / "l2" / "golden.toml"
+    if not path.is_file():
+        msg = f"no L2 suite at {path}"
+        raise SuiteError(msg)
+    try:
+        body = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as error:
+        msg = f"{path}: {error}"
+        raise SuiteError(msg) from error
+    raw = body.get("case")
+    if not isinstance(raw, list) or not raw:
+        msg = f"{path} declares no [[case]]"
+        raise SuiteError(msg)
+    try:
+        cases = tuple(L2Case.model_validate(entry) for entry in raw)
+    except ValueError as error:
+        msg = f"{path}: {error}"
+        raise SuiteError(msg) from error
+    suite_cases = root / SUITES / "l2" / "cases"
+    missing = [case.id for case in cases if not (suite_cases / case.id).is_dir()]
+    if missing:
+        msg = f"{path}: no files under cases/ for {', '.join(missing)}"
+        raise SuiteError(msg)
+    metrics = body.get("metrics", {}).get("record", [])
+    return cases, tuple(str(name) for name in metrics)
+
+
+def stage_case(root: Path, case: L2Case, into: Path) -> tuple[Worktree, int]:
+    """Build the repository a review starts from, and say how big the change is.
+
+    Two commits: the fixture, then the case's replacement files as one change.
+    The reviewer therefore reads a diff git produced from two trees, which is
+    both what a real review gets and the reason a case cannot stop applying.
+
+    Returns:
+        The worktree, and the change's size in added plus removed lines.
+
+    Raises:
+        SuiteError: when the case has no files or git refuses the commit.
+    """
+    prepare_fixture(root, into, suite="l2")
+    source = root / SUITES / "l2" / "cases" / case.id
+    if not source.is_dir():
+        msg = f"no files for case {case.id} at {source}"
+        raise SuiteError(msg)
+    git = _git()
+    shutil.copytree(source, into, dirs_exist_ok=True, ignore=shutil.ignore_patterns(*LITTER))
+    message = f"{case.commit_type}: {case.title}\n\n{case.intent}"
+    try:
+        _run(git, ("add", "-A"), into)
+        _run(git, ("commit", "-qm", message), into)
+        head = _run(git, ("rev-parse", "HEAD"), into).strip()
+        stat = _run(git, ("show", "--numstat", "--format=", "HEAD"), into)
+    except (OSError, subprocess.CalledProcessError) as error:
+        msg = f"cannot stage case {case.id} in {into}: {error}"
+        raise SuiteError(msg) from error
+    return Worktree(path=str(into), branch="bench", base_sha=head), _changed_lines(stat)
+
+
+def _changed_lines(numstat: str) -> int:
+    """Return added plus removed lines from `git show --numstat` output."""
+    total = 0
+    for line in numstat.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 3:
+            continue
+        for count in parts[:2]:
+            if count.isdigit():
+                total += int(count)
+    return total
+
+
+async def run_case(
+    config: HarnessConfig,
+    case: L2Case,
+    *,
+    model: ModelConfig,
+    backend: object,
+    scratch: Path,
+    local_tools: bool,
+) -> CaseScore:
+    """Review one golden case and score the verdict against the human's.
+
+    Raises:
+        SuiteError: when the case cannot be staged.
+    """
+    worktree, diff_lines = stage_case(config.project_root, case, scratch / "repo")
+    run_id = RunId(f"bench-{case.id}")
+    sink = JsonlEventSink(scratch / "runs", run_id)
+    vcs = GitVcs(Path(worktree.path))
+    spec = DEFAULT_ROLES[Role.REVIEWER]
+    diff = await vcs.diff(worktree)
+
+    async with AsyncExitStack() as stack:
+        retrieval = await stack.enter_async_context(open_retrieval(config))
+        tools = await stack.enter_async_context(
+            connect_tools(
+                server_parameters(config, worktree, local=local_tools),
+                (),
+                limits=config.tools,
+                local=retrieval.tools(config),
+            ),
+        )
+        runner = StepRunner(
+            backend=backend,  # type: ignore[arg-type]
+            tools=tools,
+            events=sink,
+            vcs=vcs,
+            worktree=worktree,
+        )
+        window = Window(backend, config.compact)  # type: ignore[arg-type]
+        await window.add_prompt(assemble(spec.prompt_layers))
+        await window.add_task(
+            CASE_TEMPLATE.format(id=case.id, title=case.title, intent=case.intent),
+        )
+        await window.add_notes(f"The commit under review:\n\n```diff\n{diff.strip()}\n```")
+        state = await runner.run(
+            LoopConfig(
+                stage="bench",
+                role=Role.REVIEWER,
+                model=model.name,
+                allowlist=spec.allowlist,
+                budgets=fit_to_host(
+                    Budgets(max_tool_calls=case.max_tool_calls),
+                    model.measured_generation_tps,
+                ),
+                thresholds=config.loop,
+                limits=config.tools,
+                task_id=case.id,
+                temperature=spec.temperature,
+                final_artifact=ArtifactKind.VERDICT,
+            ),
+            window,
+            step_id=StepId(case.id),
+        )
+    return score_case(
+        case,
+        state.verdict,
+        await payloads_of(sink, run_id),
+        diff_lines=diff_lines,
+    )
+
+
 def record(
     config: HarnessConfig,
     score: SuiteScore,
@@ -312,6 +484,92 @@ def record(
             for task in score.tasks
         ],
     }
+
+
+def record_reviews(
+    config: HarnessConfig,
+    score: L2Score,
+    *,
+    model: ModelConfig,
+    metrics: Sequence[str],
+    seconds: float,
+    commit: str,
+    dirty: bool,
+    attempt: int = 1,
+    of: int = 1,
+) -> dict[str, object]:
+    """Return the JSONL record for one review suite run."""
+    declared = {name: score.metrics()[name] for name in metrics if name in score.metrics()}
+    return {
+        "layer": score.layer,
+        "date": datetime.now(tz=UTC).date().isoformat(),
+        "harness_commit": commit,
+        "harness_dirty": dirty,
+        "model": model.name,
+        "quantization": model.quantization,
+        "profile": config.profile,
+        "base_url": model.base_url,
+        "cases": len(score.cases),
+        "pass": attempt,
+        "of_passes": of,
+        **declared,
+        "passed_ratio": score.passed_ratio,
+        "confusion": {
+            "true_positives": score.true_positives,
+            "false_positives": score.false_positives,
+            "false_negatives": score.false_negatives,
+            "undecided": score.undecided,
+        },
+        "wall_seconds": round(seconds, 1),
+        "per_case": [
+            {
+                "id": case.case_id,
+                "expected": case.expected.value,
+                "decided": case.decided.value if case.decided else None,
+                "passed": case.passed,
+                "located": case.located,
+                "reasoned": case.reasoned,
+                "evidence_ok": case.evidence_ok,
+                "calls": case.calls,
+                "interventions": case.interventions,
+                "diff_lines": case.diff_lines,
+                "notes": list(case.notes),
+            }
+            for case in score.cases
+        ],
+    }
+
+
+def human_reviews(entry: dict[str, object], score: L2Score) -> str:
+    """Render a review suite run: the metrics, the matrix, then what went wrong."""
+    lines = [
+        f"L2 on {entry['model']} ({entry['quantization']}), {entry['cases']} case(s) "
+        f"in {entry['wall_seconds']}s"
+        + (
+            " [uncommitted tree: a working note, not a result]"
+            if entry["harness_dirty"]
+            else ""
+        ),
+        "",
+    ]
+    for name, value in score.metrics().items():
+        lines.append(f"  {name:<28} {value}")
+    lines += [
+        "",
+        f"  caught {score.true_positives} defect(s), missed {score.false_negatives}, "
+        f"refused {score.false_positives} correct change(s), "
+        f"{score.undecided} case(s) produced no verdict",
+        "",
+    ]
+    for case in score.cases:
+        mark = "ok  " if case.passed else "FAIL"
+        said = case.decided.value if case.decided else "-"
+        lines.append(
+            f"  [{mark}] {case.case_id:<34} wanted {case.expected.value}, said {said}, "
+            f"{case.calls} call(s)"
+        )
+        lines += [f"         {note}" for note in case.notes]
+    return "\n".join(lines)
 
 
 def _dirty(root: Path) -> bool:
@@ -387,6 +645,113 @@ def human(entry: dict[str, object], score: SuiteScore) -> str:
     return "\n".join(lines)
 
 
+async def _scored(
+    config: HarnessConfig,
+    unit: L1Task | L2Case,
+    *,
+    model: ModelConfig,
+    backend: object,
+    scratch: Path,
+    local_tools: bool,
+) -> TaskScore | CaseScore:
+    """Run one unit of whichever suite it belongs to."""
+    if isinstance(unit, L1Task):
+        return await run_task(
+            config,
+            unit,
+            model=model,
+            backend=backend,
+            scratch=scratch,
+            local_tools=local_tools,
+        )
+    return await run_case(
+        config,
+        unit,
+        model=model,
+        backend=backend,
+        scratch=scratch,
+        local_tools=local_tools,
+    )
+
+
+class LayerScore(Protocol):
+    """What the across-passes report needs from any layer's score.
+
+    Structural rather than a base class: the two layers' scores have nothing
+    in common except that both can report metrics and per-unit outcomes, and
+    inventing a shared parent to express that would put L2's vocabulary in
+    L1's type.
+    """
+
+    def metrics(self) -> dict[str, float]:
+        """The metrics this layer reports, by name."""
+        ...
+
+    def outcomes(self) -> tuple[tuple[str, bool], ...]:
+        """Each unit's id and whether it passed."""
+        ...
+
+
+async def _one_pass(
+    config: HarnessConfig,
+    units: Sequence[L1Task] | Sequence[L2Case],
+    *,
+    layer: str,
+    attempt: int,
+    repeat: int,
+    model: ModelConfig,
+    backend: object,
+    metrics: Sequence[str],
+    commit: str,
+    dirty: bool,
+    local_tools: bool,
+    json_mode: bool,
+) -> tuple[dict[str, object], LayerScore]:
+    """Run every unit of the suite once and build the record for that pass."""
+    started = time.monotonic()
+    scored: list[TaskScore | CaseScore] = []
+    for item in units:
+        with TemporaryDirectory(prefix=f"nih-bench-{item.id}-") as scratch:
+            if not json_mode:
+                typer.echo(f"  [{attempt}/{repeat}] {item.id} ...", err=True)
+            scored.append(
+                await _scored(
+                    config,
+                    item,
+                    model=model,
+                    backend=backend,
+                    scratch=Path(scratch),
+                    local_tools=local_tools,
+                ),
+            )
+    seconds = time.monotonic() - started
+    if layer == "L1":
+        suite = score_suite([one for one in scored if isinstance(one, TaskScore)])
+        return record(
+            config,
+            suite,
+            model=model,
+            metrics=metrics,
+            seconds=seconds,
+            commit=commit,
+            dirty=dirty,
+            attempt=attempt,
+            of=repeat,
+        ), suite
+    reviews = score_reviews([one for one in scored if isinstance(one, CaseScore)])
+    return record_reviews(
+        config,
+        reviews,
+        model=model,
+        metrics=metrics,
+        seconds=seconds,
+        commit=commit,
+        dirty=dirty,
+        attempt=attempt,
+        of=repeat,
+    ), reviews
+
+
 def bench(
     config: HarnessConfig,
     *,
@@ -407,19 +772,15 @@ def bench(
         typer.Exit: when the layer has no runner, the suite cannot be read, or
             the model does not answer.
     """
-    if layer.upper() != "L1":
+    chosen = layer.upper()
+    if chosen not in {"L1", "L2"}:
         fail(
-            f"no runner for {layer} yet; L1 is the one that exists. "
+            f"no runner for {chosen} yet; L1 and L2 are the ones that exist. "
             "See docs/benchmarks/methodology.md",
             json_mode=json_mode,
             code=EX_UNAVAILABLE,
         )
         raise typer.Exit(EX_UNAVAILABLE)
-    try:
-        tasks, metrics = load_l1(config.project_root)
-    except SuiteError as error:
-        fail(str(error), json_mode=json_mode)
-        raise typer.Exit(1) from error
 
     model = config.models.main
     # Both read once, before the first pass. `harness_commit` was read as each
@@ -429,39 +790,34 @@ def bench(
     commit = _commit(config.project_root)
     dirty = _dirty(config.project_root)
     backend = backend_for(model)
-    passes: list[tuple[dict[str, object], SuiteScore]] = []
+    passes: list[tuple[dict[str, object], LayerScore]] = []
     written: list[Path] = []
+    unit = "task" if chosen == "L1" else "case"
+
+    try:
+        units, metrics = (
+            load_l1(config.project_root) if chosen == "L1" else load_l2(config.project_root)
+        )
+    except SuiteError as error:
+        fail(str(error), json_mode=json_mode)
+        raise typer.Exit(1) from error
 
     async def drive() -> None:
         try:
             for attempt in range(1, max(1, repeat) + 1):
-                started = time.monotonic()
-                scores: list[TaskScore] = []
-                for task in tasks:
-                    with TemporaryDirectory(prefix=f"nih-bench-{task.id}-") as scratch:
-                        if not json_mode:
-                            typer.echo(f"  [{attempt}/{repeat}] {task.id} ...", err=True)
-                        scores.append(
-                            await run_task(
-                                config,
-                                task,
-                                model=model,
-                                backend=backend,
-                                scratch=Path(scratch),
-                                local_tools=local_tools,
-                            ),
-                        )
-                score = score_suite(scores)
-                entry = record(
+                entry, score = await _one_pass(
                     config,
-                    score,
+                    units,
+                    layer=chosen,
+                    attempt=attempt,
+                    repeat=max(1, repeat),
                     model=model,
+                    backend=backend,
                     metrics=metrics,
-                    seconds=time.monotonic() - started,
                     commit=commit,
                     dirty=dirty,
-                    attempt=attempt,
-                    of=max(1, repeat),
+                    local_tools=local_tools,
+                    json_mode=json_mode,
                 )
                 # Written as the pass completes rather than at the end: three
                 # passes are twelve minutes of model time, and an interrupted
@@ -495,24 +851,38 @@ def bench(
             **({"stopped": broke} if broke else {}),
         },
         json_mode=json_mode,
-        human=f"{_rendered(passes)}\n\nrecorded in {target}{note}",
+        human=f"{_rendered(passes, unit=unit)}\n\nrecorded in {target}{note}",
     )
     if broke:
         raise typer.Exit(1)
 
 
-def _rendered(passes: Sequence[tuple[dict[str, object], SuiteScore]]) -> str:
+def _one_rendered(entry: dict[str, object], score: LayerScore) -> str:
+    """Render one pass with the report its layer has."""
+    if isinstance(score, SuiteScore):
+        return human(entry, score)
+    if isinstance(score, L2Score):
+        return human_reviews(entry, score)
+    msg = f"no report for {type(score).__name__}"  # pragma: no cover - both layers covered
+    raise AssertionError(msg)  # pragma: no cover
+
+
+def _rendered(
+    passes: Sequence[tuple[dict[str, object], LayerScore]],
+    *,
+    unit: str,
+) -> str:
     """Render every pass, and the spread when there is more than one."""
-    parts = [human(entry, score) for entry, score in passes]
+    parts = [_one_rendered(entry, score) for entry, score in passes]
     if len(passes) < 2:
         return "\n\n".join(parts)
-    return "\n\n".join([*parts, _spread([score for _, score in passes])])
+    return "\n\n".join([*parts, _spread([score for _, score in passes], unit=unit)])
 
 
-def _spread(scores: Sequence[SuiteScore]) -> str:
-    """Report each metric's range across passes, and which tasks were not stable.
+def _spread(scores: Sequence[LayerScore], *, unit: str) -> str:
+    """Report each metric's range across passes, and which units were not stable.
 
-    The point of repeating: a task that passes once and fails once has said
+    The point of repeating: a unit that passes once and fails once has said
     something different from one that passes every time, and a single number
     cannot carry the difference.
     """
@@ -520,11 +890,11 @@ def _spread(scores: Sequence[SuiteScore]) -> str:
     names = scores[0].metrics()
     for name in names:
         values = [score.metrics()[name] for score in scores]
-        lines.append(f"  {name:<26} {min(values)} - {max(values)}")
+        lines.append(f"  {name:<28} {min(values)} - {max(values)}")
     outcomes: dict[str, list[bool]] = {}
     for score in scores:
-        for task in score.tasks:
-            outcomes.setdefault(task.task_id, []).append(task.passed)
+        for identifier, passed in score.outcomes():
+            outcomes.setdefault(identifier, []).append(passed)
     flaky = {name: runs for name, runs in outcomes.items() if len(set(runs)) > 1}
     always = sorted(name for name, runs in outcomes.items() if not any(runs))
     if flaky:
@@ -535,4 +905,5 @@ def _spread(scores: Sequence[SuiteScore]) -> str:
         ]
     if always:
         lines.append(f"  failed every pass: {', '.join(always)}")
+    _ = unit
     return "\n".join(lines)
