@@ -155,6 +155,48 @@ class Plan(Artifact):
         raise KeyError(task_id)
 
 
+class SpecDraft(Artifact):
+    """A spec as the brainstormer writes it: everything but who wrote it.
+
+    `Spec.origin` is not something to ask a model for. The harness knows which
+    entry point it is running - `nih brainstorm` is entry A by construction -
+    and a model can only transcribe it, so a spec rejected because the
+    transcription slipped would be a wall with no door in front of a session
+    that did the thinking. The same reasoning as :class:`PlanDraft` and the
+    spec's digest (ADR 0026).
+
+    Every rule about the content still belongs to :class:`Spec` and is applied
+    at the moment of binding rather than relaxed - a criterion whose
+    verification is not testable is refused here exactly as it would be there.
+    """
+
+    title: NonEmpty
+    goal: NonEmpty
+    non_goals: tuple[NonEmpty, ...] = ()
+    constraints: tuple[NonEmpty, ...] = ()
+    acceptance_criteria: tuple[AcceptanceCriterion, ...] = Field(min_length=1)
+    notes: str = ""
+
+    def for_origin(self, origin: SpecOrigin) -> Spec:
+        """Bind this draft to the entry point that produced it.
+
+        Args:
+            origin: who wrote it, which the harness knows and the model does not.
+
+        Returns:
+            The spec, validated by every rule :class:`Spec` carries.
+        """
+        return Spec(
+            title=self.title,
+            origin=origin,
+            goal=self.goal,
+            non_goals=self.non_goals,
+            constraints=self.constraints,
+            acceptance_criteria=self.acceptance_criteria,
+            notes=self.notes,
+        )
+
+
 class PlanDraft(Artifact):
     """A plan as the planner writes it: the work, without the spec's digest.
 
@@ -382,6 +424,7 @@ class FinalAnswer(Artifact):
 
 ARTIFACT_MODELS: tuple[type[Artifact], ...] = (
     Spec,
+    SpecDraft,
     Plan,
     PlanDraft,
     Questions,

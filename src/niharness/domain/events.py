@@ -371,6 +371,21 @@ class QuestionsAnswered(Payload):
     count: int = Field(ge=1)
 
 
+class BrainstormSaid(Payload):
+    """What the human said in a brainstorm turn.
+
+    The model's side of the conversation is a `model.response` with a digest of
+    its content, because §15 keeps unvalidated model output out of the log.
+    The human's side has no such problem and is the only record of what was
+    asked, so it is kept verbatim: a session nobody can read afterwards is a
+    session that did not happen as far as `docs/` is concerned.
+    """
+
+    type: Literal["brainstorm.said"] = "brainstorm.said"
+    turn: int = Field(ge=1, description="Which exchange of the session this was.")
+    text: str
+
+
 class NotesAppended(Payload):
     """Something was written to NOTES.md: an uncertainty, a blocked dependency, a diagnosis."""
 
@@ -443,6 +458,7 @@ EventBody = Annotated[
     | PlanApproved
     | QuestionsAsked
     | QuestionsAnswered
+    | BrainstormSaid
     | NotesAppended
     | VcsCommitted
     | VcsRolledBack
@@ -495,6 +511,7 @@ PAYLOAD_TYPES: tuple[type[Payload], ...] = (
     PlanApproved,
     QuestionsAsked,
     QuestionsAnswered,
+    BrainstormSaid,
     NotesAppended,
     VcsCommitted,
     VcsRolledBack,

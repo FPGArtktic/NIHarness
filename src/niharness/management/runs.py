@@ -21,8 +21,19 @@ from niharness.config import HarnessConfig
 from niharness.domain.artifacts import Answer, Artifact, Plan
 from niharness.domain.control import AnswerQuestions, CancelRun, ControlMessage, Driver
 from niharness.domain.events import Event, RunOutcome
-from niharness.domain.identity import RunId
+from niharness.domain.identity import RunId, digest_text
 from niharness.domain.state import RunSnapshot, fold
+
+
+def seeded_run_id(seed: str, now: datetime | None = None) -> RunId:
+    """Return a run id for a stage seeded by text rather than by an artifact.
+
+    Brainstorming is the one stage with nothing to start from: a human
+    sentence seeds it, so the id is derived from that sentence exactly as
+    every other id is derived from its artifact's digest.
+    """
+    stamp = (now or datetime.now(UTC)).strftime("%Y%m%d-%H%M%S")
+    return RunId(f"{stamp}-{str(digest_text(seed))[:6]}")
 
 
 def new_run_id(artifact: Artifact, now: datetime | None = None) -> RunId:

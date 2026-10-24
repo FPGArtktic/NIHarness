@@ -1,5 +1,33 @@
 {
   "$defs": {
+    "BrainstormSaid": {
+      "additionalProperties": false,
+      "description": "What the human said in a brainstorm turn.\n\nThe model's side of the conversation is a `model.response` with a digest of\nits content, because \u00a715 keeps unvalidated model output out of the log.\nThe human's side has no such problem and is the only record of what was\nasked, so it is kept verbatim: a session nobody can read afterwards is a\nsession that did not happen as far as `docs/` is concerned.",
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "turn": {
+          "description": "Which exchange of the session this was.",
+          "minimum": 1,
+          "title": "Turn",
+          "type": "integer"
+        },
+        "type": {
+          "const": "brainstorm.said",
+          "default": "brainstorm.said",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "turn",
+        "text"
+      ],
+      "title": "BrainstormSaid",
+      "type": "object"
+    },
     "ContextCompacted": {
       "additionalProperties": false,
       "description": "The message window was compacted. The event log itself is untouched.",
@@ -1161,6 +1189,7 @@
     "body": {
       "discriminator": {
         "mapping": {
+          "brainstorm.said": "#/$defs/BrainstormSaid",
           "context.compacted": "#/$defs/ContextCompacted",
           "gate.command": "#/$defs/GateCommandFinished",
           "gate.finished": "#/$defs/GateFinished",
@@ -1272,6 +1301,9 @@
         },
         {
           "$ref": "#/$defs/QuestionsAnswered"
+        },
+        {
+          "$ref": "#/$defs/BrainstormSaid"
         },
         {
           "$ref": "#/$defs/NotesAppended"

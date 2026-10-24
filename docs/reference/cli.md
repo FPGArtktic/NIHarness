@@ -120,13 +120,28 @@ Usage: nih bench run [OPTIONS]
 ## `nih brainstorm`
 
 ```text
-Usage: nih brainstorm [OPTIONS]                                                
+Usage: nih brainstorm [OPTIONS] {topic}                                        
                                                                                 
  Entry A: an interactive session that writes SPEC.md.                           
                                                                                 
+ A conversation, not a task: say things, the model reads the code and           
+ answers, and `/spec` asks it for the spec itself. The stage's budget is        
+ spent across the whole session rather than per turn, so a conversation         
+ cannot run forever by being a conversation.                                    
+                                                                                
+╭─ Arguments ──────────────────────────────────────────────────────────────────╮
+│ *    topic      <str>  What to explore. The first thing the model is told.   │
+│                        [required]                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --project-root  -C      <path>  The project to operate on. [default: (.)]    │
-│ --help                          Show this message and exit.                  │
+│ --project-root        -C      <path>  The project to operate on.             │
+│                                       [default: (.)]                         │
+│ --profile                     <str>   Override the profile.                  │
+│ --out                 -o      <path>  Where to write the spec.               │
+│                                       [default: SPEC.md]                     │
+│ --unsafe-local-tools                  Run the read-only tools on this host   │
+│                                       instead of in the sandbox.             │
+│ --help                                Show this message and exit.            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 

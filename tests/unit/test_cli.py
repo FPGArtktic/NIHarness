@@ -137,7 +137,6 @@ def test_plan_import_needs_a_model_for_free_form_prose(tmp_path: Path) -> None:
 
 
 STUBS = [
-    (["brainstorm"], "session loop"),
     (["compact", "abc"], "on demand"),
     (["research", "topic"], "sub-run"),
 ]

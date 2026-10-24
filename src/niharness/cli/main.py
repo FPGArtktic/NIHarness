@@ -16,6 +16,7 @@ import typer
 
 from niharness import __version__
 from niharness.cli import bench as bench_module
+from niharness.cli import brainstorm as brainstorm_module
 from niharness.cli import docs as docs_module
 from niharness.cli import gate as gate_module
 from niharness.cli import implement as implement_module
@@ -207,14 +208,38 @@ def mcp(
 
 
 @app.command()
-def brainstorm(root: ProjectRoot = Path()) -> None:
-    """Entry A: an interactive session that writes SPEC.md."""
-    del root
-    unavailable(
-        "brainstorm",
-        "an interactive session loop and a TUI pane for the running draft;\n"
-        "the model, the read-only tools and the prompt layer are built",
-        "docs/roadmap.md, stage 'brainstorm'",
+def brainstorm(
+    topic: Annotated[
+        str,
+        typer.Argument(help="What to explore. The first thing the model is told."),
+    ],
+    root: ProjectRoot = Path(),
+    profile: Annotated[
+        str | None, typer.Option("--profile", help="Override the profile.")
+    ] = None,
+    out: Annotated[Path, typer.Option("--out", "-o", help="Where to write the spec.")] = Path(
+        "SPEC.md"
+    ),
+    local_tools: Annotated[
+        bool,
+        typer.Option(
+            "--unsafe-local-tools",
+            help="Run the read-only tools on this host instead of in the sandbox.",
+        ),
+    ] = False,
+) -> None:
+    """Entry A: an interactive session that writes SPEC.md.
+
+    A conversation, not a task: say things, the model reads the code and
+    answers, and `/spec` asks it for the spec itself. The stage's budget is
+    spent across the whole session rather than per turn, so a conversation
+    cannot run forever by being a conversation.
+    """
+    brainstorm_module.execute(
+        _config(root.resolve(), profile),
+        topic=topic,
+        local_tools=local_tools,
+        out=out,
     )
 
 

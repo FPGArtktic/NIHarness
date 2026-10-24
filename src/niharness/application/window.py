@@ -214,6 +214,21 @@ class Window:
             message=Message(role=MessageRole.USER, content=text),
         )
 
+    async def add_human(self, text: str) -> None:
+        """Add what the human said, which is a turn and not an instruction.
+
+        `ItemKind.TURN` because a brainstorm session is a conversation and a
+        `ContextSummary` may replace it; a harness instruction is the same
+        shape in the window and a different thing in the log, which is why
+        each has its own event.
+        """
+        await self._add(
+            kind=ItemKind.TURN,
+            priority=Priority.CURRENT_TURNS,
+            content=text,
+            message=Message(role=MessageRole.USER, content=text),
+        )
+
     async def add_instruction(self, text: str) -> None:
         """Add a harness instruction: a rejection, a reflection, a finalisation."""
         await self._add(

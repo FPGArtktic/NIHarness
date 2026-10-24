@@ -30,9 +30,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 >   mount - is asserted by tests over the container's argument vector rather than by
 >   having withstood anything. Treat it as a reasonable default, not as a boundary you
 >   have audited.
-> - **Two of three entry points work.** You can hand it a `SPEC.md`, have it
->   gated and planned, and bring a finished `PLAN.md` to execute. `nih brainstorm`
->   is still a stub that exits 69 and says so.
+> - **All three entry points work.** Brainstorm a spec in a conversation, hand
+>   it a `SPEC.md`, or bring a finished `PLAN.md` to execute. The brainstorm
+>   session is a terminal command; the TUI pane §9 describes is a view of it and
+>   is not built.
 > - **The central question is half answered.** All four layers have runners.
 >   L0, L1 and L2 have numbers; L3 has three tasks where §11 asks for ten per
 >   language. One model family, one host.
@@ -207,7 +208,7 @@ unattended. Everything below is the detail of that sentence.
 | **Tools** | `read_file`, `list_tree`, `grep`, `replace_in_file` (creates too), `apply_patch` with its clerical repairs, `format_code`, `run_lint`/`run_build`/`run_tests`, `git_commit` as the gate, `rag_query`, `add_dependency` writing the request to `NOTES.md`, the LSP symbol tools | `diagnostics`; `add_dependency` asks the installed environment, not a real mirror index |
 | **Sandbox** | the image, built from a pinned wheelhouse and published to [GHCR](https://github.com/FPGArtktic/NIHarness/pkgs/container/niharness-sandbox); the hardened argument vector, two network modes, `--unsafe-local-tools` as the escape hatch; a benchmark pass runs inside it under `--network=none` | Quadlet units not rendered; no Rust or Go language server in the image |
 | **Run loop** | `nih implement`, review and fix stages, structured output with GBNF, window building and compaction, resume, cancel | the full gate tier inside a run; a producer for `questions.asked` |
-| **Pipeline entries** | **B**: `nih plan SPEC.md` runs both halves of the spec gate and plans, `nih plan approve` records the decision, `nih run` does everything at once; **C**: bring a `PLAN.md` and execute it | **A** (`nih brainstorm`) needs an interactive session loop |
+| **Pipeline entries** | **A**: `nih brainstorm "<topic>"`, a conversation whose turns are steps and whose budget is the stage's, ending in `SPEC.md`; **B**: `nih plan SPEC.md` runs both halves of the spec gate and plans, `nih plan approve` records the decision, `nih run` does everything at once; **C**: bring a `PLAN.md` and execute it | The TUI pane for the running draft; `/plan` names the next command rather than chaining |
 | **Retrieval** | Qdrant over REST, embeddings over `/v1/embeddings`, `nih ingest` reading PDFs with OCR and citing pages, `rag_query` over documents and over what compaction dropped | the code index (needs tree-sitter chunking); `nih compact` and `nih research` are stubs |
 | **Management** | `nih mcp`, `nih runs`, `nih status`, `nih cancel`, `nih resume`, `--json`, `--detach` | answering `Questions` from outside |
 | **TUI** | follows a live run's event log, writes the control inbox, cancels | the questions picker and plan approval |

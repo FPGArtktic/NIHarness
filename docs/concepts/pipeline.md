@@ -40,12 +40,24 @@ stateDiagram-v2
 
 | Entry | Command | What it assumes |
 |---|---|---|
-| A | `nih brainstorm` | nothing; the model explores the codebase with you and drafts `SPEC.md` |
+| A | `nih brainstorm "<topic>"` | nothing; the model explores the codebase with you and drafts `SPEC.md` |
 | B | `nih plan SPEC.md` | you (or another agent) wrote the spec |
 | C | `nih plan import plan.md`, then `nih implement --plan PLAN.md` | you brought a finished plan and only want it executed |
 
-B works today. A needs an interactive session loop; see the
-[roadmap](../roadmap.md).
+All three work. A is a conversation and therefore a different shape from every
+other stage: a session is many steps over one window, so each turn is a step
+that the detectors and the intervention ladder apply to, and the stage's
+budget is spent across the whole session rather than per turn. `/spec` asks
+for a `SpecDraft` on a turn with no tools, and the harness binds the origin it
+knows, which is the third place a field a model could only transcribe is
+bound rather than asked for
+([ADR 0031](../adr/0031-a-brainstorm-session-is-many-steps-over-one-window.md),
+[ADR 0026](../adr/0026-the-planner-writes-the-work-the-harness-binds-the-spec.md)).
+
+`/plan` writes the spec and names the next command rather than running it. A
+stage boundary starts a fresh run seeded only by the artifact, the artifact is
+on disk by then, and leaving the boundary visible is what keeps a spec
+reviewable before work is planned from it.
 
 ## The planning stage
 

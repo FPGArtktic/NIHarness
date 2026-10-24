@@ -44,6 +44,7 @@ the pipeline. A change that does one of those without an ADR is incomplete.
 | [0028](0028-a-whole-task-is-graded-by-tests-it-never-saw.md) | A whole task is graded by tests it never saw | Accepted |
 | [0029](0029-the-harness-shortens-a-commit-subject-it-can-shorten.md) | The harness shortens a commit subject it can shorten | Accepted |
 | [0030](0030-the-gate-decides-whether-a-step-is-done.md) | The gate decides whether a step is done, not the model's checklist | Accepted |
+| [0031](0031-a-brainstorm-session-is-many-steps-over-one-window.md) | A brainstorm session is many steps over one window | Accepted |
 
 ## Template
 

@@ -356,6 +356,21 @@ the change and stop.
 - [ ] The utility-model `ContextSummary` pass, golden-tested.
 - [ ] `nih compact`.
 
+## Stage: brainstorm, entry A
+
+- [x] `nih brainstorm "<topic>"`: a conversation at a terminal. A session is
+      many steps over one window, so each turn is a step the detectors and the
+      ladder apply to, and the stage's budget is spent across the session
+      rather than per turn. `/spec` asks for a `SpecDraft` on a turn with no
+      tools and the harness binds the origin
+      ([ADR 0031](adr/0031-a-brainstorm-session-is-many-steps-over-one-window.md)).
+- [ ] The TUI pane §9 describes: the running draft, visible as it takes shape.
+      The session is a command and the pane is a view of it, which is the right
+      way round - the TUI reads the event log and does not type for anybody.
+- [ ] A `questions.asked` producer in the session. §9 says the brainstormer
+      asks `Questions` and the TUI renders a picker; today it asks in prose,
+      which a human can answer and a transcript cannot be scored on.
+
 ## Stage: the TUI
 
 - [x] Follow a live run: `nih-tui --run .nih/runs/<id>` tails the event log by

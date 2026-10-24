@@ -19,7 +19,7 @@ The TUI reads these and computes nothing of its own.
 | `ts` | `pydantic.types.AwareDatetime` | required | When the sink accepted the payload (UTC). |
 | `run_id` | `identity.RunId` | required |  |
 | `step_id` | `Optional[identity.StepId]` | `None` |  |
-| `body` | `events.RunStarted | events.RunFinished | events.RunCancelled | events.RunResumed | events.StepStarted | events.StepFinished | events.StepFailed | events.TaskFinished | events.ModelRequest | events.ModelResponse | events.ModelReasoning | events.ToolsAttached | events.ToolCalled | events.ToolReturned | events.ToolRejected | events.GateStarted | events.GateCommandFinished | events.GateFinished | events.ContextCompacted | events.LoopDetected | events.LoopIntervention | events.SpecAccepted | events.PlanCreated | events.PlanApproved | events.QuestionsAsked | events.QuestionsAnswered | events.NotesAppended | events.VcsCommitted | events.VcsRolledBack | events.MetricsSampled` | required |  |
+| `body` | `events.RunStarted | events.RunFinished | events.RunCancelled | events.RunResumed | events.StepStarted | events.StepFinished | events.StepFailed | events.TaskFinished | events.ModelRequest | events.ModelResponse | events.ModelReasoning | events.ToolsAttached | events.ToolCalled | events.ToolReturned | events.ToolRejected | events.GateStarted | events.GateCommandFinished | events.GateFinished | events.ContextCompacted | events.LoopDetected | events.LoopIntervention | events.SpecAccepted | events.PlanCreated | events.PlanApproved | events.QuestionsAsked | events.QuestionsAnswered | events.BrainstormSaid | events.NotesAppended | events.VcsCommitted | events.VcsRolledBack | events.MetricsSampled` | required |  |
 
 ## Payloads
 
@@ -307,6 +307,16 @@ The human answered; answers are events, so a replay sees them.
 | `type` | `Literal['questions.answered']` | `'questions.answered'` |  |
 | `answers_digest` | `identity.Digest` | required |  |
 | `count` | `int` | required |  |
+
+### `brainstorm.said`
+
+What the human said in a brainstorm turn.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `type` | `Literal['brainstorm.said']` | `'brainstorm.said'` |  |
+| `turn` | `int` | required | Which exchange of the session this was. |
+| `text` | `str` | required |  |
 
 ### `notes.appended`
 

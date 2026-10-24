@@ -165,3 +165,4 @@ nav:
       - adr/0028-a-whole-task-is-graded-by-tests-it-never-saw.md
       - adr/0029-the-harness-shortens-a-commit-subject-it-can-shorten.md
       - adr/0030-the-gate-decides-whether-a-step-is-done.md
+      - adr/0031-a-brainstorm-session-is-many-steps-over-one-window.md
