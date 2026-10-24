@@ -1,0 +1,108 @@
+{
+  "$defs": {
+    "Task": {
+      "additionalProperties": false,
+      "description": "One unit of implementation work: one logical change, one commit.",
+      "properties": {
+        "commit_type": {
+          "default": "feat",
+          "description": "Conventional Commits type the gate will expect.",
+          "minLength": 1,
+          "title": "Commit Type",
+          "type": "string"
+        },
+        "depends_on": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+            "type": "string"
+          },
+          "title": "Depends On",
+          "type": "array"
+        },
+        "files": {
+          "default": [],
+          "description": "Paths the planner expects to touch; a hint, not a restriction.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Files",
+          "type": "array"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "intent": {
+          "description": "What changes and why, in the commit-message sense.",
+          "minLength": 1,
+          "title": "Intent",
+          "type": "string"
+        },
+        "satisfies": {
+          "default": [],
+          "description": "Ids of the acceptance criteria this task contributes to.",
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+            "type": "string"
+          },
+          "title": "Satisfies",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "intent"
+      ],
+      "title": "Task",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A plan as the planner writes it: the work, without the spec's digest.\n\nThe digest is not something to ask a model for. It is sixty-four hex\ncharacters that the harness already knows, the planner can only transcribe\nit, and a plan rejected because the transcription slipped is a wall with no\ndoor in front of a model that did the thinking correctly. So the planner\nwrites the tasks and the harness binds them to the spec they were planned\nfrom - see :meth:`for_spec`.\n\nEvery rule about the tasks themselves still belongs to :class:`Plan`, and\nis applied at the moment of binding rather than relaxed.",
+  "properties": {
+    "open_questions": {
+      "default": [],
+      "description": "Decisions the spec leaves open that the planner had to assume.",
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Open Questions",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "tasks": {
+      "items": {
+        "$ref": "#/$defs/Task"
+      },
+      "minItems": 1,
+      "title": "Tasks",
+      "type": "array"
+    }
+  },
+  "required": [
+    "tasks"
+  ],
+  "title": "PlanDraft",
+  "type": "object"
+}

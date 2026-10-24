@@ -8,7 +8,9 @@ adapters do. It performs actions, feeds the outcome back, and appends the
 events it is handed.
 """
 
+from niharness.application.control import ControlDrain
 from niharness.application.implement import ImplementationRun, RunResult, TaskResult
+from niharness.application.planning import PlanningResult, PlanningRun
 from niharness.application.step_runner import RunnerLimitError, StepRunner
 from niharness.application.summarizer import ModelSummarizer, Summarizer
 from niharness.application.window import (
@@ -20,9 +22,12 @@ from niharness.application.window import (
 
 __all__ = [
     "ContextArchive",
+    "ControlDrain",
     "ImplementationRun",
     "MeasurementMissingError",
     "ModelSummarizer",
+    "PlanningResult",
+    "PlanningRun",
     "RunResult",
     "RunnerLimitError",
     "StepRunner",

@@ -138,10 +138,9 @@ def test_plan_import_needs_a_model_for_free_form_prose(tmp_path: Path) -> None:
 
 STUBS = [
     (["brainstorm"], "session loop"),
-    (["run", "SPEC.md"], "planning stage"),
+    (["run", "SPEC.md"], "the chaining"),
     (["compact", "abc"], "on demand"),
     (["research", "topic"], "sub-run"),
-    (["plan", "spec", "SPEC.md"], "runner"),
 ]
 """Each stub and a phrase from the thing that is actually missing."""
 

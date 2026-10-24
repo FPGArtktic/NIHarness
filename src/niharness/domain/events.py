@@ -304,10 +304,21 @@ class LoopIntervention(Payload):
 
 
 class SpecAccepted(Payload):
-    """The spec passed the schema check and the reviewer pass."""
+    """The spec passed the gate and planning may start from it.
+
+    `reviewed` says which half of the gate ran. The schema check always does,
+    and it is not a formality - every acceptance criterion has to name how it
+    is verified, and prose that only restates an intention fails it. The
+    reviewer pass is the other half, and until a stage emits it this field
+    says so rather than letting the event imply a review nobody ran.
+    """
 
     type: Literal["spec.accepted"] = "spec.accepted"
     spec_digest: Digest
+    reviewed: bool = Field(
+        default=False,
+        description="Whether a reviewer pass ran, beyond the schema check.",
+    )
 
 
 class PlanCreated(Payload):

@@ -257,12 +257,13 @@ The harness intervened in a looping step.
 
 ### `spec.accepted`
 
-The spec passed the schema check and the reviewer pass.
+The spec passed the gate and planning may start from it.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `type` | `Literal['spec.accepted']` | `'spec.accepted'` |  |
 | `spec_digest` | `identity.Digest` | required |  |
+| `reviewed` | `bool` | `False` | Whether a reviewer pass ran, beyond the schema check. |
 
 ### `plan.created`
 

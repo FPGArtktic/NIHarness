@@ -255,9 +255,10 @@ def run(spec: Annotated[Path, typer.Argument(help="Path to SPEC.md")]) -> None:
     del spec
     unavailable(
         "run",
-        "the planning stage, which this chains to implement without an\n"
-        "approval stop; `nih implement --plan` runs the second half today",
-        "docs/roadmap.md, stage 'implement'",
+        "the chaining, and a decision about what --json says when one command\n"
+        "produces two runs; `nih plan SPEC.md --approve` then `nih implement`\n"
+        "does the same thing today, in two commands",
+        "docs/roadmap.md, stage 'the run loop'",
     )
 
 

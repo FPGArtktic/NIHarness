@@ -12,8 +12,9 @@ from typer.testing import CliRunner
 
 from niharness.application import ImplementationRun, StepRunner
 from niharness.application.implement import render_task
-from niharness.cli.implement import load_plan, server_parameters
+from niharness.cli.implement import load_plan
 from niharness.cli.main import app
+from niharness.cli.wiring import server_parameters
 from niharness.config import HarnessConfig
 from niharness.domain import events as ev
 from niharness.domain.artifacts import (

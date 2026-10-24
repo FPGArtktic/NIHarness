@@ -282,10 +282,34 @@ Usage: nih plan [OPTIONS] COMMAND [ARGS]...
 │ --help          Show this message and exit.                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────╮
-│ spec    Run the planning stage on a spec, producing PLAN.md for approval.    │
-│ check   Validate a plan against the Plan schema. This is the plan gate,      │
-│         offline.                                                             │
-│ import  Convert an external plan into the Plan schema.                       │
+│ spec     Run the planning stage on a spec, producing PLAN.md for approval.   │
+│ approve  Approve a plan, which is what `nih implement` then runs.            │
+│ check    Validate a plan against the Plan schema. This is the plan gate,     │
+│          offline.                                                            │
+│ import   Convert an external plan into the Plan schema.                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+### `nih plan approve`
+
+```text
+Usage: nih plan approve [OPTIONS] [PLAN.md]                                    
+                                                                                
+ Approve a plan, which is what `nih implement` then runs.                       
+                                                                                
+ Approval is a human action and stays one: this command only records a          
+ decision somebody made, and it records it by digest, so what gets built is     
+ what was read.                                                                 
+                                                                                
+╭─ Arguments ──────────────────────────────────────────────────────────────────╮
+│   PLAN.md      <path>  The plan to approve; a digest also works.             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --project-root  -C      <path>  The project to operate on. [default: (.)]    │
+│ --digest                <str>   Approve a stored plan by digest.             │
+│ --json                          Print one JSON object instead of the human   │
+│                                 form.                                        │
+│ --help                          Show this message and exit.                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
@@ -327,15 +351,26 @@ Usage: nih plan import [OPTIONS] {source}
 ### `nih plan spec`
 
 ```text
-Usage: nih plan spec [OPTIONS] {spec}                                          
+Usage: nih plan spec [OPTIONS] {SPEC.md}                                       
                                                                                 
  Run the planning stage on a spec, producing PLAN.md for approval.              
                                                                                 
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
-│ *    spec      <path>  Path to SPEC.md [required]                            │
+│ *    SPEC.md      <path>  Path to SPEC.md [required]                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --help          Show this message and exit.                                  │
+│ --project-root        -C      <path>  The project to operate on.             │
+│                                       [default: (.)]                         │
+│ --profile                     <str>   Override the profile.                  │
+│ --output              -o      <path>  Where to write the plan.               │
+│                                       [default: PLAN.md]                     │
+│ --unsafe-local-tools                  Run the tool server on this host       │
+│                                       instead of in the sandbox.             │
+│ --approve                             Approve the plan at once, skipping the │
+│                                       human stop.                            │
+│ --json                                Print one JSON object instead of the   │
+│                                       human form.                            │
+│ --help                                Show this message and exit.            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 

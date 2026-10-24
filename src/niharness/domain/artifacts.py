@@ -149,6 +149,41 @@ class Plan(Artifact):
         raise KeyError(task_id)
 
 
+class PlanDraft(Artifact):
+    """A plan as the planner writes it: the work, without the spec's digest.
+
+    The digest is not something to ask a model for. It is sixty-four hex
+    characters that the harness already knows, the planner can only transcribe
+    it, and a plan rejected because the transcription slipped is a wall with no
+    door in front of a model that did the thinking correctly. So the planner
+    writes the tasks and the harness binds them to the spec they were planned
+    from - see :meth:`for_spec`.
+
+    Every rule about the tasks themselves still belongs to :class:`Plan`, and
+    is applied at the moment of binding rather than relaxed.
+    """
+
+    tasks: tuple[Task, ...] = Field(min_length=1)
+    open_questions: tuple[NonEmpty, ...] = Field(
+        default=(),
+        description="Decisions the spec leaves open that the planner had to assume.",
+    )
+
+    def for_spec(self, spec_digest: Digest) -> Plan:
+        """Bind this draft to the spec it was planned from.
+
+        Raises:
+            ValueError: when the tasks do not form an ordered DAG - duplicate
+                ids, or a dependency that points forwards. That check lives in
+                :class:`Plan`, which is why binding is where it fires.
+        """
+        return Plan(
+            spec_digest=spec_digest,
+            tasks=self.tasks,
+            open_questions=self.open_questions,
+        )
+
+
 class QuestionOption(Artifact):
     """One suggested answer rendered as a choice in the TUI picker."""
 
@@ -309,6 +344,7 @@ class FinalAnswer(Artifact):
 ARTIFACT_MODELS: tuple[type[Artifact], ...] = (
     Spec,
     Plan,
+    PlanDraft,
     Questions,
     Answer,
     Verdict,

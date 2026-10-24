@@ -18,6 +18,7 @@ from typing import Any, Literal
 import structlog
 from pydantic import BaseModel, ConfigDict, Field
 
+from niharness.application.control import ControlDrain
 from niharness.application.step_runner import StepRunner
 from niharness.application.summarizer import Summarizer
 from niharness.application.window import ContextArchive, Window
@@ -25,9 +26,8 @@ from niharness.domain import events as ev
 from niharness.domain.artifacts import Decision, FinalAnswer, Plan, Task, Verdict
 from niharness.domain.budgets import fit_to_host
 from niharness.domain.context import CompactionPolicy
-from niharness.domain.control import AnswerQuestions, ApprovePlan, CancelRun
 from niharness.domain.events import RunOutcome, StopReason
-from niharness.domain.identity import RunId, StepId, derive_id, digest_json
+from niharness.domain.identity import RunId, StepId, derive_id
 from niharness.domain.loop import LoopThresholds
 from niharness.domain.messages import ResponseFormat
 from niharness.domain.pipeline import DEFAULT_MAX_REVISIONS, Outcome, Stage, advance, step_for
@@ -205,11 +205,10 @@ class ImplementationRun:
         self._archive = archive
         self._vcs = vcs
         self._worktree = worktree
-        self._control = control
+        self._control = ControlDrain(events, control)
         self._catalog = catalog or EMPTY_CATALOG
         self._generation_tps = generation_tps
         self._max_revisions = max_revisions
-        self._cancelled: str | None = None
 
     async def run(
         self,
@@ -274,12 +273,13 @@ class ImplementationRun:
             if task.id in finished:
                 _log.info("task.skipped", task=task.id, reason="already done in this run")
                 continue
-            if await self._stop_requested(run_id) is not None:
+            if await self._control.stop_requested(run_id) is not None:
                 break
             result = await self._run_task(task, plan, position, run_id)
             results.append(result)
-            if self._cancelled is not None:
-                await self._finish(RunOutcome.CANCELLED, self._cancelled)
+            cancelled = self._control.cancelled
+            if cancelled is not None:
+                await self._finish(RunOutcome.CANCELLED, cancelled)
                 return RunResult(
                     run_id=run_id,
                     outcome=RunOutcome.CANCELLED,
@@ -294,8 +294,9 @@ class ImplementationRun:
                     tasks=tuple(results),
                     stopped_at=task.id,
                 )
-        if self._cancelled is not None:
-            await self._finish(RunOutcome.CANCELLED, self._cancelled)
+        cancelled = self._control.cancelled
+        if cancelled is not None:
+            await self._finish(RunOutcome.CANCELLED, cancelled)
             return RunResult(run_id=run_id, outcome=RunOutcome.CANCELLED, tasks=tuple(results))
         await self._finish(RunOutcome.COMPLETED, f"{len(results)} task(s) done")
         return RunResult(run_id=run_id, outcome=RunOutcome.COMPLETED, tasks=tuple(results))
@@ -382,34 +383,6 @@ class ImplementationRun:
                 )
             stage, revision = transition.stage, transition.revision
 
-    async def _stop_requested(self, run_id: RunId) -> str | None:
-        """Drain the control inbox and return a reason to stop, if one arrived.
-
-        Every command is turned into an event here, by the run, so the log keeps
-        its single writer and records what the run acted on rather than what was
-        merely asked for.
-        """
-        if self._control is None:
-            return self._cancelled
-        for message in await self._control.drain():
-            command = message.command
-            if isinstance(command, CancelRun) and command.run_id == run_id:
-                self._cancelled = command.reason or f"cancelled from {command.source.value}"
-                await self._events.append(ev.RunCancelled(source=command.source.value))
-                _log.warning("run.cancel_requested", run_id=run_id, source=command.source.value)
-            elif isinstance(command, ApprovePlan):
-                await self._events.append(ev.PlanApproved(plan_digest=command.plan_digest))
-            elif isinstance(command, AnswerQuestions) and command.run_id == run_id:
-                await self._events.append(
-                    ev.QuestionsAnswered(
-                        answers_digest=digest_json(
-                            [answer.model_dump(mode="json") for answer in command.answers],
-                        ),
-                        count=len(command.answers),
-                    ),
-                )
-        return self._cancelled
-
     async def _conclude(self, result: TaskResult) -> TaskResult:
         """Record what the run concluded about a task, then return it."""
         await self._events.append(
@@ -493,7 +466,11 @@ class ImplementationRun:
             config,
             window,
             step_id=step_id,
-            should_stop=(lambda: self._stop_requested(run_id)) if self._control else None,
+            should_stop=(
+                (lambda: self._control.stop_requested(run_id))
+                if self._control.listening
+                else None
+            ),
         )
         return StepResult(
             stage=stage.value,

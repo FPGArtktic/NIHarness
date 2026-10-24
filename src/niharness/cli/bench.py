@@ -41,10 +41,10 @@ from niharness.application.implement import ARTIFACT_SCHEMAS
 from niharness.application.step_runner import StepRunner
 from niharness.application.window import Window
 from niharness.cli.blocking import blocking
-from niharness.cli.implement import backend_for, server_parameters
 from niharness.cli.output import emit, fail
 from niharness.cli.retrieval import open_retrieval
 from niharness.cli.unavailable import EX_UNAVAILABLE
+from niharness.cli.wiring import backend_for, server_parameters
 from niharness.config import HarnessConfig, ModelConfig
 from niharness.domain.bench import L1Task, SuiteScore, TaskScore, score_suite, score_task
 from niharness.domain.budgets import Budgets, fit_to_host

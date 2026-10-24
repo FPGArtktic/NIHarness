@@ -710,8 +710,14 @@
     },
     "SpecAccepted": {
       "additionalProperties": false,
-      "description": "The spec passed the schema check and the reviewer pass.",
+      "description": "The spec passed the gate and planning may start from it.\n\n`reviewed` says which half of the gate ran. The schema check always does,\nand it is not a formality - every acceptance criterion has to name how it\nis verified, and prose that only restates an intention fails it. The\nreviewer pass is the other half, and until a stage emits it this field\nsays so rather than letting the event imply a review nobody ran.",
       "properties": {
+        "reviewed": {
+          "default": false,
+          "description": "Whether a reviewer pass ran, beyond the schema check.",
+          "title": "Reviewed",
+          "type": "boolean"
+        },
         "spec_digest": {
           "title": "Spec Digest",
           "type": "string"

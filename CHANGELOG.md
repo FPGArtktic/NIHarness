@@ -13,6 +13,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Entry B works: `nih plan SPEC.md` plans a spec.** The spec is validated
+  offline, a worktree is made, the planner reads the code with read-only tools,
+  and `PLAN.md` is written and stored by digest. `nih plan approve PLAN.md`
+  records the decision, which is what `nih implement` then runs. Two of three
+  entry points now work end to end.
+- `PlanDraft`: what the planner actually writes. A `Plan` carries the spec's
+  digest, and asking a model to reproduce a digest of a document it was shown
+  as prose is asking for transcription rather than judgement - the one field in
+  the artifact with exactly one right value that the harness already knows. The
+  planner writes the tasks; `PlanDraft.for_spec()` binds them to the spec.
+  Every rule about the tasks stays on `Plan` and fires at the moment of
+  binding, so a draft whose dependencies point forwards is reported as a
+  planning error with the offending id named, not as a schema failure
+  (ADR 0026, `docs/adr/0026-the-planner-writes-the-work-the-harness-binds-the-spec.md`).
+- The planner's window gets the spec once. `nih plan` renders it for the model
+  rather than reusing the `SPEC.md` renderer, which repeats the whole artifact
+  as a JSON block for the gate - and the digest appears in neither.
 - `add_dependency` exists. It was in the domain and in two roles' allowlists
   and the tool server had **never registered it**, so a model that called it
   got "the tool server failed to run add_dependency" - the same
@@ -384,3 +401,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - Documentation site (MkDocs Material) with concept pages, a generated event
   catalogue and the first architecture decision records.
 - Rust TUI crate skeleton (ratatui) that renders the run event stream.
+
+### Changed
+
+- `spec.accepted` carries `reviewed`. The spec gate has two halves - a schema
+  check and a reviewer pass - and only the first one exists, so the event says
+  which ran instead of implying a review nobody performed.
+- The control inbox is drained in one place. `ControlDrain` turns requests into
+  events for every kind of run, so a cancel from the TUI, from `nih cancel` and
+  from an agent arrive the same way whether the run is planning or
+  implementing.
+- The wiring both model-running commands need - a backend client, how to start
+  the tool server, the sandbox readiness check, and the two lines about network
+  and retrieval - moved to `cli/wiring.py`, so the two stages cannot disagree
+  about what a run looks like.
+- The planner's prompt asks for a `PlanDraft` and sends open questions to
+  `open_questions` rather than to a `Questions` artifact: a step enforces
+  exactly one final artifact, and nothing produces `questions.asked` yet.

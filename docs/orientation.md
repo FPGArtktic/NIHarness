@@ -62,6 +62,9 @@ suggestion. See [Architecture](concepts/architecture.md) and
   that runs real work, each task in its own copy of the suite's fixture, and
   scores it by folding the events. Records land in `benchmarks/results/`.
   L2 and L3 have a methodology and no runner.
+- `nih plan SPEC.md`: entry B. Validates the spec, runs the planner over the
+  code with read-only tools, writes `PLAN.md`, and leaves it for a human.
+  `nih plan approve PLAN.md` records that decision by digest.
 - `nih implement`: with a model served and the sandbox image built, it executes
   an approved plan task by task, each commit going through the gate.
 - The control plane: `nih runs`, `nih cancel`, `nih resume`, `--detach`,
@@ -94,11 +97,12 @@ Commands that need a model, a container or a vector store exit with code 69 and
 say what is missing. That is deliberate: see [the roadmap](roadmap.md) for the
 order in which the gaps get filled.
 
-Two of retrieval's three collections have no writer yet: the project's code is
-not indexed (that needs tree-sitter chunking) and compaction does not yet write
-what it drops. `rag_query` reports an unwritten collection as not indexed
-rather than counting it as searched, so what works is honest about what does
-not.
+One of retrieval's three collections still has no writer: the project's code is
+not indexed, which needs tree-sitter chunking. Documents are indexed by
+`nih ingest`, and what compaction drops is indexed under the run's own
+collection, so the model can ask for it back. `rag_query` reports an unwritten
+collection as not indexed rather than counting it as searched, so what works is
+honest about what does not.
 
 ## Rules that hold everywhere
 

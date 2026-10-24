@@ -112,7 +112,7 @@ DEFAULT_ROLES: dict[Role, RoleSpec] = {
         allowlist=READ_ONLY_TOOLS,
         temperature=0.2,
         uses_tools=True,
-        structured_output="Plan",
+        structured_output="PlanDraft",
     ),
     Role.IMPLEMENTER: RoleSpec(
         role=Role.IMPLEMENTER,

@@ -10,14 +10,12 @@ pieces to the application layer, and report what happened.
 from __future__ import annotations
 
 import asyncio
-import sys
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Literal
 
 import httpx
 import typer
-from mcp import StdioServerParameters
 from pydantic import ValidationError
 
 from niharness.adapters.git import GitError, GitVcs
@@ -25,12 +23,7 @@ from niharness.adapters.jsonl_control import JsonlControlChannel
 from niharness.adapters.jsonl_events import JsonlEventSink
 from niharness.adapters.local_http import explain
 from niharness.adapters.mcp import ExternalToolsError, connect_tools
-from niharness.adapters.openai_compat import AirGapViolationError, OpenAiCompatBackend
-from niharness.adapters.podman import (
-    PodmanSandbox,
-    SandboxImageMissingError,
-    SandboxUnavailableError,
-)
+from niharness.adapters.openai_compat import AirGapViolationError
 from niharness.application import (
     ContextArchive,
     ImplementationRun,
@@ -40,9 +33,16 @@ from niharness.application import (
 from niharness.application.summarizer import ModelSummarizer
 from niharness.cli.blocking import blocking
 from niharness.cli.output import emit, fail
-from niharness.cli.retrieval import Retrieval, open_retrieval
+from niharness.cli.retrieval import open_retrieval
 from niharness.cli.tools import external_servers
-from niharness.config import HarnessConfig, ModelConfig
+from niharness.cli.wiring import (
+    backend_for,
+    check_sandbox,
+    network_note,
+    retrieval_line,
+    server_parameters,
+)
+from niharness.config import HarnessConfig
 from niharness.domain.artifacts import Plan
 from niharness.domain.identity import Digest, RunId
 from niharness.domain.markdown import ArtifactNotFoundError, parse_plan
@@ -55,7 +55,6 @@ from niharness.management.runs import (
     new_run_id,
     pid_file,
 )
-from niharness.ports.vcs import Worktree
 
 TIMEOUT_HINT = "On a slow host raise [models.main] request_timeout_seconds."
 """What to suggest when the model backend stops answering mid-generation."""
@@ -81,92 +80,6 @@ def load_plan(config: HarnessConfig, explicit: Path | None) -> Plan:
         typer.secho(f"{source}: invalid plan", fg=typer.colors.RED, err=True)
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
-
-
-def server_parameters(
-    config: HarnessConfig,
-    worktree: Worktree,
-    *,
-    local: bool,
-) -> StdioServerParameters:
-    """Return how to start the tool server: in the sandbox, or on this host."""
-    if local:
-        return StdioServerParameters(
-            command=sys.executable,
-            args=["-m", "niharness.toolserver", "--root", worktree.path],
-        )
-    sandbox = PodmanSandbox(
-        config.sandbox.image,
-        Path(worktree.path),
-        cpus=config.sandbox.cpus,
-        memory=config.sandbox.memory,
-        pids_limit=config.sandbox.pids_limit,
-        binary=config.sandbox.binary,
-        network=config.sandbox.network,
-    )
-    argv = sandbox.tool_server_argv()
-    return StdioServerParameters(command=argv[0], args=list(argv[1:]))
-
-
-async def _check_sandbox(config: HarnessConfig, worktree: Worktree) -> None:
-    """Fail early and clearly when Podman or the image is not there.
-
-    Raises:
-        typer.Exit: when the sandbox cannot be used.
-    """
-    sandbox = PodmanSandbox(
-        config.sandbox.image,
-        Path(worktree.path),
-        binary=config.sandbox.binary,
-        network=config.sandbox.network,
-    )
-    try:
-        await sandbox.ensure_ready()
-    except (SandboxUnavailableError, SandboxImageMissingError) as error:
-        typer.secho(str(error), fg=typer.colors.RED, err=True)
-        typer.echo(
-            "  or run the tools on this host instead, outside the container:\n"
-            "    nih implement --unsafe-local-tools",
-            err=True,
-        )
-        raise typer.Exit(EX_UNAVAILABLE) from error
-
-
-def _network_note(config: HarnessConfig, local_tools: bool) -> str:
-    """Say when the tools have a network, because the default is that they do not.
-
-    Silence means `--network=none`. A run whose tools could reach the internet
-    is a materially different run and the operator should not have to go and
-    read `harness.toml` to find out which one this is.
-    """
-    if local_tools:
-        return " (on this host, so whatever network this host has)"
-    if config.sandbox.network == "none":
-        return ""
-    return f", network {config.sandbox.network}: its tools can reach the internet"
-
-
-def _retrieval_line(config: HarnessConfig, retrieval: Retrieval) -> str:
-    """Say in one line whether `rag_query` will be offered, and over what."""
-    if not retrieval.ready:
-        return f"off, so rag_query is not offered ({retrieval.why})"
-    where = ", ".join(
-        (config.vector.code_collection, config.vector.doc_collection),
-    )
-    return f"{config.vector.url}, searching {where} and this run's own context"
-
-
-def backend_for(model: ModelConfig) -> OpenAiCompatBackend:
-    """Build a client for one served model."""
-    return OpenAiCompatBackend(
-        model.base_url,
-        model.name,
-        context_window=model.context_window,
-        supports_grammar=model.supports_grammar,
-        supports_reasoning=model.supports_reasoning,
-        reasoning_effort=model.reasoning_effort,
-        timeout_seconds=model.request_timeout_seconds,
-    )
 
 
 async def execute(
@@ -195,7 +108,7 @@ async def execute(
         raise typer.Exit(1) from error
 
     if not local_tools:
-        await _check_sandbox(config, worktree)
+        await check_sandbox(config, worktree, command="implement")
 
     sink = JsonlEventSink(config.runs_dir, run_id)
     control = JsonlControlChannel(config.runs_dir, run_id)
@@ -207,7 +120,7 @@ async def execute(
         typer.echo(f"run {run_id}")
         typer.echo(f"  worktree: {worktree.path} ({worktree.branch})")
         typer.echo(f"  model: {config.models.main.name} at {config.models.main.base_url}")
-        typer.echo(f"  tools: {mode}{_network_note(config, local_tools)}")
+        typer.echo(f"  tools: {mode}{network_note(config, local_tools)}")
         measured = config.models.main.measured_generation_tps
         if measured > 0:
             typer.echo(
@@ -226,7 +139,7 @@ async def execute(
         stack.push_async_callback(utility.aclose)
         retrieval = await stack.enter_async_context(open_retrieval(config))
         if not quiet:
-            typer.echo(f"  retrieval: {_retrieval_line(config, retrieval)}")
+            typer.echo(f"  retrieval: {retrieval_line(config, retrieval)}")
         tools = await stack.enter_async_context(
             connect_tools(
                 server_parameters(config, worktree, local=local_tools),

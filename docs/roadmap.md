@@ -55,7 +55,11 @@ The first thing a model needs is hands.
 - [ ] Language servers for Rust and Go in the image: both come from toolchain
       tarballs rather than distribution packages, so the wheelhouse recipe does
       not cover them yet.
-- [ ] Sandbox image: `containers/Containerfile.sandbox`, layered toolchains.
+- [x] Sandbox image: `containers/Containerfile.sandbox`, layered toolchains,
+      built from a wheelhouse pinned to the image's own interpreter, and
+      published by CI to `ghcr.io/fpgartktic/niharness-sandbox`. A benchmark
+      pass runs inside it - tool server, gate and language servers in the
+      container, `--network=none` - and scores what the host run scores.
 - [x] Integration tests behind the `integration` marker: run them with
       `NIH_SANDBOX_IMAGE=<image> uv run pytest -m integration`. They assert the
       properties that only a real container can show - the worktree is
@@ -156,8 +160,11 @@ flag on the sandbox adapter:
       inside the sandbox, resolves every path against the worktree root (which
       is what catches a symlink), and holds the gate - `git_commit` runs the
       quick tier and refuses with the failing output on red.
-- [ ] Building the sandbox **image** with that server installed. The
-      Containerfile does it from a local wheelhouse; nobody has run it yet.
+- [x] Building the sandbox **image** with that server installed, and running a
+      benchmark pass inside it rather than only on the host. Five things had to
+      be fixed before it worked at all, and the last was the one that matters:
+      an image that can run the harness is not an image that can run the
+      *gate*, which needs the project's own linters too.
 - [x] `nih implement`: loads the approved plan, creates the run worktree, opens
       the event log, starts the tool server in the sandbox (or on this host with
       `--unsafe-local-tools`, which the event stream records), and runs one
@@ -179,7 +186,21 @@ flag on the sandbox adapter:
       ends: `must_finalize` makes the next model call with
       `tool_choice: none`, so a step ends with a written state rather than a
       cut-off tool call.
-- [ ] `nih run`: plan and implement without stopping for approval.
+- [x] The planning stage: `nih plan SPEC.md` validates the spec offline, makes
+      a worktree, runs the planner with read-only tools, and writes `PLAN.md`.
+      What the planner writes is a `PlanDraft`; the harness binds it to the
+      spec's digest, because that field is the one the model could only copy
+      ([ADR 0026](adr/0026-the-planner-writes-the-work-the-harness-binds-the-spec.md)).
+- [x] `nih plan approve`: approval recorded by digest, which is what
+      `nih implement` then runs. The decision stays a human one.
+- [ ] The reviewer half of the spec gate - one ACK/NAK pass over `SPEC.md`
+      before planning starts. The schema half runs today and is not a
+      formality: an acceptance criterion whose verification only restates an
+      intention is rejected offline. `spec.accepted` carries `reviewed: false`
+      until the other half exists, rather than implying a review nobody ran.
+- [ ] `nih run`: plan and implement without stopping for approval. Both halves
+      exist now; what is missing is the chaining and a decision about what
+      `--json` should say when one command produces two runs.
 
 ## What the live runs showed, and what is still open
 
@@ -195,8 +216,11 @@ the commit by hand.
 
 That is one task, one constant, and a sample of three runs. It says the
 pipeline closes; it does not say how often, on what size of task, or for which
-models. Those are L1 to L3 questions and the runner does not exist, so
-everything below about model behaviour is observation rather than measurement.
+models. Those are L1 to L3 questions. L1 is now measured - twenty tasks,
+repeated passes, scored by folding each task's event log - and the records are
+committed under `benchmarks/results/`. L2 and L3 have no runner, so what this
+page says about review quality and about whole tasks is still observation
+rather than measurement.
 
 Every earlier run was lost to the same thing: the model knew the change and
 could not express it as a unified diff. That is what `replace_in_file`
@@ -207,9 +231,10 @@ never attempted a diff.
 - [ ] A worked diff example in the implementer's prompt. Three runs were lost
       to diff paperwork, and most of it is now repaired by the tool server -
       but showing the format once would be cheaper than repairing it. This is a
-      prompt change, so §11 wants an L1-L3 run in the same change, and the
-      bench runner does not exist yet. That ordering is deliberate: a prompt
-      change without a number is how prompts quietly rot.
+      prompt change, so §11 wants an L1 run in the same change. That run is now
+      possible, which is why this item is still open rather than quietly done:
+      nobody has taken the before-and-after measurement, and a prompt change
+      without a number is how prompts quietly rot.
 - [ ] `nih bench --layer L0`. The numbers in
       `benchmarks/results/l0-bonsai2-2026-10-22.jsonl` were taken by hand with
       `llama-bench`; the runner has to produce them, and the record format
@@ -294,10 +319,13 @@ never attempted a diff.
       its own copy of the suite's fixture, through the same loop that runs real
       work, and is scored by folding its events - so the grader is a pure
       function tested without a model.
-- [ ] The remaining L1 tasks: the suite has 8 of the 20 the methodology asks
-      for. The first run found three expectations that measured something
-      other than what they claimed, so the ones that are there have been
-      through a model at least once.
+- [x] The twenty L1 tasks the methodology asks for. Writing them found several
+      expectations that measured something other than what they claimed - a
+      rule meant to catch a model writing where it should not was failing one
+      for *reading* a test, and a sequence expectation scored the route taken
+      rather than the state reached - so every task has been through a model at
+      least once. The fixture's baseline is an invariant of the suite: format
+      clean, lint clean, exactly one deliberate test failure.
 - [ ] L2 and L3 runners. L2 needs a golden set with human verdicts to score
       reviewer precision against; L3 needs the vendored reference sets.
 - [ ] Answer the ternary question with it. A natively ternary 27B-class model at

@@ -30,8 +30,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 >   mount - is asserted by tests over the container's argument vector rather than by
 >   having withstood anything. Treat it as a reasonable default, not as a boundary you
 >   have audited.
-> - **One of three entry points works.** You can bring a finished `PLAN.md` and
->   execute it. `nih brainstorm` and `nih plan spec` are stubs that exit 69 and say so.
+> - **Two of three entry points work.** You can hand it a `SPEC.md` and get a
+>   plan, or bring a finished `PLAN.md` and have it executed. `nih brainstorm`
+>   is still a stub that exits 69 and says so.
 > - **The central question is unanswered.** L1 (tool calling) has numbers as of
 >   today; L2 and L3 have a methodology and no runner. One model family, one host.
 > - **Nothing is stable.** Event schemas, the config, the artifact contracts and the
@@ -127,12 +128,13 @@ the harness commit, model, quantization, profile, host and date.
 
 ### What is *not* measured
 
-Everything that would actually answer the question. L1 (tool calling), L2 (gate and
-review) and L3 (end to end) have a [methodology](docs/benchmarks/methodology.md), a
-record format, and a seed set of tasks - 5 of L1's 20, 3 of L2's golden cases, 2 of
-L3's - and **no runner to execute any of them**, so no data. Until there is, every
-claim here about model behaviour is an observation from roughly ten live runs, which
-is an anecdote and not a measurement, and is labelled as one wherever it appears.
+The two layers that would answer the question for whole tasks. L2 (gate and review)
+and L3 (end to end) have a [methodology](docs/benchmarks/methodology.md), a record
+format and a seed set of cases, and **no runner**, so no data: L2 needs a golden set
+with human verdicts to score reviewer precision against, L3 the vendored reference
+sets. Until they exist, every claim here about review quality or about finishing a
+real task is an observation from live runs - an anecdote, not a measurement, and
+labelled as one wherever it appears.
 
 One result is worth stating against that, with its limits. A **4B** has now produced
 a green commit unattended: `rag_query` to read a value out of an ingested datasheet
@@ -144,7 +146,8 @@ ignoring it destroys. Verified by re-running the gate on the commit by hand.
 The limits matter as much as the result: one task, one file, one constant, and a
 sample of three runs of which two finished inside the time limit and both committed.
 It says the pipeline closes. It does not say how often, on what size of task, or for
-which models - which is what L1 to L3 are for, and they have no runner yet.
+which models. L1 now answers the first of those for tool calling; L2 and L3 would
+answer the rest, and they have no runner yet.
 
 ## Pipeline
 
@@ -171,19 +174,20 @@ unattended. Everything below is the detail of that sentence.
 | Subsystem | Works | Missing |
 |---|---|---|
 | **Domain core** | contracts, event catalogue, tool-call validation with path confinement, role allowlists, budgets with forced finalisation, two-tier gate with failure signatures, loop detectors and the intervention ladder, compaction policy, the fold that derives run state | - |
-| **Tools** | `read_file`, `list_tree`, `grep`, `replace_in_file` (creates too), `apply_patch` with its clerical repairs, `format_code`, `run_lint`/`run_build`/`run_tests`, `git_commit` as the gate, `rag_query`, the LSP symbol tools | `diagnostics`; `add_dependency` cannot consult a real index |
-| **Sandbox** | the Containerfile, the hardened argument vector, two network modes, `--unsafe-local-tools` as the escape hatch | **the image has never been built**, so none of it has confined a real task; no wheelhouse; Quadlet units not rendered |
+| **Tools** | `read_file`, `list_tree`, `grep`, `replace_in_file` (creates too), `apply_patch` with its clerical repairs, `format_code`, `run_lint`/`run_build`/`run_tests`, `git_commit` as the gate, `rag_query`, `add_dependency` writing the request to `NOTES.md`, the LSP symbol tools | `diagnostics`; `add_dependency` asks the installed environment, not a real mirror index |
+| **Sandbox** | the image, built from a pinned wheelhouse and published to [GHCR](https://github.com/FPGArtktic/NIHarness/pkgs/container/niharness-sandbox); the hardened argument vector, two network modes, `--unsafe-local-tools` as the escape hatch; a benchmark pass runs inside it under `--network=none` | Quadlet units not rendered; no Rust or Go language server in the image |
 | **Run loop** | `nih implement`, review and fix stages, structured output with GBNF, window building and compaction, resume, cancel | the full gate tier inside a run; a producer for `questions.asked` |
-| **Pipeline entries** | **C**: bring a `PLAN.md` and execute it | **A** (`nih brainstorm`) and **B** (`nih plan spec`) are stubs, so `nih run` is too |
-| **Retrieval** | Qdrant over REST, embeddings over `/v1/embeddings`, `nih ingest` reading PDFs with OCR and citing pages, `rag_query` over documents | the code index (needs tree-sitter chunking); compacted context is not indexed, so `nih compact` and `nih research` are stubs |
+| **Pipeline entries** | **B**: `nih plan SPEC.md` plans a spec and `nih plan approve` records the decision; **C**: bring a `PLAN.md` and execute it | **A** (`nih brainstorm`) needs an interactive session loop; the reviewer half of the spec gate; `nih run` (the chaining) |
+| **Retrieval** | Qdrant over REST, embeddings over `/v1/embeddings`, `nih ingest` reading PDFs with OCR and citing pages, `rag_query` over documents and over what compaction dropped | the code index (needs tree-sitter chunking); `nih compact` and `nih research` are stubs |
 | **Management** | `nih mcp`, `nih runs`, `nih status`, `nih cancel`, `nih resume`, `--json`, `--detach` | answering `Questions` from outside |
 | **TUI** | follows a live run's event log, writes the control inbox, cancels | the questions picker and plan approval |
-| **Benchmarks** | `nih bench --layer L1`, scored by folding the event log, `--repeat` for variance; L0 numbers taken by hand | **L2 and L3 have no runner**; 14 of L1's 20 tasks; no vendored reference sets |
+| **Benchmarks** | `nih bench --layer L1`: all twenty tasks, each in its own fixture copy, scored by folding its event log, `--repeat` for variance; L0 numbers taken by hand | **L2 and L3 have no runner**; `--layer L0` is not wired; no vendored reference sets |
 
-Three things block the rest, in order: **the sandbox image** (the safety story is
-unexercised), **L2 and L3** (review quality and end-to-end are unmeasured), and **the
-plan stage** (two of three entry points). Roughly 24 of 59 roadmap items are done; the
-count is a poor measure, because the remaining ones are the large ones.
+Three things block the rest, in order: **L2 and L3** (review quality and whole tasks
+are unmeasured), **brainstorm** (the last entry point, and the only interactive one),
+and **the code index** (the one retrieval collection nothing writes to). 30 of 62
+roadmap items are done; the count is a poor measure, because the remaining ones are
+the large ones.
 
 [`docs/orientation.md`](docs/orientation.md) is the long version of this table,
 [`docs/roadmap.md`](docs/roadmap.md) the itemised list, and

@@ -18,17 +18,23 @@ from pydantic import BaseModel, ConfigDict
 from niharness.adapters.jsonl_control import JsonlControlChannel
 from niharness.adapters.jsonl_events import JsonlEventSink
 from niharness.config import HarnessConfig
-from niharness.domain.artifacts import Answer, Plan
+from niharness.domain.artifacts import Answer, Artifact, Plan
 from niharness.domain.control import AnswerQuestions, CancelRun, ControlMessage, Driver
 from niharness.domain.events import Event, RunOutcome
 from niharness.domain.identity import RunId
 from niharness.domain.state import RunSnapshot, fold
 
 
-def new_run_id(plan: Plan, now: datetime | None = None) -> RunId:
-    """Return a readable, unique run id: when it started and which plan it ran."""
+def new_run_id(artifact: Artifact, now: datetime | None = None) -> RunId:
+    """Return a readable, unique run id: when it started and what seeded it.
+
+    Any artifact will do, because a stage boundary starts a fresh run seeded
+    by exactly one of them: a plan for an implementing run, a spec for a
+    planning run. The id says which, by digest, so two runs over the same
+    input are told apart by their timestamp and not by luck.
+    """
     stamp = (now or datetime.now(UTC)).strftime("%Y%m%d-%H%M%S")
-    return RunId(f"{stamp}-{str(plan.digest())[:6]}")
+    return RunId(f"{stamp}-{str(artifact.digest())[:6]}")
 
 
 PID_FILE = "run.pid"

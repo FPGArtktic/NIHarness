@@ -44,6 +44,35 @@ stateDiagram-v2
 | B | `nih plan SPEC.md` | you (or another agent) wrote the spec |
 | C | `nih plan import plan.md`, then `nih implement --plan PLAN.md` | you brought a finished plan and only want it executed |
 
+B works today. A needs an interactive session loop; see the
+[roadmap](../roadmap.md).
+
+## The planning stage
+
+`nih plan SPEC.md` runs it: the spec is validated offline, a worktree is made,
+the planner reads the code with read-only tools, and what it writes becomes
+`PLAN.md`.
+
+What the planner writes is a `PlanDraft` - the tasks, in execution order, and
+the questions the spec left open. The harness binds that draft to the spec's
+digest to make a `Plan`, because the digest is the one field in the artifact
+that is not a judgement: there is exactly one right value and the model could
+only copy it. Every rule about the tasks themselves stays on `Plan` and fires
+at the moment of binding, so a draft whose dependencies point forwards is
+reported as the planning error it is, with the offending id named. See
+[ADR 0026](../adr/0026-the-planner-writes-the-work-the-harness-binds-the-spec.md).
+
+The spec gate's schema half runs before a model is started, and it is not a
+formality: every acceptance criterion has to say how it is verified, and a
+verification that only restates an intention is rejected. The reviewer half -
+one ACK/NAK pass over the spec - is not built yet, so `spec.accepted` carries
+`reviewed: false` rather than implying a review nobody ran.
+
+Then the plan waits. `nih plan approve PLAN.md` records the decision by digest,
+which is what `nih implement` runs. Approval is a human action and stays one;
+`--approve` on the planning command is for the case where the same person is
+doing both in one sitting.
+
 ## Fresh runs at stage boundaries
 
 Two transitions start a **new run**, seeded only with an artifact:
