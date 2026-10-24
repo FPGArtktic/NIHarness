@@ -7,11 +7,18 @@ import json
 import pytest
 
 from niharness.domain import events as ev
-from niharness.domain.artifacts import DodItem, FinalAnswer
+from niharness.domain.artifacts import (
+    Decision,
+    DodItem,
+    FinalAnswer,
+    ReviewNote,
+    Severity,
+    Verdict,
+)
 from niharness.domain.budgets import Budgets
 from niharness.domain.events import InterventionLevel, StopReason
 from niharness.domain.identity import CallId, Digest
-from niharness.domain.loop import REFLECTION_INSTRUCTION, LoopThresholds
+from niharness.domain.loop import REFLECTION_INSTRUCTION, CallRecord, LoopThresholds
 from niharness.domain.messages import (
     ChatResponse,
     ResponseFormat,
@@ -411,18 +418,12 @@ def test_the_loop_is_deterministic() -> None:
     assert first == second
 
 
-def test_a_reviewing_step_ends_with_a_verdict() -> None:
-    from niharness.domain.artifacts import Decision, ReviewNote, Severity, Verdict
-    from niharness.domain.tool_loop import ArtifactKind
-
-    reviewing = start(
-        config(role=Role.REVIEWER, final_artifact=ArtifactKind.VERDICT),
-    ).state
-    verdict = Verdict(
+def reviewing_verdict(*, tests_passed: bool = True) -> Verdict:
+    return Verdict(
         decision=Decision.NAK,
         summary="the error is discarded",
-        build_passed=True,
-        tests_passed=True,
+        build_passed=False,
+        tests_passed=tests_passed,
         notes=(
             ReviewNote(
                 file="src/a.py",
@@ -432,14 +433,84 @@ def test_a_reviewing_step_ends_with_a_verdict() -> None:
             ),
         ),
     )
-    step = observe_model(
-        reviewing,
-        ChatResponse(
-            content=verdict.model_dump_json(),
-            finish_reason="stop",
-            usage=Usage(prompt_tokens=400, completion_tokens=90),
-        ),
+
+
+def said(verdict: Verdict) -> ChatResponse:
+    return ChatResponse(
+        content=verdict.model_dump_json(),
+        finish_reason="stop",
+        usage=Usage(prompt_tokens=400, completion_tokens=90),
     )
+
+
+def reviewing_state() -> LoopState:
+    return start(config(role=Role.REVIEWER, final_artifact=ArtifactKind.VERDICT)).state
+
+
+def test_a_reviewing_step_ends_with_a_verdict() -> None:
+    verdict = reviewing_verdict(tests_passed=False)
+    step = observe_model(reviewing_state(), said(verdict))
+    assert step.state.stop_reason is StopReason.FINAL_ANSWER
+    assert step.state.verdict == verdict
+
+
+def test_a_verdict_claiming_the_tests_passed_is_sent_back_once() -> None:
+    """The reviewer exists because a claim is not evidence. So does this check."""
+    claimed = reviewing_verdict()
+    step = observe_model(reviewing_state(), said(claimed))
+
+    assert step.state.stop_reason is None, "the step does not end on an unearned claim"
+    assert step.state.verdict is None
+    assert "run_tests was never called" in step.state.pending_instruction
+    assert step.state.pending_tool_choice is ToolChoice.AUTO, "it can go and run them"
+    intervened = [body for body in step.events if isinstance(body, ev.LoopIntervention)]
+    assert intervened[0].pathology == "unbacked_claim"
+    assert "run_tests" in intervened[0].detail
+
+
+def test_a_verdict_backed_by_a_green_run_stands() -> None:
+    ran = reviewing_state().model_copy(
+        update={
+            "calls": (
+                CallRecord(
+                    seq=1,
+                    tool="run_tests",
+                    arguments_digest=Digest("a" * 16),
+                    result_digest=Digest("b" * 16),
+                ),
+            ),
+        },
+    )
+    verdict = reviewing_verdict()
+    step = observe_model(ran, said(verdict))
+    assert step.state.stop_reason is StopReason.FINAL_ANSWER
+    assert step.state.verdict == verdict
+
+
+def test_a_verdict_backed_only_by_a_red_run_is_sent_back() -> None:
+    red = reviewing_state().model_copy(
+        update={
+            "calls": (
+                CallRecord(
+                    seq=1,
+                    tool="run_tests",
+                    arguments_digest=Digest("a" * 16),
+                    result_digest=Digest("b" * 16),
+                    failed=True,
+                ),
+            ),
+        },
+    )
+    step = observe_model(red, said(reviewing_verdict()))
+    assert step.state.stop_reason is None
+    assert "came back red" in step.state.pending_instruction
+
+
+def test_the_evidence_is_asked_for_once_and_then_the_verdict_stands() -> None:
+    """A second refusal would be a step that cannot end, which is a wall."""
+    asked = reviewing_state().model_copy(update={"evidence_asked": True})
+    verdict = reviewing_verdict()
+    step = observe_model(asked, said(verdict))
     assert step.state.stop_reason is StopReason.FINAL_ANSWER
     assert step.state.verdict == verdict
     assert step.state.final_answer is None, "a verdict is not a final answer"

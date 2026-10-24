@@ -209,6 +209,12 @@
       "additionalProperties": false,
       "description": "The harness intervened in a looping step.",
       "properties": {
+        "detail": {
+          "default": "",
+          "description": "What specifically triggered it, when naming it helps. A tally of pathologies says which rule fired; this says what the model did.",
+          "title": "Detail",
+          "type": "string"
+        },
         "level": {
           "$ref": "#/$defs/InterventionLevel"
         },

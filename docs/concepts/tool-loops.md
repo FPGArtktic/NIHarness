@@ -175,6 +175,40 @@ A detector needs **both** halves of the signal where that matters: eight calls
 that change nothing are only a stall if the results were also already seen,
 because reading eight new files changes nothing and is perfectly good work.
 
+## A claim the harness can check, it checks
+
+A `Verdict` asserts two things the harness can verify exactly: that the build
+passed and that the tests passed. §4 has always said the reviewer re-runs both
+itself and does not trust the implementer's claims. Nothing checked whether it
+did.
+
+So a verdict whose claims are not backed by its *own* step is sent back once,
+with the claim named and tools still on the table:
+
+> That verdict claims evidence this step does not have: run_tests was never
+> called in this step. Run it yourself and answer again. A reviewer that takes
+> a claim on trust is the thing a reviewer is for.
+
+Three properties keep this from becoming a wall:
+
+- **Asked once.** A model that answers unbacked a second time has its verdict
+  accepted. A step that cannot end is worse than an unearned claim, and the
+  claim is in the log either way.
+- **Tools stay on.** Being told to run the tests on a turn that cannot call a
+  tool is exactly the shape of refusal this project keeps removing, so the
+  retry re-enables them.
+- **Not inside forced finalisation.** When the budget is down to the
+  finalisation margin there is nothing left to run anything with, so the
+  verdict stands and the log records what was claimed.
+
+The harness never touches the decision. A review is the model's judgement to
+make; what the harness refuses is to record evidence nobody gathered.
+
+It was found by measuring. On the first L2 run a 4B ACKed a change after two
+tool calls, neither of them `run_tests`, while asserting that the tests
+passed - see [the methodology](../benchmarks/methodology.md) and
+[ADR 0027](../adr/0027-a-review-case-is-a-tree-and-its-verdict-must-be-earned.md).
+
 ## Intervention ladder
 
 A degenerate response is the one the loop **refuses** outright rather than

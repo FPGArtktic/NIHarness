@@ -13,6 +13,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **A verdict's claims are checked against its own step.** `Verdict` asserts
+  that the build and the tests passed, §4 has always said the reviewer runs
+  both itself, and nothing checked whether it did. A verdict whose claims no
+  call in its own step backs is now sent back once, with the claim named and
+  tools still available.
+- Found by measuring, not by reading the code: on the first L2 run a 4B ACKed
+  a change after two tool calls, neither of them `run_tests`, while asserting
+  that the tests passed. One case in eight.
+- Asked once, and never inside forced finalisation. A model that answers
+  unbacked a second time has its verdict accepted and the unearned claim
+  recorded - a step that cannot end is worse than a claim the log already
+  catches, and `evidence_ratio` is what catches it. The harness does not touch
+  the decision: a review is the model's judgement, and what is refused is
+  recording evidence nobody gathered.
+- `CallRecord` carries `failed`, so "the tests passed" can be told from "a
+  `run_tests` call came back red", and `loop.intervention` carries `detail`,
+  so the tally of pathologies says what the model actually did.
 - **The spec gate's reviewer half.** One pass, no tools, over `SPEC.md` before
   planning starts, looking for what the schema cannot see: a criterion that
   would hold whether or not the work was done, a goal nothing would detect the
@@ -33,16 +50,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   records the decision, which is what `nih implement` then runs. Two of three
   entry points now work end to end.
 - **`nih bench --layer L0`: throughput, by the runner rather than by hand.**
-  Two timed requests per context size with the same prompt; the difference
-  between them is generation alone, so both rates come out of the arithmetic
-  without reading any backend's own timings - the port is HTTP and nothing
-  more. It agrees with the hand-taken `llama-bench` figures to about 7% on
-  prompt processing and inside the noise on generation.
-- That took one real bug to find. With an identical prompt in both requests,
-  llama-server's prefix cache answered the second from the first and the
-  **long request came back 3.6 seconds faster than the short one**. Each
-  request now carries a different marker in its *first* line, because a prefix
-  cache matches a prefix and appending a nonce changes nothing.
+  Three timed requests per context size, using the server's prefix cache as
+  the instrument rather than fighting it: the repeat of a single-token request
+  costs the per-request overhead and nothing else, so subtracting it from the
+  cold request leaves the prompt and from the long one leaves the generation.
+  No backend timings are read - the port is HTTP and nothing more. It agrees
+  with the hand-taken `llama-bench` figures to 1.3% on prompt processing, with
+  a 0.2% spread across three passes.
+- Getting there took two wrong versions, and the second is the instructive
+  one. With an identical prompt in both of two requests, the cache answered
+  the second from the first and the **long request came back 3.6 seconds
+  faster than the short one** - obviously broken. Giving each request its own
+  marker fixed that and introduced something worse: the markers repeated
+  between *runs*, so three passes reported **68,769 tok/s** on a laptop GPU
+  with a spread of 1,386 to 17,070. Numbers rather than errors, which is the
+  dangerous kind of wrong. The method now uses a nonce per invocation and
+  checks itself: if the first request was not cold, it reports no prompt rate
+  instead of an enormous one.
 - **`nih bench --layer L2`: the review layer.** Eight golden cases, four ACK
   and four NAK, each one the fixture plus a directory of replacement files
   committed as one change - so the reviewer reads a diff git produced, a case

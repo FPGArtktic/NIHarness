@@ -298,6 +298,11 @@ class LoopIntervention(Payload):
     type: Literal["loop.intervention"] = "loop.intervention"
     level: InterventionLevel
     pathology: str
+    detail: str = Field(
+        default="",
+        description="What specifically triggered it, when naming it helps. A tally "
+        "of pathologies says which rule fired; this says what the model did.",
+    )
 
 
 # --------------------------------------------------------------- artifact scope

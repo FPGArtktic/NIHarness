@@ -254,6 +254,7 @@ The harness intervened in a looping step.
 | `type` | `Literal['loop.intervention']` | `'loop.intervention'` |  |
 | `level` | `<enum 'InterventionLevel` | required |  |
 | `pathology` | `str` | required |  |
+| `detail` | `str` | `''` | What specifically triggered it, when naming it helps. A tally of pathologies says which rule fired; this says what the model did. |
 
 ### `spec.accepted`
 

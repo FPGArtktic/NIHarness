@@ -77,7 +77,51 @@ class CallRecord(BaseModel):
         description="Digest of the worktree after the call; None when the state is unknown.",
     )
     invalid: bool = False
+    failed: bool = Field(
+        default=False,
+        description="Whether the call returned red. Needed to tell a claim that was "
+        "earned from one that was merely made: 'the tests passed' is only evidence "
+        "if a run_tests call in this step came back green.",
+    )
     gate_signature: str = ""
+
+
+def unbacked_claims(
+    calls: Sequence[CallRecord],
+    *,
+    tests: bool,
+    build: bool,
+) -> tuple[str, ...]:
+    """Return the claims a verdict made that this step's own calls do not support.
+
+    The reviewer exists because an implementer's claim is not evidence (§4).
+    Exactly the same standard applies to the reviewer, and its two booleans are
+    the only claims anywhere in the harness that can be checked mechanically:
+    either a call in this step ran the thing and came back green, or the claim
+    is unearned.
+
+    Measured on the first L2 run: a 4B ACKed a change after two tool calls,
+    neither of which was `run_tests`, while asserting that the tests passed.
+
+    Args:
+        calls: this step's executed calls, in order.
+        tests: whether the verdict claims the tests passed.
+        build: whether the verdict claims the build passed.
+
+    Returns:
+        One line per unearned claim, naming what would earn it. Empty when
+        every claim is backed, which includes the case of claiming nothing.
+    """
+    unearned: list[str] = []
+    for claim, tool in ((tests, "run_tests"), (build, "run_build")):
+        if not claim:
+            continue
+        attempts = [call for call in calls if call.tool == tool]
+        if not attempts:
+            unearned.append(f"{tool} was never called in this step")
+        elif all(call.failed for call in attempts):
+            unearned.append(f"{tool} was called and came back red")
+    return tuple(unearned)
 
 
 class LoopFinding(BaseModel):

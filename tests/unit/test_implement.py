@@ -116,6 +116,26 @@ def verdict(*, ack: bool = True) -> ChatResponse:
     )
 
 
+def gathers(tool: str) -> ChatResponse:
+    """The reviewer gathering the evidence its verdict will claim.
+
+    Not optional any more: a verdict asserting that the build and the tests
+    passed is sent back once when nothing in its own step ran them. §4 has
+    always said the reviewer re-runs both itself; now the harness checks.
+    """
+    return ChatResponse(
+        tool_calls=(
+            ToolCallRequest(
+                call_id=CallId(f"e-{tool}"),
+                name=tool,
+                arguments_json=json.dumps({}),
+            ),
+        ),
+        finish_reason="tool_calls",
+        usage=Usage(prompt_tokens=200, completion_tokens=20),
+    )
+
+
 def proposes_commit() -> ChatResponse:
     return ChatResponse(
         tool_calls=(
@@ -260,8 +280,18 @@ def kinds(sink: FakeSink) -> list[str]:
 
 
 def task_run(*, ack: bool = True) -> list[ChatResponse]:
-    """One task's worth of responses: commit, report done, then the review."""
-    return [proposes_commit(), answer(), verdict(ack=ack)]
+    """One task's worth of responses: commit, report done, then the review.
+
+    The review runs the tests before it answers, because a verdict that claims
+    they passed without a green run in its own step is sent back once.
+    """
+    return [
+        proposes_commit(),
+        answer(),
+        gathers("run_build"),
+        gathers("run_tests"),
+        verdict(ack=ack),
+    ]
 
 
 async def test_a_declared_server_is_logged_and_granted_to_the_named_roles() -> None:
@@ -342,10 +372,12 @@ async def test_a_task_that_never_commits_is_sent_to_fix_then_handed_back() -> No
 async def test_a_nak_sends_the_task_to_the_fixer_with_the_notes() -> None:
     vcs = FakeVcs()
     backend = FakeBackend(
-        *task_run(ack=False),  # implement, commit, NAK
+        *task_run(ack=False),  # implement, commit, gather, gather, NAK
         proposes_commit(),  # fix
         answer(),
-        verdict(ack=True),  # review again
+        gathers("run_build"),  # and the second review gathers again
+        gathers("run_tests"),
+        verdict(ack=True),
     )
     tools, sink = CommittingTools(vcs), FakeSink()
     result = await build(backend, tools, sink, vcs).run(
@@ -358,7 +390,7 @@ async def test_a_nak_sends_the_task_to_the_fixer_with_the_notes() -> None:
     assert task.finished
     assert task.revisions == 1
     assert [step.stage for step in task.steps] == ["implement", "review", "fix", "review"]
-    fix_request = backend.requests[3]
+    fix_request = backend.requests[5]
     text = "\n".join(message.content for message in fix_request.messages)
     assert "Review: NAK" in text, "the fixer is told what the reviewer said"
     assert "the result of the inner call is dropped" in text
@@ -454,7 +486,13 @@ async def test_a_committing_task_goes_through_the_tool() -> None:
         branch="b",
         profile="cpu-only",
     )
-    assert [call.tool for call in tools.calls] == [ToolName.GIT_COMMIT]
+    assert [call.tool for call in tools.calls] == [
+        ToolName.GIT_COMMIT,
+        # The reviewer's own two, because a verdict claiming they passed is
+        # sent back once when nothing in its step ran them.
+        ToolName.RUN_BUILD,
+        ToolName.RUN_TESTS,
+    ]
     assert "ToolCalled" in kinds(sink)
     assert "ToolReturned" in kinds(sink)
 

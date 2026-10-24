@@ -885,8 +885,9 @@ class Throughput(BaseModel):
     context_tokens: int = Field(ge=0, description="What was asked for.")
     prompt_tokens: int = Field(ge=0, description="What the tokenizer actually counted.")
     generated: int = Field(ge=0)
-    first_seconds: float = Field(ge=0.0)
-    full_seconds: float = Field(ge=0.0)
+    cold_seconds: float = Field(ge=0.0, description="One token on a prompt never seen.")
+    warm_seconds: float = Field(ge=0.0, description="One token on the same prompt again.")
+    long_seconds: float = Field(ge=0.0, description="The full generation on it.")
     prompt_tps: float = Field(ge=0.0)
     generation_tps: float = Field(ge=0.0)
     notes: tuple[str, ...] = ()
@@ -902,62 +903,86 @@ def throughput(
     *,
     prompt_tokens: int,
     generated: int,
-    first_seconds: float,
-    full_seconds: float,
+    cold_seconds: float,
+    warm_seconds: float,
+    long_seconds: float,
 ) -> Throughput:
-    """Derive prompt-processing and generation rates from two timed requests.
+    """Derive prompt-processing and generation rates from three timed requests.
 
-    Two requests with the same prompt: one that generates a single token, one
-    that generates `generated`. The difference between them is generation
-    alone, which is what separates the two rates without asking the backend to
-    report its own timings - and a backend's own timings are exactly the kind
-    of thing this project may not depend on, because the port is
-    OpenAI-compatible HTTP and nothing more.
+    Three requests, same prompt, in this order: one generating a single token
+    on a prompt the server has never seen, one generating a single token on
+    the same prompt, and one generating `generated` tokens on it again.
 
-    It also measures the path the harness actually uses. `llama-bench` numbers
-    are better controlled and describe a different journey: no HTTP, no server
-    scheduling, no tokenizer round trip.
+    The server's prefix cache is the instrument rather than the enemy. The
+    second request repeats the first exactly, so it pays the per-request
+    overhead and one token of generation and nothing else. Subtracting it from
+    the first leaves the prompt; subtracting it from the third leaves the
+    generation:
+
+    - `generation_tps = (generated - 1) / (long_seconds - warm_seconds)`
+    - `prompt_tps = prompt_tokens / (cold_seconds - warm_seconds)`
+
+    No backend timings are read. The port is OpenAI-compatible HTTP and
+    nothing more, and a measurement that depended on `llama.cpp` reporting its
+    own numbers would be a backend-specific code path with extra steps.
+
+    The design is also self-checking, which the two-request version was not.
+    If the first request was *not* cold - the prompt was already cached from
+    an earlier run - then `cold_seconds` and `warm_seconds` are the same and
+    the prompt rate is reported as unmeasured instead of as a number like
+    68,000 tok/s. That number is not hypothetical: it is what the two-request
+    version produced once the markers it used started repeating between runs.
 
     Args:
         probe: what was asked for.
         prompt_tokens: what the tokenizer counted for the prompt that was sent.
         generated: completion tokens the long request produced.
-        first_seconds: wall time of the single-token request.
-        full_seconds: wall time of the long request.
+        cold_seconds: wall time of the first single-token request.
+        warm_seconds: wall time of the repeated single-token request.
+        long_seconds: wall time of the long request.
 
     Returns:
         The sample, with a note for each rate the arithmetic could not produce.
     """
     notes: list[str] = []
-    generation_gap = full_seconds - first_seconds
     produced = generated - 1
+    generation_gap = long_seconds - warm_seconds
     generation_tps = 0.0
     if produced >= 1 and generation_gap > 0:
         generation_tps = produced / generation_gap
     else:
         notes.append(
             f"no generation rate: {produced} token(s) over {generation_gap:.3f}s. "
-            "The long request has to be slower than the short one and produce more "
-            "than one token, or there is nothing to divide."
+            "The long request has to be slower than the single-token one and "
+            "produce more than one token, or there is nothing to divide."
         )
 
+    prompt_gap = cold_seconds - warm_seconds
     prompt_tps = 0.0
-    if generation_tps > 0.0:
-        prompt_seconds = first_seconds - (1.0 / generation_tps)
-        if prompt_seconds > 0 and prompt_tokens > 0:
-            prompt_tps = prompt_tokens / prompt_seconds
-        else:
-            notes.append(
-                "no prompt rate: the single-token request was not slower than one "
-                "token of generation, so the prompt cost less than the noise floor"
-            )
+    # The repeated request is this method's own resolution: it is what a
+    # request costs when it does almost nothing. A prompt whose processing
+    # took less than that cannot be timed this way - either the cache already
+    # had it, or the prompt is too short to measure through HTTP. Both are
+    # reported as unmeasured rather than as the enormous number that dividing
+    # by a millisecond produces. Measured once: 68,000 tok/s on a laptop GPU.
+    if prompt_gap > warm_seconds and prompt_tokens > 0:
+        prompt_tps = prompt_tokens / prompt_gap
+    else:
+        notes.append(
+            f"no prompt rate: processing the prompt took {prompt_gap:.3f}s, against "
+            f"{warm_seconds:.3f}s for a request that did nothing. Either the prompt "
+            "was already cached and this run never processed it, or it is too short "
+            "to time through HTTP. Either way the number would be the method's, not "
+            "the host's."
+        )
     return Throughput(
         probe_id=probe.id,
         context_tokens=probe.context_tokens,
         prompt_tokens=prompt_tokens,
         generated=generated,
-        first_seconds=round(first_seconds, 3),
-        full_seconds=round(full_seconds, 3),
+        cold_seconds=round(cold_seconds, 3),
+        warm_seconds=round(warm_seconds, 3),
+        long_seconds=round(long_seconds, 3),
         prompt_tps=round(prompt_tps, 1),
         generation_tps=round(generation_tps, 2),
         notes=tuple(notes),

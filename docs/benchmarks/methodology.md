@@ -28,13 +28,19 @@ budget is fitted to these numbers, which is why they belong in the same record
 format as the layers that grade something - and why they should not be taken
 by hand.
 
-### Two requests, and the arithmetic between them
+### Three requests, and the arithmetic between them
 
-Each probe sends the same prompt twice: once generating a single token, once
-generating `generate_tokens`. The difference between them is generation alone:
+Each probe sends the same prompt three times: once generating a single token
+on a prompt the server has never seen, once generating a single token on the
+same prompt, and once generating `generate_tokens` on it again. The prompt
+carries a nonce in its first line, which is what makes the first request cold.
 
-- `generation_tps = (generated - 1) / (full_seconds - first_seconds)`
-- `prompt_tps = prompt_tokens / (first_seconds - 1 / generation_tps)`
+The server's prefix cache is the **instrument** rather than the enemy. The
+second request repeats the first exactly, so it pays the per-request overhead
+and one token of generation and nothing else:
+
+- `generation_tps = (generated - 1) / (long_seconds - warm_seconds)`
+- `prompt_tps = prompt_tokens / (cold_seconds - warm_seconds)`
 
 No backend timings are read. The port is OpenAI-compatible HTTP and nothing
 more, so a measurement that depended on `llama.cpp` reporting its own numbers
@@ -44,13 +50,26 @@ divided by a wrong token count is a wrong throughput.
 
 ### The prefix cache will ruin this if you let it
 
-The first version of this ran the two requests with an identical prompt. The
-long one came back **3.6 seconds faster** than the short one, because
-llama-server caches the prompt and the second request never reprocessed it. A
-negative duration is not a generation rate.
+This took two attempts, and the first one produced numbers rather than
+errors - which is the dangerous kind of wrong.
 
-So each request carries a different marker in its **first** line. First,
-because a prefix cache matches a prefix: appending a nonce changes nothing.
+The first version sent **two** requests with an identical prompt and
+subtracted. The long one came back 3.6 seconds *faster* than the short one,
+because the second request never reprocessed the prompt. A negative duration
+is at least obviously broken.
+
+The fix - a different marker in each request's first line - made the two
+requests differ from each other but not from the previous *run*. Three passes
+then reported a prompt rate of **68,769 tok/s** on a laptop GPU, with a spread
+of 1,386 to 17,070 between passes. Every prompt after the first run was served
+from the cache.
+
+So: a nonce unique to each probe invocation, and a method that checks itself.
+If the first request was not cold, `cold_seconds` and `warm_seconds` are the
+same, and the probe reports no prompt rate instead of an enormous one. The
+floor is `warm_seconds` itself - what a request costs when it does almost
+nothing is this method's own resolution, and a prompt that took less than that
+to process cannot be timed this way.
 
 ### What it is not
 
@@ -60,9 +79,17 @@ round trip. Its numbers are better controlled; these are the ones the harness
 lives with.
 
 The two agree closely enough to believe both. Ternary Bonsai 2 4B in `PQ2_0`
-on an RTX 3050 Laptop: `llama-bench` said 1539 prompt / 105.6 generation,
-this said **1444.8 / 107.17** at 2k of context - within about 7% on the prompt
-rate and inside the noise on generation.
+on an RTX 3050 Laptop, three passes:
+
+| | `llama-bench` | `nih bench --layer L0` |
+|---|---|---|
+| prompt processing | 1539 | **1518 - 1522** at 8k |
+| generation | 105.6 | **98.8 - 100.0** at 2k |
+
+Within 1.3% on prompt processing and 5% on generation, with a pass-to-pass
+spread of 0.2% and 1.2%. A method that disagreed with a known-good tool by an
+order of magnitude - which the second version did - is a method that measured
+its own cache.
 
 ### What it does not measure
 

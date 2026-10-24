@@ -40,6 +40,7 @@ from niharness.domain.loop import (
     evaluate,
     next_level,
     synthetic_result,
+    unbacked_claims,
 )
 from niharness.domain.messages import ChatResponse, ResponseFormat, ToolChoice
 from niharness.domain.roles import Role
@@ -167,6 +168,11 @@ class LoopState(BaseModel):
     synthetic_text: str = ""
     rollback_reason: str = ""
     invalid_responses: int = Field(default=0, ge=0)
+    evidence_asked: bool = Field(
+        default=False,
+        description="Whether a verdict has already been sent back for unearned "
+        "evidence. Asked once: a second refusal would be a step that cannot end.",
+    )
     results_by_arguments: dict[str, str] = Field(default_factory=dict)
     failures_by_arguments: frozenset[str] = Field(
         default_factory=frozenset,
@@ -658,9 +664,69 @@ def _handle_final_answer(
             failed = _finish(retrying, StopReason.ERROR)
             return failed.state, failed.events
         return retrying, ()
+    if isinstance(artifact, Verdict):
+        asked = _ask_for_the_evidence(state, artifact)
+        if asked is not None:
+            return asked
     answered = state.model_copy(update={"final": artifact})
     stopped = _finish(answered, StopReason.FINAL_ANSWER)
     return stopped.state, stopped.events
+
+
+def _ask_for_the_evidence(
+    state: LoopState,
+    verdict: Verdict,
+) -> tuple[LoopState, tuple[EventBody, ...]] | None:
+    """Send a verdict back once when its claims are not backed by this step.
+
+    The harness does not touch the decision - a review is the model's to make,
+    and §9 keeps the management surface out of that. What it does is refuse to
+    record "the tests passed" from a step in which nothing ran them, and say
+    so while there is still budget to go and run them.
+
+    Asked once. A model that answers unbacked a second time has the verdict
+    accepted, and the unearned claim is in the log for `evidence_ratio` to
+    count: the alternative is a step that cannot finish, which is a wall with
+    no door in front of a model that has made its judgement.
+
+    Returns:
+        The state and events for the retry, or None when the verdict stands.
+    """
+    if state.evidence_asked:
+        return None
+    unearned = unbacked_claims(
+        state.calls,
+        tests=verdict.tests_passed,
+        build=verdict.build_passed,
+    )
+    if not unearned:
+        return None
+    if state.budget.must_finalize:
+        # There is no budget left to run anything, and telling a model to run
+        # the tests on a turn that cannot call a tool is the shape of refusal
+        # this project keeps removing. The claim stands and the log records it.
+        return None
+    detail = "; ".join(unearned)
+    asked = state.model_copy(
+        update={
+            "evidence_asked": True,
+            # Tools back on: being told to run the tests on a turn that cannot
+            # call one is the shape of refusal this project keeps removing.
+            "pending_tool_choice": ToolChoice.AUTO,
+            "pending_instruction": (
+                f"That verdict claims evidence this step does not have: {detail}. "
+                "Run it yourself and answer again. A reviewer that takes a claim on "
+                "trust is the thing a reviewer is for."
+            ),
+        },
+    )
+    return asked, (
+        ev.LoopIntervention(
+            level=InterventionLevel.SYNTHETIC_RESULT,
+            pathology="unbacked_claim",
+            detail=detail,
+        ),
+    )
 
 
 def observe_tool(
@@ -725,6 +791,7 @@ def observe_tool(
             arguments_digest=arguments_digest,
             result_digest=digest,
             tree_digest=tree_digest,
+            failed=not result.ok,
             gate_signature=gate_signature,
         ),
     )

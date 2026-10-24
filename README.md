@@ -107,10 +107,10 @@ call on a CPU-only profile is tens of seconds of wall clock.
 
 ### What is measured so far
 
-**L0 and L1 and L2.** The L0 numbers below were taken by hand with
-`llama-bench`; `nih bench --layer L0` now produces them through the port the
-harness actually uses and agrees with those figures to about 7% on prompt
-processing. Host: Intel i5-12500H
+**L0 and L1 and L2.** The L0 table below was taken by hand with `llama-bench`;
+`nih bench --layer L0` now produces the same numbers through the port the harness
+actually uses - 1518-1522 prompt tok/s at 8k against llama-bench's 1539, with a
+0.2% spread across three passes. Host: Intel i5-12500H
 (4 P-cores + 8 E-cores), RTX 3050 Laptop 4 GiB, 62 GiB RAM. Ternary Bonsai 2 on the
 PrismML llama.cpp fork, prompt-processing / generation tok/s:
 

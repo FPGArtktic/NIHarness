@@ -240,14 +240,16 @@ never attempted a diff.
       possible, which is why this item is still open rather than quietly done:
       nobody has taken the before-and-after measurement, and a prompt change
       without a number is how prompts quietly rot.
-- [x] `nih bench --layer L0`. Two timed requests per context size, with a
-      different marker in each one's first line - without that, llama-server's
-      prefix cache answers the second from the first and the long request
-      comes back 3.6 seconds *faster*, which is not a generation rate. No
-      backend timings are read, because the port is HTTP and nothing more.
-      It agrees with the hand-taken `llama-bench` figures to about 7% on
-      prompt processing and inside the noise on generation, which is the
-      cross-check that makes a new instrument believable.
+- [x] `nih bench --layer L0`. Three timed requests per context size, using the
+      server's prefix cache as the instrument: the repeat of a single-token
+      request costs the per-request overhead and nothing else, so subtracting
+      it from the cold request leaves the prompt and from the long one leaves
+      the generation. No backend timings are read, because the port is HTTP
+      and nothing more. It agrees with the hand-taken `llama-bench` figures to
+      1.3% on prompt processing, with a 0.2% spread across passes - and it
+      took two wrong versions to get there, the second of which reported
+      68,769 tok/s on a laptop GPU because every prompt after the first run
+      was served from the cache.
 - [ ] Load time, which §11 asks L0 for. It means owning the backend's
       lifecycle, and the harness does not start the server.
 - [ ] A second slot is a waste for this client. Measured: `--parallel 1`

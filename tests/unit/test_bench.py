@@ -541,17 +541,17 @@ def probe(context: int = 8192, generate: int = 64) -> L0Probe:
     return L0Probe(context_tokens=context, generate_tokens=generate)
 
 
-def test_two_timings_separate_the_prompt_from_the_generation() -> None:
-    # 64 tokens generated; the long request took 0.63s longer than the short
-    # one, so generation runs at 63/0.63 = 100 tok/s. The short request took
-    # 0.51s, of which one token of generation is 0.01s, leaving 0.5s for 8192
-    # prompt tokens.
+def test_three_timings_separate_the_prompt_from_the_generation() -> None:
+    # The repeated single-token request took 0.01s: per-request overhead plus
+    # one token. The cold one took 0.51s, so the prompt cost 0.5s for 8192
+    # tokens. The long one took 0.64s, so 63 tokens cost 0.63s.
     sample = throughput(
         probe(),
         prompt_tokens=8192,
         generated=64,
-        first_seconds=0.51,
-        full_seconds=1.14,
+        cold_seconds=0.51,
+        warm_seconds=0.01,
+        long_seconds=0.64,
     )
     assert sample.generation_tps == 100.0
     assert sample.prompt_tps == pytest.approx(16384.0, rel=0.01)
@@ -564,8 +564,9 @@ def test_a_long_request_no_slower_than_the_short_one_measures_nothing() -> None:
         probe(),
         prompt_tokens=8192,
         generated=64,
-        first_seconds=0.9,
-        full_seconds=0.9,
+        cold_seconds=0.9,
+        warm_seconds=0.9,
+        long_seconds=0.9,
     )
     assert sample.generation_tps == 0.0
     assert sample.prompt_tps == 0.0
@@ -573,19 +574,19 @@ def test_a_long_request_no_slower_than_the_short_one_measures_nothing() -> None:
     assert any("nothing to divide" in note for note in sample.notes)
 
 
-def test_a_prompt_cheaper_than_one_token_of_generation_says_so() -> None:
-    # Generation at 100 tok/s means one token costs 0.01s; a short request that
-    # took 0.005s in total cannot have spent anything on the prompt.
+def test_a_prompt_the_cache_already_had_is_reported_as_unmeasured() -> None:
+    """The failure the two-request version produced as 68,000 tok/s instead."""
     sample = throughput(
-        probe(context=64),
-        prompt_tokens=64,
+        probe(),
+        prompt_tokens=8192,
         generated=64,
-        first_seconds=0.005,
-        full_seconds=0.635,
+        cold_seconds=0.012,
+        warm_seconds=0.011,
+        long_seconds=0.641,
     )
-    assert sample.generation_tps == 100.0
-    assert sample.prompt_tps == 0.0
-    assert any("noise floor" in note for note in sample.notes)
+    assert sample.generation_tps == pytest.approx(100.0, rel=0.02)
+    assert sample.prompt_tps == 0.0, "a cached prompt is not a measurement of this host"
+    assert any("already cached" in note for note in sample.notes)
 
 
 def test_the_metrics_are_named_by_the_context_they_were_measured_at() -> None:
@@ -595,15 +596,17 @@ def test_the_metrics_are_named_by_the_context_they_were_measured_at() -> None:
                 probe(context=2048),
                 prompt_tokens=2048,
                 generated=64,
-                first_seconds=0.2,
-                full_seconds=0.83,
+                cold_seconds=0.21,
+                warm_seconds=0.01,
+                long_seconds=0.64,
             ),
             throughput(
                 probe(context=32768),
                 prompt_tokens=32768,
                 generated=64,
-                first_seconds=1.2,
-                full_seconds=1.83,
+                cold_seconds=1.21,
+                warm_seconds=0.01,
+                long_seconds=0.64,
             ),
         ),
     )

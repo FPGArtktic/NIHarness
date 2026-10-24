@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import time
 import tomllib
+import uuid
 from collections.abc import Mapping, Sequence
 from contextlib import AsyncExitStack
 from datetime import UTC, datetime
@@ -359,24 +360,24 @@ async def run_probe(
     backend: ModelBackend,
     tokenizer: Tokenizer,
 ) -> Throughput:
-    """Time two requests at this probe's prompt length and derive both rates.
+    """Time three requests at this probe's prompt length and derive both rates.
 
-    Each request carries a different marker in its **first** line, which is
-    what makes the measurement work at all. A server with a prefix cache -
-    llama-server has one, on by default - answers the second request without
-    reprocessing a prompt it has already seen, and the long request then comes
-    back *faster* than the short one. Measured here before the markers existed:
-    the difference was minus 3.6 seconds, which is not a generation rate.
+    The prompt carries a nonce unique to this call, which is what makes the
+    first request cold. Without it the prompt repeats between runs and the
+    server's prefix cache answers it: measured, that produced a prompt rate of
+    68,000 tok/s on a laptop GPU. The nonce goes in the **first** line,
+    because a prefix cache matches a prefix.
 
-    The marker goes first because a prefix cache matches a prefix. Appending
-    one changes nothing.
+    The cache is then used deliberately for the other two requests - see
+    :func:`niharness.domain.bench.throughput`.
     """
     text, _ = await prompt_of(tokenizer, probe.context_tokens)
+    nonce = uuid.uuid4().hex
+    content = f"// probe {nonce}\n{text}"
+    counted = await tokenizer.count_text(content)
 
-    async def timed(limit: int, marker: str) -> tuple[float, int, int]:
-        """Send one uniquely-prefixed request; return its time, tokens out and in."""
-        content = f"// probe {marker}\n{text}"
-        counted = await tokenizer.count_text(content)
+    async def timed(limit: int) -> tuple[float, int]:
+        """Send one request and return how long it took and what it produced."""
         started = time.monotonic()
         response = await backend.chat(
             ChatRequest(
@@ -387,17 +388,18 @@ async def run_probe(
                 seed=0,
             ),
         )
-        elapsed = time.monotonic() - started
-        return elapsed, response.usage.completion_tokens, counted
+        return time.monotonic() - started, response.usage.completion_tokens
 
-    first_seconds, _, counted = await timed(1, "a")
-    full_seconds, generated, _ = await timed(probe.generate_tokens, "b")
+    cold_seconds, _ = await timed(1)
+    warm_seconds, _ = await timed(1)
+    long_seconds, generated = await timed(probe.generate_tokens)
     return throughput(
         probe,
         prompt_tokens=counted,
         generated=generated,
-        first_seconds=first_seconds,
-        full_seconds=full_seconds,
+        cold_seconds=cold_seconds,
+        warm_seconds=warm_seconds,
+        long_seconds=long_seconds,
     )
 
 
