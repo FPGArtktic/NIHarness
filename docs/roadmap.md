@@ -387,9 +387,16 @@ the change and stop.
       passes, and a second table says how many of a column's passes each case
       or task passed - which is the shape of every comparison made so far,
       previously assembled by hand.
-- [ ] The SVG charts per layer that §12 asks of `nih docs generate`. The page
-      is tables; a chart needs a renderer with no new dependency, which is a
-      change of its own.
+- [x] Draw each metric that varies, as well as tabulating it: a bar from a
+      column's low to its high with a dot per pass, hand-written SVG with no
+      new dependency and no colour of its own, so one drawing serves both
+      palettes. A ratio against 0 to 1, anything else against its own
+      labelled ends.
+- [ ] The rest of what §12 asks of the benchmark pages: grouped bars across
+      model x quantization x profile, and a regression table against the
+      previous harness commit. The strips show one metric's spread over time,
+      which is the comparison that has been needed so far; those two compare
+      across configurations, and there is one configuration to compare.
 - [ ] Check the inverse claim too. The harness verifies "the tests passed"
       against a green call in the same step; "the tests could not be run" is
       verifiable against the absence of one, and a reviewer refused a correct

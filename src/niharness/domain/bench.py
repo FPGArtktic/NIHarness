@@ -1148,6 +1148,7 @@ def report_markdown(
     *,
     title: str = "Benchmark records",
     intro: str = "",
+    charts: bool = False,
 ) -> str:
     """Render the committed records as Markdown: one section per suite and model.
 
@@ -1161,6 +1162,8 @@ def report_markdown(
         rows: the records, in the order they were written.
         title: the page's heading, so a docs page can be the same renderer.
         intro: what to say before the first table, already Markdown.
+        charts: whether to draw each metric as well as tabulate it. On for a
+            page, off for a terminal, where an `<svg>` element is noise.
 
     Returns:
         Markdown, or a sentence saying there is nothing to report.
@@ -1177,6 +1180,8 @@ def report_markdown(
         measured = [row for row in group if not row.by_hand]
         columns = _columns(measured)
         sections += _table("Metric", _metric_cells(columns), columns)
+        if charts:
+            sections += _strips(columns)
         unit_cells = _unit_cells(columns)
         if unit_cells:
             sections += ["Per unit, how many of that column's passes it passed:", ""]
@@ -1185,6 +1190,27 @@ def report_markdown(
             sections += [DIRTY_WARNING, ""]
         sections += _by_hand([row for row in group if row.by_hand])
     return "\n".join(sections).rstrip() + "\n"
+
+
+def _strips(columns: Mapping[str, Sequence[ReportRow]]) -> list[str]:
+    """Draw every metric that varies, labelled, in a wrapping row of strips."""
+    drawings: list[str] = []
+    for metric in _metric_cells(columns):
+        series = [
+            (commit, [row.metrics[metric] for row in passes if metric in row.metrics])
+            for commit, passes in columns.items()
+        ]
+        if not _worth_drawing([pair for pair in series if pair[1]]):
+            continue
+        svg = range_strip_svg(metric, series)
+        if svg:
+            drawings.append(
+                f'<figure class="nih-strip"><figcaption>{_escaped(metric)}'
+                f"</figcaption>{svg}</figure>"
+            )
+    if not drawings:
+        return []
+    return ['<div class="nih-strips">', *drawings, "</div>", ""]
 
 
 def _by_hand(rows: Sequence[ReportRow]) -> list[str]:
@@ -1328,3 +1354,119 @@ def _figure(value: float) -> str:
     """
     text = f"{value:.4f}".rstrip("0")
     return f"{text}0" if text.endswith(".") else text
+
+
+# ---------------------------------------------------------------- the charts
+
+CHART_WIDTH = 340
+"""Pixels across, chosen to sit two-up in the docs theme's content column."""
+
+CHART_HEIGHT = 64
+"""Pixels down: tall enough to read a spread, short enough to scan twelve."""
+
+CHART_PAD = 8
+"""Breathing room inside the viewBox, so a dot at the top is not clipped."""
+
+
+def range_strip_svg(
+    name: str,
+    columns: Sequence[tuple[str, Sequence[float]]],
+) -> str:
+    """Draw one metric across commits: a bar per column from its low to its high.
+
+    The drawing exists to make one thing obvious that a table makes you work
+    for - two columns whose spreads overlap have not shown a difference. A bar
+    that covers the same band as its neighbour says so at a glance, and this
+    project has twice mistaken a moved end for a result.
+
+    A ratio is drawn against 0 to 1, because a ratio means the same thing
+    everywhere and half of it should look like half. Anything else is drawn
+    against its own low and high, with **both ends labelled** - a rate whose
+    three passes span 99.22 to 100.02 is a tight measurement, and on a
+    zero-based axis it is a half-pixel smudge at the ceiling that says
+    nothing. The labels are what stop a fitted axis reading as a big
+    difference, so they are not optional decoration.
+
+    No colour is named. Every stroke and fill is `currentColor`, so the
+    drawing follows the page's own palette into dark mode instead of carrying
+    a light-mode background with it.
+
+    Args:
+        name: the metric, used as the accessible label.
+        columns: label and values per column, in the order to draw them.
+
+    Returns:
+        One `<svg>` element, or "" when there is nothing a drawing would add.
+    """
+    values = [value for _, group in columns for value in group]
+    if not columns or not values:
+        return ""
+    high, low = max(values), min(values)
+    if high <= 1.0:
+        top, bottom = 1.0, 0.0
+    elif high == low:
+        top, bottom = high, 0.0
+    else:
+        top, bottom = high, low
+    inner = CHART_HEIGHT - 2 * CHART_PAD
+    step = (CHART_WIDTH - 2 * CHART_PAD) / len(columns)
+    span = top - bottom
+
+    def y_of(value: float) -> float:
+        return CHART_PAD + inner * (1 - ((value - bottom) / span if span else 0.0))
+
+    marks: list[str] = []
+    for index, (label, group) in enumerate(columns):
+        x = CHART_PAD + step * (index + 0.5)
+        if not group:
+            continue
+        low, peak = min(group), max(group)
+        marks.append(
+            f'<line x1="{x:.1f}" y1="{y_of(low):.1f}" x2="{x:.1f}" y2="{y_of(peak):.1f}"'
+            ' stroke="currentColor" stroke-width="7" stroke-linecap="round"'
+            ' opacity="0.25" />'
+        )
+        marks += [
+            f'<circle cx="{x:.1f}" cy="{y_of(value):.1f}" r="2.5" fill="currentColor" />'
+            for value in sorted(set(group))
+        ]
+        marks.append(
+            f'<text x="{x:.1f}" y="{CHART_HEIGHT - 1}" text-anchor="middle"'
+            ' font-size="7" fill="currentColor" opacity="0.7">'
+            f"{_escaped(label)}</text>"
+        )
+    axis = (
+        f'<line x1="{CHART_PAD}" y1="{CHART_HEIGHT - CHART_PAD:.1f}"'
+        f' x2="{CHART_WIDTH - CHART_PAD}" y2="{CHART_HEIGHT - CHART_PAD:.1f}"'
+        ' stroke="currentColor" stroke-width="0.5" opacity="0.3" />'
+    )
+    scale = (
+        f'<text x="2" y="{CHART_PAD + 3}" font-size="7" fill="currentColor"'
+        f' opacity="0.7">{_figure(top)}</text>'
+        f'<text x="2" y="{CHART_HEIGHT - CHART_PAD + 3}" font-size="7"'
+        f' fill="currentColor" opacity="0.7">{_figure(bottom)}</text>'
+    )
+    described = ", ".join(f"{label} {_range(group)}" for label, group in columns if group)
+    return (
+        f'<svg viewBox="0 0 {CHART_WIDTH} {CHART_HEIGHT}" width="{CHART_WIDTH}"'
+        f' height="{CHART_HEIGHT}" role="img" xmlns="http://www.w3.org/2000/svg">'
+        f"<title>{_escaped(name)}: {_escaped(described)}</title>"
+        f"{axis}{scale}{''.join(marks)}</svg>"
+    )
+
+
+def _worth_drawing(columns: Sequence[tuple[str, Sequence[float]]]) -> bool:
+    """Whether a chart would say anything the number beside it does not.
+
+    One column of one value is a number, and drawing a full-height bar for it
+    invents a comparison. A chart is for variation: across commits, or across
+    the passes of one.
+    """
+    if len(columns) > 1:
+        return True
+    return any(len(set(group)) > 1 for _, group in columns)
+
+
+def _escaped(text: str) -> str:
+    """Escape the three characters that would end an element early."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

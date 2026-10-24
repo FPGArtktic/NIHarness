@@ -65,6 +65,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   call returned green in each of those steps. The inverse claim is as
   checkable as the one the harness already checks, and is on the roadmap with
   the measurement it would need.
+- **Every metric that varies is drawn as well as tabulated.** A bar from a
+  column's low to its high with a dot per pass, so the thing a table makes
+  you work for - two spreads that overlap have not shown a difference - is
+  visible at a glance. Hand-written SVG: no new dependency, and no colour of
+  its own, so the one drawing follows the page into dark mode. A ratio is
+  drawn against 0 to 1; anything else against its own labelled low and high,
+  because three passes spanning 99.22 to 100.02 are a tight measurement that
+  a zero-based axis draws as a half-pixel smudge at the ceiling. Nothing is
+  drawn where nothing varies, since a full-height bar for a single number
+  invents a comparison.
 - **`nih bench report`, and the results page is generated from the records.**
   A column is one harness commit, a cell is the range across that column's
   passes, and a second table says how many of a column's passes each case or

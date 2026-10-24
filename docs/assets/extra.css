@@ -36,3 +36,31 @@ SPDX-License-Identifier: GPL-3.0-or-later
   padding-left: 0.8rem;
   font-weight: 500;
 }
+
+/* Benchmark strips: one small chart per metric, wrapping, colour from the
+   page so both palettes work without a second drawing. */
+.md-typeset .nih-strips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+  margin: 0.8rem 0 1.2rem;
+}
+
+.md-typeset .nih-strip {
+  margin: 0;
+  flex: 1 1 18rem;
+  max-width: 22rem;
+}
+
+.md-typeset .nih-strip figcaption {
+  font-family: var(--md-code-font-family);
+  font-size: 0.7rem;
+  opacity: 0.8;
+  margin-bottom: 0.1rem;
+}
+
+.md-typeset .nih-strip svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}

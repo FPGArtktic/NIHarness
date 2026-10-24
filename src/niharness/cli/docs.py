@@ -256,7 +256,11 @@ Every number on this page was measured on this project's own suites by
 diff. The page is rendered by `nih bench report`, which is also how to read
 the records at a terminal.
 
-A column is one harness commit; a cell is that column's passes.
+A column is one harness commit; a cell is that column's passes. Each metric
+that varies is also drawn: a bar from a column's low to its high, a dot per
+pass. A ratio is drawn against 0 to 1; anything else against its own labelled
+low and high, because three passes spanning 99.22 to 100.02 are a tight
+measurement and a zero-based axis would draw them as nothing at all.
 """
 """What a reader needs before the first table: where the numbers came from."""
 
@@ -268,7 +272,7 @@ def render_results_page(project_root: Path) -> str:
     disagreeing about a measurement is worse than either one alone.
     """
     rows = read_records(project_root)
-    body = report_markdown(rows, title="Benchmark results", intro=RESULTS_INTRO)
+    body = report_markdown(rows, title="Benchmark results", intro=RESULTS_INTRO, charts=True)
     return f"{GENERATED_WARNING}\n\n{body}"
 
 

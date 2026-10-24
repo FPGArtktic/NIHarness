@@ -16,7 +16,9 @@ from niharness.domain.bench import (
     L0Probe,
     L1Task,
     ReportRow,
+    _worth_drawing,
     is_subsequence,
+    range_strip_svg,
     report_markdown,
     score_suite,
     score_task,
@@ -775,3 +777,34 @@ def test_a_hand_taken_record_is_listed_and_never_folded_into_a_range() -> None:
     assert "device cuda" in text, "what tells them apart"
     assert text.count("measured_by: llama-bench, by hand") == 1, "said once, not per line"
     assert "| Metric |" not in text, "nothing here is comparable, so no comparison table"
+
+
+def test_a_ratio_is_drawn_against_zero_to_one_and_a_rate_against_itself() -> None:
+    """A fitted axis is the only way a tight spread says anything.
+
+    Three passes spanning 99.22 to 100.02 on a zero-based axis are a
+    half-pixel smudge at the ceiling. Fitted, they are a short bar - and the
+    labelled ends are what stop that reading as a large difference.
+    """
+    ratio = range_strip_svg("passed_ratio", (("aaaaaaa", (0.5, 0.75)),))
+    assert ">1.0<" in ratio, "a ratio's top is 1.0 whatever was measured"
+    assert ">0.0<" in ratio
+    rate = range_strip_svg("generation_tps", (("aaaaaaa", (99.22, 100.02)),))
+    assert ">100.02<" in rate
+    assert ">99.22<" in rate, "both ends, or a fitted axis is a lie"
+    assert "99.22 - 100.02" in rate, "the title states the numbers"
+
+
+def test_a_chart_is_only_drawn_where_something_varies() -> None:
+    """One column of one value is a number; a full-height bar invents a comparison."""
+    assert _worth_drawing((("aaaaaaa", (1.0,)),)) is False
+    assert _worth_drawing((("aaaaaaa", (0.5, 1.0)),)) is True
+    assert _worth_drawing((("aaaaaaa", (1.0,)), ("bbbbbbb", (1.0,)))) is True
+
+
+def test_a_drawing_names_no_colour_of_its_own() -> None:
+    """The page has two palettes; a drawing that picks one is wrong in the other."""
+    svg = range_strip_svg("passed_ratio", (("aaaaaaa", (0.5, 0.75)),))
+    assert "currentColor" in svg
+    for hard_coded in ("#", "rgb(", "black", "white"):
+        assert hard_coded not in svg, f"{hard_coded} does not follow the theme"
