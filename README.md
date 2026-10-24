@@ -145,6 +145,13 @@ value, a test that asserts a type instead of a behaviour, a document left stale.
 diff shows what changed; those are about what did not. When it did catch one it named
 the thing correctly every time, so the gap is detection, not articulation.
 
+**One failure turned up in both layers.** L1's `two-places-must-agree` fails every
+pass and L2's `documentation-left-behind` is waved through every pass: the same
+mistake, made once as an implementer and once as a reviewer. Two files that have to
+agree, one of them changed, and nothing the gate runs can see it. That is the kind of
+finding this suite exists to produce, and
+[the roadmap](docs/roadmap.md) states it as an open problem rather than a fixed one.
+
 Records: [`benchmarks/results/`](benchmarks/results/), one JSONL line each, tagged with
 the harness commit, model, quantization, profile, host and date.
 
@@ -207,7 +214,7 @@ unattended. Everything below is the detail of that sentence.
 
 Three things block the rest, in order: **L3** (whole tasks are still unmeasured),
 **brainstorm** (the last entry point, and the only interactive one), and **the code
-index** (the one retrieval collection nothing writes to). 34 of 65 roadmap items are
+index** (the one retrieval collection nothing writes to). 34 of 67 roadmap items are
 done; the count is a poor measure, because the remaining ones are the large ones.
 
 [`docs/orientation.md`](docs/orientation.md) is the long version of this table,

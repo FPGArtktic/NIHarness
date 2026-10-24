@@ -258,6 +258,36 @@ never attempted a diff.
       `nih init` should write the server command line it expects, rather than
       leaving it to be rediscovered.
 
+## The open problem both layers found
+
+Two places that have to agree, and only one of them changed. It is the same
+failure in the implementer and in the reviewer, measured independently:
+
+- **L1 `two-places-must-agree`** fails every pass. The task says a constant
+  and the document that quotes it must match; the model changes the constant
+  and commits.
+- **L2 `documentation-left-behind`** is waved through every pass. The change
+  raises a bound in the code and leaves `docs/limits.md` quoting the old one;
+  the reviewer ACKs it.
+
+Neither is a tool-use failure, and neither is caught by anything the gate
+runs - two files can disagree and still pass format, lint and tests. The
+reviewer's own prompt asks about blast radius in so many words, and the
+implementer's policy says one logical change; the models do the first half of
+the change and stop.
+
+- [ ] Decide whether the harness has a door here. The plan already names the
+      files a task expects to touch (`Task.files`, documented as a hint), and
+      the forced-finalisation turn is the natural place to say "the plan named
+      `docs/limits.md` and nothing has changed it". That is a checklist, which
+      is what §6's Definition of Done layer already is - but it is also the
+      harness doing part of the thinking, so it needs a measurement either
+      side of it rather than an opinion.
+- [ ] A detector for it in the reviewer's direction is harder and more
+      interesting: "a constant moved and a file that quotes it did not" is a
+      question about the whole tree, not about the diff, and `grep` is in
+      every role's allowlist already.
+
 ## Stage: retrieval
 
 - [x] Reading documents: `nih ingest` reads a PDF's text layer where it has
