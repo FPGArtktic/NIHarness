@@ -741,3 +741,35 @@ async def test_a_resumed_run_skips_what_it_already_did() -> None:
     resumed = [body for body in sink.bodies if isinstance(body, ev.RunResumed)]
     assert resumed[0].from_seq == 42
     assert kinds(sink).index("RunResumed") < kinds(sink).index("RunStarted")
+
+
+async def test_a_commit_the_gate_stage_never_saw_is_still_recorded() -> None:
+    """Measured on L3: a fix step committed green and the task reported nothing.
+
+    The commit-gate stage is the only place that compared HEAD, so a step that
+    committed and then ran out of budget before answering went to handoff with
+    the work sitting in git and `task.finished` saying none. §4 makes that
+    event what `nih resume` reads to skip work already committed, so a missed
+    commit is work done twice.
+    """
+    vcs = FakeVcs()
+    # Commits, then never answers: the step ends on its budget, so the stage
+    # machine goes to handoff without the commit gate running again.
+    backend = FakeBackend(
+        proposes_commit(),
+        gathers("run_lint"),
+        gathers("run_lint"),
+        gathers("run_lint"),
+        gathers("run_lint"),
+    )
+    tools, sink = CommittingTools(vcs), FakeSink()
+    result = await build(backend, tools, sink, vcs).run(
+        plan(), RunId("r"), branch="harness/run-x", profile="p", tools="local"
+    )
+
+    assert result.outcome is RunOutcome.FAILED, "the task did not get through review"
+    task = result.tasks[-1]
+    assert task.commits, "the commit landed, so the task says so"
+    assert vcs.sha in task.commits
+    finished = next(body for body in sink.bodies if isinstance(body, ev.TaskFinished))
+    assert finished.commits == task.commits, "and the event a resume reads agrees"

@@ -11,6 +11,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A commit the commit-gate stage never saw was not recorded.** That stage
+  was the only place comparing HEAD, so a step that committed green and then
+  ran out of budget before producing an answer went to handoff with the work
+  sitting in git and `task.finished` reporting no commits. §4 makes that event
+  what `nih resume` reads to skip work already committed, so a missed one is
+  work done twice. The task now looks for a landed commit wherever it ends.
+- Found by an L3 contradiction the record made visible:
+  `first_attempt_gate_ratio` 0.3333 with `committed_ratio` 0.0 - a `git_commit`
+  call that came back green on a task reporting nothing committed. Two metrics
+  disagreeing is the kind of thing a record is for.
+
 ### Changed
 
 - **The gate decides whether a step is done, not the model's checklist.** An

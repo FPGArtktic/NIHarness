@@ -381,6 +381,16 @@ class ImplementationRun:
                 revision=transition.revision,
             )
             if transition.terminal and transition.stage is not Stage.COMPLETED:
+                # A commit the commit-gate stage never got to see is still a
+                # commit. Measured on L3: a fix step committed green, then hit
+                # a budget before producing an answer, so the task went to
+                # handoff without that stage running again - and the task
+                # reported nothing committed while the work sat in git. §4
+                # says `task.finished` is what `nih resume` reads to skip work
+                # already committed, so a missed one is work done twice.
+                late = await self._landed(head, run_id, task)
+                if late:
+                    commits.append(late)
                 await self._events.append(
                     ev.StepFailed(
                         reason=f"task {task.id}: {transition.reason}",
