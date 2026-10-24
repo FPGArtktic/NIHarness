@@ -15,7 +15,9 @@ import pytest
 from niharness.domain.bench import (
     L0Probe,
     L1Task,
+    ReportRow,
     is_subsequence,
+    report_markdown,
     score_suite,
     score_task,
     score_throughput,
@@ -646,3 +648,130 @@ def test_the_declared_probes_load() -> None:
     probes = load_l0(root)
     assert [one.context_tokens for one in probes] == [2048, 8192, 32768, 65536]
     assert [one.id for one in probes] == ["2k-ctx", "8k-ctx", "32k-ctx", "64k-ctx"]
+
+
+# ------------------------------------------------------------- the report
+
+
+def row(
+    commit: str,
+    *,
+    layer: str = "L2",
+    metrics: dict[str, float] | None = None,
+    units: dict[str, bool] | None = None,
+    dirty: bool = False,
+) -> ReportRow:
+    return ReportRow(
+        layer=layer,
+        date="2026-10-24",
+        commit=commit,
+        served="M",
+        quantization="Q",
+        dirty=dirty,
+        metrics=metrics or {},
+        units=units or {},
+    )
+
+
+def test_a_column_is_a_commit_and_a_cell_is_the_spread_across_its_passes() -> None:
+    text = report_markdown(
+        (
+            row("aaaaaaa", metrics={"recall": 0.25}),
+            row("bbbbbbb", metrics={"recall": 0.25}),
+            row("bbbbbbb", metrics={"recall": 0.75}),
+            row("bbbbbbb", metrics={"recall": 0.5}),
+        )
+    )
+    assert "## L2 on M (Q)" in text
+    assert "`aaaaaaa` 2026-10-24, 1 pass" in text
+    assert "`bbbbbbb` 2026-10-24, 3 passes" in text
+    assert "| `recall` | 0.25 | 0.25 - 0.75 |" in text
+
+
+def test_the_report_says_an_overlap_is_not_a_difference() -> None:
+    """The lesson a measurement cost, written where the comparison is read."""
+    text = report_markdown((row("aaaaaaa", metrics={"recall": 1.0}),))
+    assert "not an error bar" in text
+    assert "have not shown a difference" in text
+
+
+def test_a_metric_one_column_never_recorded_is_a_dash_not_a_zero() -> None:
+    text = report_markdown(
+        (
+            row("aaaaaaa", metrics={"recall": 0.5}),
+            row("bbbbbbb", metrics={"recall": 0.5, "pathologies_seen": 2.0}),
+        )
+    )
+    assert "| `pathologies_seen` | - | 2.0 |" in text
+
+
+def test_a_unit_is_reported_as_passes_out_of_that_column_s_passes() -> None:
+    text = report_markdown(
+        (
+            row("aaaaaaa", units={"case-a": True, "case-b": False}),
+            row("aaaaaaa", units={"case-a": False, "case-b": False}),
+        )
+    )
+    assert "| `case-a` | 1/2 |" in text
+    assert "| `case-b` | 0/2 |" in text
+
+
+def test_a_dirty_column_is_marked_and_the_mark_is_explained() -> None:
+    text = report_markdown((row("aaaaaaa", metrics={"recall": 1.0}, dirty=True),))
+    assert "`aaaaaaa`* 2026-10-24" in text
+    assert "a working note, not a result" in text
+
+
+def test_two_layers_are_two_sections_because_they_are_not_comparable() -> None:
+    text = report_markdown(
+        (
+            row("aaaaaaa", layer="L1", metrics={"passed_ratio": 0.8}),
+            row("aaaaaaa", layer="L2", metrics={"passed_ratio": 0.5}),
+        )
+    )
+    assert "## L1 on M (Q)" in text
+    assert "## L2 on M (Q)" in text
+
+
+def test_no_records_says_so_and_says_what_writes_one() -> None:
+    assert "nih bench" in report_markdown(())
+
+
+def test_a_hand_taken_record_is_listed_and_never_folded_into_a_range() -> None:
+    """Five hand-taken numbers under one commit are five configurations.
+
+    The first version of this report read them as a five-pass spread and
+    printed `prompt_tps 46.28 - 1539.5` - a range across a CPU run and a GPU
+    run, presented as the same measurement repeated.
+    """
+    text = report_markdown(
+        (
+            ReportRow(
+                layer="L0",
+                date="2026-10-22",
+                commit="aaaaaaa",
+                served="M",
+                quantization="Q",
+                by_hand=True,
+                context={"device": "cpu", "measured_by": "llama-bench, by hand"},
+                metrics={"prompt_tps": 52.28},
+            ),
+            ReportRow(
+                layer="L0",
+                date="2026-10-22",
+                commit="aaaaaaa",
+                served="M",
+                quantization="Q",
+                by_hand=True,
+                context={"device": "cuda", "measured_by": "llama-bench, by hand"},
+                metrics={"prompt_tps": 1539.5},
+            ),
+        )
+    )
+    assert "52.28 - 1539.5" not in text, "two configurations are not a spread"
+    assert "`prompt_tps` 52.28" in text
+    assert "`prompt_tps` 1539.5" in text
+    assert "device cpu" in text, "what tells them apart"
+    assert "device cuda" in text, "what tells them apart"
+    assert text.count("measured_by: llama-bench, by hand") == 1, "said once, not per line"
+    assert "| Metric |" not in text, "nothing here is comparable, so no comparison table"

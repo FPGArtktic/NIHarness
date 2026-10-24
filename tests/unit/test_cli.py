@@ -216,8 +216,16 @@ def test_the_generated_files_in_the_tree_are_up_to_date(tmp_path: Path) -> None:
     tree without changing it - a test that regenerated the files would pass by
     repairing what it was supposed to catch.
     """
-    docs_module.generate(tmp_path, app)
+    import shutil
+
     repo = Path(__file__).resolve().parents[2]
+    # The results page is generated from the committed records, so the scratch
+    # root has to be given the same input. Without them the page renders "no
+    # records" and the comparison fails on the generator's own arrangements.
+    shutil.copytree(
+        repo / "benchmarks" / "results", tmp_path / "benchmarks" / "results", dirs_exist_ok=True
+    )
+    docs_module.generate(tmp_path, app)
     generated = [
         path.relative_to(tmp_path) for path in sorted(tmp_path.rglob("*")) if path.is_file()
     ]
@@ -523,3 +531,90 @@ def test_the_width_is_put_back_after_generating() -> None:
     render_cli_page(real_app)
     after = (rich_utils.MAX_WIDTH, rich_utils.COLOR_SYSTEM, rich_utils.FORCE_TERMINAL)
     assert before == after
+
+
+def test_bench_options_still_work_without_naming_the_subcommand(tmp_path: Path) -> None:
+    """`nih bench --layer L2` has to keep working next to `nih bench report`.
+
+    §13 documents both forms, so the group routes anything that is not a
+    subcommand to `run` - and leaves `--help` alone, or the group's own help
+    would never mention `report`.
+    """
+    ran = runner.invoke(app, ["bench", "--layer", "L9", "-C", str(tmp_path)])
+    assert ran.exit_code == EX_UNAVAILABLE
+    assert "no runner for L9" in ran.stderr
+
+    helped = runner.invoke(app, ["bench", "--help"])
+    assert helped.exit_code == 0
+    assert "report" in helped.stdout, "the help lists the subcommand it would have hidden"
+
+
+def test_the_report_reads_the_records_and_not_a_terminal_s_scrollback(
+    tmp_path: Path,
+) -> None:
+    """The records are the measurement; reading them is a command, not a habit."""
+    results = tmp_path / "benchmarks" / "results"
+    results.mkdir(parents=True)
+    passes = [
+        {
+            "layer": "L2",
+            "date": "2026-10-24",
+            "harness_commit": "aaaaaaa",
+            "harness_dirty": False,
+            "model": "M",
+            "quantization": "Q",
+            "pass": number,
+            "of_passes": 2,
+            "cases": 2,
+            "wall_seconds": 1.5,
+            "reviewer_recall": recall,
+            "per_case": [
+                {"id": "found-it", "passed": True},
+                {"id": "missed-it", "passed": False},
+            ],
+        }
+        for number, recall in ((1, 0.25), (2, 0.75))
+    ]
+    other = {
+        "layer": "L1",
+        "date": "2026-10-24",
+        "harness_commit": "aaaaaaa",
+        "model": "M",
+        "quantization": "Q",
+        "pass": 1,
+        "of_passes": 1,
+        "tasks": 1,
+        "wall_seconds": 2.0,
+        "passed_ratio": 1.0,
+    }
+    (results / "l2-m-2026-10-24.jsonl").write_text(
+        "".join(f"{json.dumps(entry)}\n" for entry in passes), encoding="utf-8"
+    )
+    (results / "l1-m-2026-10-24.jsonl").write_text(f"{json.dumps(other)}\n", encoding="utf-8")
+
+    shown = runner.invoke(app, ["bench", "report", "-C", str(tmp_path), "--layer", "L2"])
+    assert shown.exit_code == 0
+    assert "| `reviewer_recall` | 0.25 - 0.75 |" in shown.stdout
+    assert "| `missed-it` | 0/2 |" in shown.stdout
+    assert "`aaaaaaa` 2026-10-24, 2 passes" in shown.stdout
+    assert "L1" not in shown.stdout, "--layer means only that layer"
+    for metadata in ("`pass`", "`of_passes`", "`cases`", "`wall_seconds`"):
+        assert metadata not in shown.stdout, (
+            f"{metadata} identifies a record, it is not a metric"
+        )
+
+    written = tmp_path / "out" / "bench.md"
+    saved = runner.invoke(app, ["bench", "report", "-C", str(tmp_path), "-o", str(written)])
+    assert saved.exit_code == 0
+    assert "## L1 on M (Q)" in written.read_text(encoding="utf-8")
+    assert "3 record(s)" in saved.stdout
+
+
+def test_a_record_that_will_not_parse_stops_the_report(tmp_path: Path) -> None:
+    """A tool that quietly drops a measurement is the wrong tool to settle a question."""
+    results = tmp_path / "benchmarks" / "results"
+    results.mkdir(parents=True)
+    (results / "l2-m-2026-10-24.jsonl").write_text("{not json}\n", encoding="utf-8")
+    failed = runner.invoke(app, ["bench", "report", "-C", str(tmp_path)])
+    assert failed.exit_code == 1
+    assert "l2-m-2026-10-24.jsonl line 1" in failed.stderr

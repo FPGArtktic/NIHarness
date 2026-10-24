@@ -32,9 +32,10 @@ from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Protocol
+from typing import Any, Protocol
 
 import typer
+from typer.core import TyperGroup
 
 from niharness.adapters.git import GitVcs
 from niharness.adapters.jsonl_events import JsonlEventSink
@@ -56,9 +57,11 @@ from niharness.domain.bench import (
     L1Task,
     L2Case,
     L2Score,
+    ReportRow,
     SuiteScore,
     TaskScore,
     Throughput,
+    report_markdown,
     score_case,
     score_reviews,
     score_suite,
@@ -1190,3 +1193,134 @@ def _spread(scores: Sequence[LayerScore]) -> str:
     if always:
         lines.append(f"  failed every pass: {', '.join(always)}")
     return "\n".join(lines)
+
+
+# ----------------------------------------------------------------- the report
+
+RECORD_METADATA = frozenset(
+    {"pass", "of_passes", "wall_seconds", "tasks", "cases", "context_window"}
+)
+"""Numeric keys that identify a record rather than measure anything."""
+
+RECORD_IDENTITY = frozenset(
+    {"layer", "date", "harness_commit", "model", "quantization", "profile", "base_url"}
+)
+"""Keys the report reads as identity, so the rest of a record's words are context."""
+
+DEFAULT_COMMAND = "run"
+"""`nih bench --layer L2` is a shorthand for `nih bench run --layer L2`."""
+
+HELP_FLAGS = frozenset({"--help", "-h"})
+"""Asking for help is not a shorthand for anything."""
+
+
+class BenchGroup(TyperGroup):
+    """A group whose options may come before the subcommand, or instead of one.
+
+    `nih bench --layer L2 --repeat 3` has to keep working next to
+    `nih bench report`, so an argument that is not a known subcommand is
+    routed to the default one - including no arguments at all, which runs L1.
+    A request for help is left alone, or the group's own help would never
+    mention `report`.
+    """
+
+    def parse_args(self, ctx: Any, args: list[str]) -> list[str]:  # noqa: ANN401 - click Context
+        """Insert the default subcommand unless one was named."""
+        if not args or (args[0] not in self.commands and args[0] not in HELP_FLAGS):
+            args = [DEFAULT_COMMAND, *args]
+        parsed: list[str] = super().parse_args(ctx, args)
+        return parsed
+
+
+def read_records(root: Path, *, layer: str | None = None) -> list[ReportRow]:
+    """Read every record under `benchmarks/results/`, oldest file first.
+
+    A line that will not parse stops the report instead of being skipped. A
+    tool that quietly drops a measurement it could not read is the wrong tool
+    to settle a question with.
+
+    Args:
+        root: the project root.
+        layer: only records from this layer, or every layer when None.
+
+    Returns:
+        The records in the order they were written.
+
+    Raises:
+        SuiteError: if a line is not a JSON object.
+    """
+    rows: list[ReportRow] = []
+    for path in sorted((root / RESULTS).glob("*.jsonl")):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for number, line in enumerate(lines, start=1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as error:
+                msg = f"{path.name} line {number} is not JSON: {error}"
+                raise SuiteError(msg) from error
+            if not isinstance(record, dict):
+                msg = f"{path.name} line {number} is not a record"
+                raise SuiteError(msg)
+            if layer and str(record.get("layer", "")).upper() != layer.upper():
+                continue
+            rows.append(_row(record))
+    return rows
+
+
+def _row(record: Mapping[str, object]) -> ReportRow:
+    """Reduce one raw record to the identity, the numbers and the graded units.
+
+    Which keys are metrics is derived rather than declared: a record's metric
+    names come from the suite that wrote it, so a list here would be a second
+    place for them to disagree.
+    """
+    metrics = {
+        name: float(value)
+        for name, value in record.items()
+        if isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and name not in RECORD_METADATA
+    }
+    context = {
+        name: value
+        for name, value in record.items()
+        if isinstance(value, str) and name not in RECORD_IDENTITY
+    }
+    units: dict[str, bool] = {}
+    for key in ("per_task", "per_case"):
+        entries = record.get(key)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if isinstance(entry, dict) and isinstance(entry.get("passed"), bool):
+                units[str(entry.get("id", "?"))] = bool(entry["passed"])
+    return ReportRow(
+        layer=str(record.get("layer", "?")),
+        date=str(record.get("date", "")),
+        commit=str(record.get("harness_commit", "unknown")),
+        served=str(record.get("model", "?")),
+        quantization=str(record.get("quantization", "")),
+        dirty=bool(record.get("harness_dirty", False)),
+        by_hand=bool(record.get("measured_by")),
+        context=context,
+        metrics=metrics,
+        units=units,
+    )
+
+
+def report(root: Path, *, layer: str | None = None, out: Path | None = None) -> None:
+    """Render the committed records as Markdown, to a file or to stdout."""
+    try:
+        rows = read_records(root, layer=layer)
+    except SuiteError as error:
+        typer.secho(str(error), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from error
+    text = report_markdown(rows)
+    if out is None:
+        typer.echo(text.rstrip())
+        return
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    typer.echo(f"wrote {out} - {len(rows)} record(s)")

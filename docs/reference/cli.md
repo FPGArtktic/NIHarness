@@ -39,16 +39,52 @@ Usage: nih [OPTIONS] COMMAND [ARGS]...
 │ compact     Compact a run's window now, instead of waiting for the           │
 │             threshold.                                                       │
 │ research    Run a read-only researcher sub-run over the index.               │
-│ bench       Run a benchmark layer and append its JSONL record.               │
 │ plan        Plan a spec, validate a plan, or import one written elsewhere.   │
 │ docs        Documentation and generated reference material.                  │
+│ bench       Run a benchmark layer, or render the records that exist.         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ## `nih bench`
 
 ```text
-Usage: nih bench [OPTIONS]                                                     
+Usage: nih bench [OPTIONS] COMMAND [ARGS]...                                   
+                                                                                
+ Run a benchmark layer, or render the records that exist.                       
+                                                                                
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────╮
+│ run     Run a benchmark layer and append its JSONL record.                   │
+│ report  Render the committed benchmark records as Markdown.                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+### `nih bench report`
+
+```text
+Usage: nih bench report [OPTIONS]                                              
+                                                                                
+ Render the committed benchmark records as Markdown.                            
+                                                                                
+ A column is one harness commit and a cell is the range across its passes,      
+ which is the comparison this project makes: did a change move the number,      
+ against the spread of changing nothing. The records are the measurement,       
+ so reading them should not mean reading a terminal's scrollback.               
+                                                                                
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --project-root  -C      <path>  The project to operate on. [default: (.)]    │
+│ --layer                 <str>   Only this layer's records.                   │
+│ --out           -o      <path>  Write the Markdown here instead of stdout.   │
+│ --help                          Show this message and exit.                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+### `nih bench run`
+
+```text
+Usage: nih bench run [OPTIONS]                                                 
                                                                                 
  Run a benchmark layer and append its JSONL record.                             
                                                                                 

@@ -20,8 +20,10 @@ from pydantic import BaseModel
 from typer import rich_utils
 from typer.testing import CliRunner
 
+from niharness.cli.bench import read_records
 from niharness.config import HarnessConfig, ModelsConfig, SandboxConfig, VectorConfig
 from niharness.domain.artifacts import ARTIFACT_MODELS
+from niharness.domain.bench import report_markdown
 from niharness.domain.context import CompactionPolicy
 from niharness.domain.control import ControlMessage
 from niharness.domain.events import PAYLOAD_TYPES, Event
@@ -247,15 +249,41 @@ def render_cli_page(app: typer.Typer) -> str:
     return "\n".join(lines)
 
 
+RESULTS_INTRO = """\
+Every number on this page was measured on this project's own suites by
+`nih bench`, and every record behind it is committed under
+`benchmarks/results/` as one JSON object per pass, so a regression is a
+diff. The page is rendered by `nih bench report`, which is also how to read
+the records at a terminal.
+
+A column is one harness commit; a cell is that column's passes.
+"""
+"""What a reader needs before the first table: where the numbers came from."""
+
+
+def render_results_page(project_root: Path) -> str:
+    """Render the benchmark results page from the committed records.
+
+    The same renderer as `nih bench report`, because a page and a terminal
+    disagreeing about a measurement is worse than either one alone.
+    """
+    rows = read_records(project_root)
+    body = report_markdown(rows, title="Benchmark results", intro=RESULTS_INTRO)
+    return f"{GENERATED_WARNING}\n\n{body}"
+
+
 def generate(project_root: Path, app: typer.Typer) -> None:
     """Regenerate schemas and the generated reference pages."""
     schemas = export_schemas(project_root / "schemas")
     reference = project_root / "docs" / "reference"
     reference.mkdir(parents=True, exist_ok=True)
+    benchmarks = project_root / "docs" / "benchmarks"
+    benchmarks.mkdir(parents=True, exist_ok=True)
     pages = {
         reference / "events.md": render_events_page(),
         reference / "config.md": render_config_page(),
         reference / "cli.md": render_cli_page(app),
+        benchmarks / "results.md": render_results_page(project_root),
     }
     for path, content in pages.items():
         path.write_text(content, encoding="utf-8")

@@ -372,6 +372,53 @@ for: `unbacked_claim` in that tally is the check working, and its absence
 from a suite where `evidence_ratio` is already 1.0 means the check has never
 had an opportunity.
 
+### What the tally said, immediately
+
+Three passes at `c63c5b6`, the first with the pathology recorded:
+
+| Metric | `73a5c99` | `c63c5b6` |
+|---|---|---|
+| `reviewer_precision` | 0.75 - 1.0 | 0.5 - 1.0 |
+| `reviewer_recall` | 0.25 - 0.75 | 0.25 - 0.5 |
+| `passed_ratio` | 0.625 - 0.75 | 0.5 - 0.75 |
+| `evidence_ratio` | 1.0 - 1.0 | 1.0 - 1.0 |
+| `loop_incidents_per_case` | 0.0 - 0.375 | 0.125 - 0.25 |
+
+**Every intervention in those twenty-four reviews was `exact_repeat`.**
+`unbacked_claim` does not appear once, so the evidence check has never fired
+in a recorded run and the three passes before these measured nothing about
+it. One run with the tally answered what three passes of ratios could not,
+which is the argument for recording the cause and not only the count.
+
+What the check does is still right - a verdict claiming evidence its own step
+does not have is a verdict about nothing - but it is a guard against
+something rare, and the suite as it stands does not provoke it. Making it
+measurable means a case that gives the reviewer a reason to claim rather than
+run, which is a case about the model's incentives and not about a defect.
+These eight are about defects.
+
+### A refusal can be confabulated, and that is checkable too
+
+The false positive from the passes before repeated here, on the same case and
+with the same shape of reason: `a-helper-extracted`, a correct change, refused
+because "tests cannot be run due to missing Python environment" - and in the
+earlier pass, "cannot verify build and tests without Python language server".
+Two of six passes since the check landed.
+
+The reason is false, and the record proves it rather than suggesting it. Four
+or five cases in each of those same passes were ACKed, a `Verdict` cannot ACK
+without `tests_passed`, and `evidence_ratio` was 1.0 throughout - which is
+exactly the statement that a `run_tests` call in each of those steps returned
+green. The tests ran, in that fixture, in that pass. The reviewer invented a
+broken environment as grounds for a refusal.
+
+That is a second claim the harness can check mechanically, and it is the
+inverse of the one it already checks: "the tests passed" is verified against
+a green call, and "the tests could not be run" can be verified against the
+absence of one. It is [on the roadmap](../roadmap.md), with the measurement
+it would need - two false positives in six passes is a pattern worth a
+number, not yet a number.
+
 ### What L2 does not measure yet
 
 §11 asks L2 for the implementer's side too - first-attempt gate pass rate and
@@ -393,8 +440,14 @@ one. The review half is what exists; see [the roadmap](../roadmap.md).
 - Harness overhead is reported separately from inference time. If the harness is
   slow, that is the harness's problem, and hiding it inside model latency would
   be convenient and dishonest.
-- `nih bench report` renders Markdown from the records; the TUI Bench view reads
-  the same records, so a chart and a table can never disagree.
+- `nih bench report` renders the records as Markdown - a column per harness
+  commit, a cell per metric showing the range across that column's passes,
+  and a table saying how many of each column's passes every case or task
+  passed. `nih docs generate` renders [the results page](results.md) with the
+  same function, so a page and a terminal cannot disagree about a
+  measurement. It is the comparison this project makes, and making it by hand
+  from scrollback is how one set of passes came to be described from memory
+  after its record had been deleted.
 
 ## Why loop incidents are a first-class metric
 

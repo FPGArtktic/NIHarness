@@ -1061,3 +1061,246 @@ def _thousands(tokens: int) -> str:
     if tokens >= 1024 and tokens % 1024 == 0:
         return f"{tokens // 1024}k"
     return str(tokens)
+
+
+# ----------------------------------------------------------------- the report
+
+OVERLAP_WARNING = (
+    "A range is the spread across passes of the identical suite, not an error "
+    "bar. Two ranges that overlap have not shown a difference, however much "
+    "the ends moved."
+)
+"""What a reader has to know before comparing two columns.
+
+Learned the expensive way: a set of cases that failed every pass before a
+change and one pass after it reads as an improvement and is not one.
+"""
+
+DIRTY_WARNING = (
+    "`*` marks a column with a record taken from an uncommitted tree: a working "
+    "note, not a result."
+)
+"""Why a column can carry a commit and still not be comparable."""
+
+
+class ReportRow(BaseModel):
+    """One record, reduced to what a report needs.
+
+    A record carries a whole run; a report compares runs, so it needs the
+    identity, the numbers, and which units passed. Built by whoever read the
+    file, because nothing in this module reads anything.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    layer: str
+    date: str
+    commit: str
+    served: str = Field(description="The model the record was taken on.")
+    quantization: str = ""
+    dirty: bool = False
+    by_hand: bool = Field(
+        default=False,
+        description="Whether the record says it was measured by hand rather than by "
+        "the runner. Those predate the runner, were taken in configurations that "
+        "differ from each other, and are not passes of anything.",
+    )
+    context: dict[str, str] = Field(
+        default_factory=dict,
+        description="Whatever else the record said about itself in words - the device, "
+        "the backend, the note. What distinguishes two hand-taken records is in here, "
+        "so listing them without it would invent a comparison.",
+    )
+    metrics: dict[str, float] = Field(default_factory=dict)
+    units: dict[str, bool] = Field(
+        default_factory=dict,
+        description="Each task or case id and whether it passed. Empty for a layer "
+        "that measures rather than grades, which is L0.",
+    )
+
+
+def report_markdown(
+    rows: Sequence[ReportRow],
+    *,
+    title: str = "Benchmark records",
+    intro: str = "",
+) -> str:
+    """Render the committed records as Markdown: one section per suite and model.
+
+    A column is one harness commit and a cell is the range across its passes,
+    which is the comparison this project actually makes - "did this change move
+    the number, against the spread of changing nothing". Doing it by hand from
+    terminal output is how three passes of L2 came to be described from memory
+    after their record had been deleted.
+
+    Args:
+        rows: the records, in the order they were written.
+        title: the page's heading, so a docs page can be the same renderer.
+        intro: what to say before the first table, already Markdown.
+
+    Returns:
+        Markdown, or a sentence saying there is nothing to report.
+    """
+    if not rows:
+        return "No benchmark records. `nih bench --layer L1` writes one per pass."
+    sections: list[str] = [f"# {title}", ""]
+    if intro:
+        sections += [intro.strip(), ""]
+    sections += [OVERLAP_WARNING, ""]
+    for (layer, served, quant), group in _grouped(rows).items():
+        heading = f"{layer} on {served}" + (f" ({quant})" if quant else "")
+        sections += [f"## {heading}", ""]
+        measured = [row for row in group if not row.by_hand]
+        columns = _columns(measured)
+        sections += _table("Metric", _metric_cells(columns), columns)
+        unit_cells = _unit_cells(columns)
+        if unit_cells:
+            sections += ["Per unit, how many of that column's passes it passed:", ""]
+            sections += _table("Case or task", unit_cells, columns)
+        if any(row.dirty for row in measured):
+            sections += [DIRTY_WARNING, ""]
+        sections += _by_hand([row for row in group if row.by_hand])
+    return "\n".join(sections).rstrip() + "\n"
+
+
+def _by_hand(rows: Sequence[ReportRow]) -> list[str]:
+    """List the records that were taken by hand, one per line and never as a range.
+
+    They predate the runner and were taken in configurations that differ from
+    each other, so folding them into a column would report a spread across
+    `cpu` and `gpu` as though it were the same measurement repeated. The
+    numbers are kept because they are the only ones that exist for those
+    models; the comparison is withheld because there is none to make.
+    """
+    if not rows:
+        return []
+    lines = [
+        "Taken by hand, before the runner existed. Not runner output, not passes "
+        "of one suite, and not compared: each was a different configuration.",
+        "",
+    ]
+    shared = _shared(rows)
+    if shared:
+        lines += [", ".join(f"{key}: {value}" for key, value in sorted(shared.items())), ""]
+    for row in rows:
+        words = ", ".join(
+            f"{key} {value}" for key, value in sorted(row.context.items()) if key not in shared
+        )
+        numbers = ", ".join(
+            f"`{name}` {_figure(value)}" for name, value in sorted(row.metrics.items())
+        )
+        detail = f" - {words}" if words else ""
+        lines.append(f"- `{row.commit}` {row.date}{detail}: {numbers}")
+    return [*lines, ""]
+
+
+def _shared(rows: Sequence[ReportRow]) -> dict[str, str]:
+    """Return the context every one of these records agrees on.
+
+    Said once rather than on every line: what the backend was and that these
+    were taken by hand is true of all of them, and what distinguishes them is
+    what is left after it is removed.
+    """
+    if not rows:
+        return {}
+    first = rows[0].context
+    return {
+        key: value
+        for key, value in first.items()
+        if all(row.context.get(key) == value for row in rows[1:])
+    }
+
+
+def _grouped(
+    rows: Sequence[ReportRow],
+) -> dict[tuple[str, str, str], list[ReportRow]]:
+    """Group records by what makes two of them comparable at all."""
+    groups: dict[tuple[str, str, str], list[ReportRow]] = {}
+    for row in rows:
+        groups.setdefault((row.layer, row.served, row.quantization), []).append(row)
+    return dict(sorted(groups.items()))
+
+
+def _columns(group: Sequence[ReportRow]) -> dict[str, list[ReportRow]]:
+    """Group one section's records by harness commit, first appearance first."""
+    columns: dict[str, list[ReportRow]] = {}
+    for row in group:
+        columns.setdefault(row.commit, []).append(row)
+    return columns
+
+
+def _heading(commit: str, passes: Sequence[ReportRow]) -> str:
+    """Name a column: the commit, its date, how many passes, and whether it is dirty."""
+    count = len(passes)
+    dirty = "*" if any(row.dirty for row in passes) else ""
+    plural = "pass" if count == 1 else "passes"
+    return f"`{commit}`{dirty} {passes[0].date}, {count} {plural}"
+
+
+def _table(
+    corner: str,
+    cells: dict[str, dict[str, str]],
+    columns: Mapping[str, Sequence[ReportRow]],
+) -> list[str]:
+    """Render one Markdown table: a row per name, a column per commit."""
+    if not cells:
+        return []
+    headings = [_heading(commit, passes) for commit, passes in columns.items()]
+    lines = [
+        "| " + " | ".join([corner, *headings]) + " |",
+        "|" + "---|" * (len(headings) + 1),
+    ]
+    for name, by_commit in cells.items():
+        row = [by_commit.get(commit, "-") for commit in columns]
+        lines.append("| " + " | ".join([f"`{name}`", *row]) + " |")
+    return [*lines, ""]
+
+
+def _metric_cells(
+    columns: Mapping[str, Sequence[ReportRow]],
+) -> dict[str, dict[str, str]]:
+    """For every metric any column recorded, its range in each column."""
+    cells: dict[str, dict[str, str]] = {}
+    for commit, passes in columns.items():
+        for row in passes:
+            for metric in row.metrics:
+                cells.setdefault(metric, {})
+        for metric, by_commit in cells.items():
+            values = [row.metrics[metric] for row in passes if metric in row.metrics]
+            if values:
+                by_commit[commit] = _range(values)
+    return cells
+
+
+def _unit_cells(
+    columns: Mapping[str, Sequence[ReportRow]],
+) -> dict[str, dict[str, str]]:
+    """For every task or case any column graded, how many of its passes it passed."""
+    cells: dict[str, dict[str, str]] = {}
+    for commit, passes in columns.items():
+        for row in passes:
+            for unit in row.units:
+                cells.setdefault(unit, {})
+        for unit, by_commit in cells.items():
+            graded = [row.units[unit] for row in passes if unit in row.units]
+            if graded:
+                by_commit[commit] = f"{sum(graded)}/{len(graded)}"
+    return cells
+
+
+def _range(values: Sequence[float]) -> str:
+    """Render a metric across passes: one number, or the spread it covered."""
+    low, high = min(values), max(values)
+    if low == high:
+        return _figure(low)
+    return f"{_figure(low)} - {_figure(high)}"
+
+
+def _figure(value: float) -> str:
+    """Render a number without trailing zeros, and never as a bare integer.
+
+    `1` and `1.0` read differently for a ratio: the second says the scale it
+    is on.
+    """
+    text = f"{value:.4f}".rstrip("0")
+    return f"{text}0" if text.endswith(".") else text

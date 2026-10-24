@@ -24,6 +24,36 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   document left stale. When it did catch one it named the thing every time, so
   the gap is detection rather than articulation, which says the prompt is not
   where to look.
+- **The tally's first run answered the question the ratios could not.** Three
+  L2 passes at `c63c5b6`: every intervention in those twenty-four reviews was
+  `exact_repeat`, and `unbacked_claim` does not appear once. The evidence
+  check has never fired in a recorded run, so the three passes taken to
+  measure it measured nothing about it - which is what a cause recorded next
+  to a count is for. What the check does is still right; the suite does not
+  provoke it, and making it measurable needs a case about the model's
+  incentives rather than about a defect.
+- **A reviewer confabulated a broken environment to justify a refusal.** The
+  same correct change was refused in two of six passes because "tests cannot
+  be run due to missing Python environment" and "cannot verify build and
+  tests without Python language server". The record disproves it: four or
+  five cases in those same passes were ACKed, an ACK requires
+  `tests_passed`, and `evidence_ratio` was 1.0 - which says a `run_tests`
+  call returned green in each of those steps. The inverse claim is as
+  checkable as the one the harness already checks, and is on the roadmap with
+  the measurement it would need.
+- **`nih bench report`, and the results page is generated from the records.**
+  A column is one harness commit, a cell is the range across that column's
+  passes, and a second table says how many of a column's passes each case or
+  task passed. `nih docs generate` renders `docs/benchmarks/results.md` with
+  the same function, so a page and a terminal cannot disagree about a
+  measurement, and the page no longer says there are no results while the
+  records directory holds them. Every before-and-after
+  comparison this project has made was assembled by hand from terminal
+  output, which is how one set of passes came to be described from memory
+  after its record had been deleted.
+- `nih bench --layer L2` keeps working next to `nih bench report`: the group
+  routes anything that is not a subcommand to `run`, the way `nih plan
+  SPEC.md` already routes to `plan spec`.
 - **Both benchmark records say which detector fired.** `loop_incidents` says
   how much the ladder interfered and the highest level says how far it
   climbed; neither says what for, so a change to one detector could not be

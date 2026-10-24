@@ -43,6 +43,12 @@ app.add_typer(plan_module.app, name="plan")
 docs_app = typer.Typer(help="Documentation and generated reference material.")
 app.add_typer(docs_app, name="docs")
 
+bench_app = typer.Typer(
+    cls=bench_module.BenchGroup,
+    help="Run a benchmark layer, or render the records that exist.",
+)
+app.add_typer(bench_app, name="bench")
+
 ProjectRoot = Annotated[
     Path,
     typer.Option("--project-root", "-C", help="The project to operate on.", show_default="."),
@@ -340,8 +346,8 @@ def research(topic: Annotated[str, typer.Argument(help="What to research")]) -> 
     )
 
 
-@app.command()
-def bench(
+@bench_app.command("run")
+def bench_run(
     layer: Annotated[str, typer.Option("--layer", help="L0, L1, L2 or L3.")] = "L1",
     root: ProjectRoot = Path(),
     profile: Annotated[
@@ -379,6 +385,27 @@ def bench(
         local_tools=local_tools,
         json_mode=json_mode,
     )
+
+
+@bench_app.command("report")
+def bench_report(
+    root: ProjectRoot = Path(),
+    layer: Annotated[
+        str | None, typer.Option("--layer", help="Only this layer's records.")
+    ] = None,
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", "-o", help="Write the Markdown here instead of stdout."),
+    ] = None,
+) -> None:
+    """Render the committed benchmark records as Markdown.
+
+    A column is one harness commit and a cell is the range across its passes,
+    which is the comparison this project makes: did a change move the number,
+    against the spread of changing nothing. The records are the measurement,
+    so reading them should not mean reading a terminal's scrollback.
+    """
+    bench_module.report(root.resolve(), layer=layer, out=out)
 
 
 def main() -> None:
