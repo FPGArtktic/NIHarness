@@ -214,7 +214,7 @@ unattended. Everything below is the detail of that sentence.
 
 Three things block the rest, in order: **L3** (whole tasks are still unmeasured),
 **brainstorm** (the last entry point, and the only interactive one), and **the code
-index** (the one retrieval collection nothing writes to). 36 of 72 roadmap items are
+index** (the one retrieval collection nothing writes to). 36 of 74 roadmap items are
 done; the count is a poor measure, because the remaining ones are the large ones.
 
 [`docs/orientation.md`](docs/orientation.md) is the long version of this table,

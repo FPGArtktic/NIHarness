@@ -416,6 +416,25 @@ the change and stop.
 - [ ] L0 inference, L1 tool calling, L2 steps, L3 end-to-end.
 - [ ] Vendored reference sets (SWE-bench subset, BFCL) with their licenses.
 
+## Blocked on the network, by design
+
+Written down rather than worked around (§16.7). The root `NOTES.md` carries
+the long version on a working checkout; it is gitignored, because that file
+is also where a run's tools write.
+
+- [ ] `certifi` 2026.7.22 -> 2026.10.19 or later. A **critical** advisory:
+      the bundled emSign roots have compromised intermediate CA keys. It
+      arrives through `httpx` -> `httpcore`. Exposure here is near none - the
+      harness's traffic is loopback-only and plain HTTP, so the bundle is
+      never consulted - but `require_local` permits `https` to a loopback
+      host, so a configuration this project allows would consult it. The fix
+      needs an index and a wheelhouse rebuild in the same change: a lockfile
+      ahead of the wheelhouse breaks the offline install, which is worse than
+      the advisory.
+- [ ] `lru` 0.12.5 -> 0.16.3 or later in `tui/Cargo.lock`, a transitive
+      dependency of `ratatui`. Low: undefined behaviour in `IterMut` that
+      Miri detects, and the TUI does not call it.
+
 ## Housekeeping, not blocking
 
 - [ ] Self-hosted Inter and JetBrains Mono under `docs/assets/fonts/`; the docs
