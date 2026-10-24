@@ -11,6 +11,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **Measured: `commit_message` refusals 2/6/6 to 1/1/2 per pass, and the gate
+  is reached.** Three L3 passes after the subject repair, against the three
+  that found it: `git_commit` calls went from 0, 0, 0 to 0, 2, 1. What remains
+  refused is the other two rules - a missing body, a subject that is not
+  Conventional - which are judgements and stay refusals. The refusal count is
+  what the change aimed at and what it can claim.
+- `committed_ratio` 0.0 - 0.3333 and `pass_at_1_ratio` 0.0 - 0.3333. One pass
+  of three committed one task, and an earlier run had a pass that committed
+  two, so the outcome is still sporadic and three passes do not separate it
+  from the model's own variance.
+- `uncommitted_completion` fires in **every** pass now, so the implementer's
+  commit check is consistently exercised. And `state_cycle` appears once - the
+  first time any detector other than `exact_repeat` has fired in this
+  project's records.
+- The dominant failure is unchanged, and is no longer refusals:
+  `exact_repeat` ten to thirteen times a pass while the refusal tally counts
+  one or two. So the repeats are calls that are accepted and come back
+  **failed**, which the record counts per tool but not per outcome.
+
 ### Changed
 
 - **The harness shortens an over-long commit subject instead of refusing it.**

@@ -679,6 +679,40 @@ because a character count is bookkeeping §15 says not to ask a model for.
 Taking a model's self-report over the record, in a session about exactly that
 mistake, is worth recording as plainly as the finding it delayed.
 
+### What the subject repair moved, and what it did not
+
+Three passes at `8442742`, against the three at `aaa925a` that found it:
+
+| | before | after |
+|---|---|---|
+| `commit_message` refusals, per pass | 2, 6, 6 | **1, 1, 2** |
+| `git_commit` calls, per pass | 0, 0, 0 | **0, 2, 1** |
+| `committed_ratio` | 0.0 - 0.0 | 0.0 - 0.3333 |
+| `pass_at_1_ratio` | 0.0 - 0.0 | 0.0 - 0.3333 |
+
+The refusals are the measurement, and they moved: the rule that fired six
+times in two of three passes now fires once or twice, and what is left is the
+other two rules - a missing body, a subject that is not Conventional - which
+are judgements and stay refusals. **The gate is now reached.** Before it was
+never called at all.
+
+`committed_ratio` is a different matter. One pass of three committed one task,
+and an earlier run at `e5291eb` had a pass that committed two, so the outcome
+is still sporadic and three passes do not separate it from the model. What the
+change can claim is the thing it was aimed at, which is the only thing it
+should claim.
+
+`uncommitted_completion` now fires in **every** pass, so the implementer's
+commit check is consistently exercised rather than occasionally. And
+`state_cycle` appears once - the first time in this project's records that any
+detector other than `exact_repeat` has fired at all.
+
+The dominant failure is unchanged: `exact_repeat` ten to thirteen times a
+pass. It is not refusals any more, because the tally counts only one or two of
+those - so the repeats are calls that are accepted and come back failed, which
+the record counts per tool but not per outcome. That is the next thing it has
+to keep.
+
 ### Three tasks is not ten per language
 
 §11 asks for ten per language and a vendored SWE-bench subset. The subset is a
