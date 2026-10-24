@@ -119,6 +119,12 @@ class TaskScore(BaseModel):
         "says how often the ladder was climbed; this says what for, and a change to "
         "the ladder cannot be measured without it.",
     )
+    tools: dict[str, int] = Field(
+        default_factory=dict,
+        description="How often each tool was called. `calls` says how much work the "
+        "step did; this says what of, which is the difference between a step that "
+        "ran the tests and one that read four files.",
+    )
     violations: dict[str, int] = Field(
         default_factory=dict,
         description="How many calls each rule refused. `valid_calls_ratio` says how "
@@ -220,11 +226,11 @@ class SuiteScore(BaseModel):
         says which detector caused it, which is what a change to the ladder is
         measured against.
         """
-        tally: dict[str, int] = {}
-        for task in self.tasks:
-            for pathology, count in task.pathologies.items():
-                tally[pathology] = tally.get(pathology, 0) + count
-        return dict(sorted(tally.items(), key=lambda item: (-item[1], item[0])))
+        return _tallied(task.pathologies for task in self.tasks)
+
+    def tools(self) -> dict[str, int]:
+        """Every tool the suite called, with how often, across every task."""
+        return _tallied(task.tools for task in self.tasks)
 
     def violations(self) -> dict[str, int]:
         """Every rule that refused a call, with how often, across the suite.
@@ -331,6 +337,7 @@ def score_task(
         rejected=len(refused),
         interventions=len(interventions),
         pathologies=_counted(event.pathology for event in interventions),
+        tools=_counted(event.name for event in called),
         violations=_counted(event.violation for event in refused),
         examples=_examples(refused),
         sequence_ok=sequence_ok,
@@ -491,6 +498,15 @@ def _examples(refused: Sequence[ToolRejected]) -> dict[str, str]:
     return found
 
 
+def _tallied(tallies: Iterable[Mapping[str, int]]) -> dict[str, int]:
+    """Sum several tallies into one, most frequent first."""
+    total: dict[str, int] = {}
+    for tally in tallies:
+        for key, count in tally.items():
+            total[key] = total.get(key, 0) + count
+    return dict(sorted(total.items(), key=lambda item: (-item[1], item[0])))
+
+
 def _counted(values: Iterable[str]) -> dict[str, int]:
     """Return how many times each value occurred, most frequent first."""
     tally: dict[str, int] = {}
@@ -596,6 +612,13 @@ class CaseScore(BaseModel):
         description="How many interventions each pathology caused. Without it a "
         "clean `evidence_ratio` is consistent with the evidence check firing and "
         "with its never having fired at all.",
+    )
+    tools: dict[str, int] = Field(
+        default_factory=dict,
+        description="How often each tool was called. A reviewer that refused a "
+        "correct change because 'the tests cannot be run' either called `run_tests` "
+        "and saw something, or never called it - and a count of calls cannot tell "
+        "those apart.",
     )
     diff_lines: int = Field(default=0, ge=0)
     notes: tuple[str, ...] = ()
@@ -738,11 +761,11 @@ class L2Score(BaseModel):
 
     def pathologies(self) -> dict[str, int]:
         """Every pathology a detector fired on, with how often, across the suite."""
-        tally: dict[str, int] = {}
-        for case in self.cases:
-            for pathology, count in case.pathologies.items():
-                tally[pathology] = tally.get(pathology, 0) + count
-        return dict(sorted(tally.items(), key=lambda item: (-item[1], item[0])))
+        return _tallied(case.pathologies for case in self.cases)
+
+    def tools(self) -> dict[str, int]:
+        """Every tool the suite called, with how often, across every case."""
+        return _tallied(case.tools for case in self.cases)
 
     def outcomes(self) -> tuple[tuple[str, bool], ...]:
         """Each case's id and whether it passed, for the across-passes report."""
@@ -834,6 +857,7 @@ def score_case(
         interventions=len(interventions),
         highest_intervention=max((int(body.level) for body in interventions), default=0),
         pathologies=_counted(body.pathology for body in interventions),
+        tools=_counted(body.name for body in called),
         diff_lines=diff_lines,
         notes=tuple(notes),
     )

@@ -177,6 +177,7 @@ appended, in `niharness.domain.bench`:
 | `tool.rejected` violations | a refusal task's expectation |
 | `loop.intervention` | `loop_incidents_per_task` |
 | `loop.intervention.pathology` | the `pathologies` tally |
+| `tool.called` names, tallied | the `tools` tally |
 | `step.finished.stop_reason` | `terminated_ratio` |
 
 That makes the grader a pure function, unit-tested on recorded sequences with
@@ -428,6 +429,15 @@ a green call, and "the tests could not be run" can be verified against the
 absence of one. It is [on the roadmap](../roadmap.md), with the measurement
 it would need - two false positives in six passes is a pattern worth a
 number, not yet a number.
+
+Checking it needs one fact the record did not keep: **whether that step ever
+called `run_tests`.** A case recorded how many calls it made and not what of,
+and `calls: 2` cannot tell a refusal that tried from one that did not. Both
+suites now tally the tool names as well, the same fold over `tool.called`
+that scores a sequence. Written down here because it is the second time in
+two days that a question about a model could not be answered from a record
+that was taken while the question was being asked - the cheapest thing in
+this project to get wrong is what a measurement keeps.
 
 ### What L2 does not measure yet
 

@@ -427,3 +427,31 @@ def test_no_answer_key_token_can_be_quoted_from_the_diff() -> None:
         quotable = [token for token in case.mentions_any if token.lower() in diff_text]
         assert not quotable, f"{case.id}: {quotable} can be copied out of the diff"
     assert checked == 4, "every NAK case carries an answer key"
+
+
+def test_a_case_records_which_tools_it_called() -> None:
+    """A count of calls cannot tell a refusal that tried from one that did not.
+
+    A reviewer refused a correct change because "the tests cannot be run", in
+    a pass where other cases ran them green. Whether that step ever called
+    `run_tests` is the whole question, and `calls: 2` does not answer it.
+    """
+    scored = score_case(
+        nak_case(),
+        verdict(Decision.NAK),
+        (
+            *(
+                ToolCalled(
+                    call_id=CallId(f"r{number}"),
+                    name="read_file",
+                    arguments={"path": path},
+                    arguments_digest=digest_json({"path": path}),
+                )
+                for number, path in enumerate(("src/sampler.py", "tests/test_sampler.py"))
+            ),
+            *ran_the_tests(),
+        ),
+    )
+    assert scored.tools["read_file"] == 2
+    assert "run_tests" in scored.tools, "the call that earns an evidence claim"
+    assert score_reviews((scored,)).tools()["read_file"] == 2

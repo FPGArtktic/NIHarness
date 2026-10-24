@@ -39,6 +39,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Both records say which tools were called, not only how many times.** A
+  reviewer refused a correct change because "the tests cannot be run", in a
+  pass where other cases ran them green - and `calls: 2` cannot tell a
+  refusal that tried from one that never attempted it. Each task and case now
+  carries a `tools` tally, summed over the suite and printed next to the
+  metrics, folded from `tool.called` exactly as the sequence metrics are. It
+  is the fact the inverse-claim check on the roadmap needs, and the second
+  time in two days that a question about a model could not be answered from a
+  record taken while the question was being asked.
 - **The tally's first run answered the question the ratios could not.** Three
   L2 passes at `c63c5b6`: every intervention in those twenty-four reviews was
   `exact_repeat`, and `unbacked_claim` does not appear once. The evidence

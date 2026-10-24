@@ -667,6 +667,7 @@ def record(
         "violations": score.violations(),
         "violation_examples": score.examples(),
         "pathologies": score.pathologies(),
+        "tools": score.tools(),
         "wall_seconds": round(seconds, 1),
         "per_task": [
             {
@@ -676,6 +677,7 @@ def record(
                 "rejected": task.rejected,
                 "interventions": task.interventions,
                 "pathologies": task.pathologies,
+                "tools": task.tools,
                 "violations": task.violations,
                 "stop_reason": task.stop_reason.value if task.stop_reason else None,
                 "notes": list(task.notes),
@@ -720,6 +722,7 @@ def record_reviews(
             "undecided": score.undecided,
         },
         "pathologies": score.pathologies(),
+        "tools": score.tools(),
         "wall_seconds": round(seconds, 1),
         "per_case": [
             {
@@ -733,6 +736,7 @@ def record_reviews(
                 "calls": case.calls,
                 "interventions": case.interventions,
                 "pathologies": case.pathologies,
+                "tools": case.tools,
                 "diff_lines": case.diff_lines,
                 "notes": list(case.notes),
             }
@@ -759,6 +763,10 @@ def human_reviews(entry: dict[str, object], score: L2Score) -> str:
     if fired:
         detail = ", ".join(f"{name} x{count}" for name, count in fired.items())
         lines.append(f"  {'intervened on':<28} {detail}")
+    used = score.tools()
+    if used:
+        detail = ", ".join(f"{name} x{count}" for name, count in used.items())
+        lines.append(f"  {'called':<28} {detail}")
     lines += [
         "",
         f"  caught {score.true_positives} defect(s), missed {score.false_negatives}, "
@@ -843,6 +851,10 @@ def human(entry: dict[str, object], score: SuiteScore) -> str:
     if fired:
         detail = ", ".join(f"{name} x{count}" for name, count in fired.items())
         lines.append(f"  {'intervened on':<26} {detail}")
+    used = score.tools()
+    if used:
+        detail = ", ".join(f"{name} x{count}" for name, count in used.items())
+        lines.append(f"  {'called':<26} {detail}")
     lines.append("")
     for task in score.tasks:
         mark = "ok  " if task.passed else "FAIL"
