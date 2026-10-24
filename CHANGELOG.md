@@ -13,6 +13,77 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **The turn after a reflection asks for the different thing.** Letting the
+  loop continue past a reflection turn left two consecutive assistant messages
+  at the end of the window, which llama.cpp's template refuses - `400 Cannot
+  have 2 or more assistant messages at the end of the list` - and that crashed
+  a live L3 run. A turn has to add something. It is also half an intervention
+  to ask what a model would try differently and never ask for it, so the rung
+  now says "now do the different thing you just described".
+
+### Added
+
+- **A whole task went through the pipeline for the first time.** In the L3
+  re-baseline: implemented, committed green, reviewed, **ACKed**,
+  `run.finished: completed, 1 task(s) done`. Every earlier pass ended in
+  handoff.
+- **Re-baselined L1, L2 and L3 at `e5c9839`**, because §11 asks for an L1-L3
+  run with a prompt or model change and a day of changes to the *loop* is more
+  fundamental than either. L1 is the suite §7 uses to qualify a model for a
+  tool-using role and had not run since before the reflection-turn fix.
+- L1 `passed_ratio` 0.65 - 0.75 to **0.7 - 0.85**, and
+  `loop_incidents_per_task` 0.3 - 0.6 to **0.55 - 0.95**. The interventions
+  roughly doubling is the reflection fix working as designed: a step that
+  reaches level two now continues and can trip a detector again.
+- **L2 is worse and is recorded as worse.** `reviewer_precision` had been 1.0
+  for nine straight passes and one of these three is **0.3333** - the reviewer
+  refusing correct changes, which is the failure the suite exists to catch.
+  Recall 0.5 to 0.25, `passed_ratio` 0.625 to 0.375 - 0.625. The candidate
+  cause is the same fix - a reviewer reaching level two used to end its step on
+  the reflection prose and now produces a verdict instead - and three passes
+  cannot separate that from variance. The next run settles it; it is not being
+  explained away.
+
+### Added
+
+- **`nih brainstorm "<topic>"`: entry A, and all three entry points now work.**
+  A conversation at a terminal with the brainstormer role, read-only tools, no
+  writes and no gate. `/spec` writes `SPEC.md`, `/plan` writes it and names the
+  next command, `/quit` ends with nothing
+  (ADR 0031, `docs/adr/0031-a-brainstorm-session-is-many-steps-over-one-window.md`).
+- **A session is many steps over one window.** Each turn is a step with its own
+  id, so the detectors, the intervention ladder and every stop condition apply
+  to a turn exactly as they do to implementing work - a whole session as one
+  step would not trip anything until it was nearly over. §4's rule is that
+  history never crosses a *stage* boundary, not that a stage may call a model
+  once.
+- **The budget is the stage's, spent across the session**, so a conversation
+  cannot outrun it by being a conversation. The closing turn is exempt from
+  exhaustion: a session that spent its budget and then cannot be asked for the
+  spec spent it on nothing.
+- **`SpecDraft`**, and the harness binds `Spec.origin`. That is the third
+  application of ADR 0026's rule after the planner's `spec_digest` and the
+  implementer's commit: a field a model could only transcribe is bound, not
+  asked for. Every rule `Spec` carries is applied at the moment of binding.
+- **`LoopConfig.closing_instruction`.** The shipped finalisation instruction
+  tells a model its tool budget is spent and to write its state into
+  `NOTES.md`, which is right for a step that was cut off and wrong for one
+  whose only turn was always going to be the artifact. The same collision as
+  the reflection turn's, found the same way and fixed before it could be
+  measured.
+- **`brainstorm.said`**, the human's side of the conversation, kept verbatim.
+  The model's side is a `model.response` with a digest because §15 keeps
+  unvalidated model output out of the log; the human's words have no such
+  problem and are the only record of what was asked.
+- **`LoopState.final_text`**: the prose a step ends on when it demands no
+  artifact. `final_artifact=None` documented that "any prose answer does" and
+  gave the caller no way to read it.
+- `Window.add_human`, because a human's turn is `ItemKind.TURN` and not a
+  harness instruction - the same shape in the window, a different thing in the
+  log, which is why each has its own event.
+
+### Fixed
+
 - **A commit the commit-gate stage never saw was not recorded.** That stage
   was the only place comparing HEAD, so a step that committed green and then
   ran out of budget before producing an answer went to handoff with the work

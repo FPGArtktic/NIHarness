@@ -725,6 +725,52 @@ roadmap](../roadmap.md). A locally written suite is one whose fairness can be
 checked, which for the first three tasks matters more than scale
 ([ADR 0028](../adr/0028-a-whole-task-is-graded-by-tests-it-never-saw.md)).
 
+## Re-baselining after a day of loop changes
+
+§11 asks for an L1-L3 run with a prompt or model change. A day of changes to
+the **loop** is more fundamental than either, so all three graded layers were
+re-run at `e5c9839`. L1 is the suite §7 uses to qualify a model for a
+tool-using role, and it had not run since before the reflection-turn fix.
+
+| | before | after |
+|---|---|---|
+| L1 `passed_ratio` | 0.65 - 0.75 | 0.7 - 0.85 |
+| L1 `loop_incidents_per_task` | 0.3 - 0.6 | 0.55 - 0.95 |
+| L2 `reviewer_precision` | 1.0 - 1.0 | **0.3333 - 1.0** |
+| L2 `reviewer_recall` | 0.5 - 0.5 | 0.25 - 0.25 |
+| L2 `passed_ratio` | 0.625 - 0.625 | 0.375 - 0.625 |
+
+L1's interventions roughly doubled, which is the reflection-turn fix working
+as designed: a step that reaches level two now continues instead of ending, so
+it has the opportunity to trip a detector again. `passed_ratio` overlaps its
+predecessor with a higher floor, which is not a result on three passes.
+
+**L2 is worse, and it is recorded as worse.** Precision had been 1.0 for nine
+straight passes and one of these three is 0.3333 - the reviewer refusing
+correct changes, which is the failure this suite was built to catch. The
+candidate cause is the same fix: a reviewer that reaches level two used to end
+its step on the reflection prose, and now carries on and produces a verdict it
+would not have produced before. Three passes cannot separate that from
+variance, and the next run is what settles it. It is not being explained away
+in the meantime.
+
+**L3 never finished a pass**, and what stopped it is the finding. One task got
+further than any task ever has - implemented, committed green, reviewed,
+**ACKed**, `run.finished: completed, 1 task(s) done` - and the second task
+crashed the run:
+
+```
+400 from POST /apply-template:
+Cannot have 2 or more assistant messages at the end of the list.
+```
+
+The reflection-turn fix let the loop continue after the reflection, and
+nothing was added to the window between the two model calls, so it ended on
+two assistant messages in a row and llama.cpp's template refused the request.
+The rung now says what it is for - "now do the different thing you just
+described" - which both fixes the window's shape and makes the intervention a
+whole one rather than a question with no follow-up.
+
 ## Rules
 
 - A record from a working tree carries `harness_dirty: true` and is a working
