@@ -11,6 +11,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The wall-clock budget was never spent, so it never fired.** `observe_tool`
+  has always taken a `wall_seconds` argument and its one caller never passed
+  it; inference time was not charged at all. So `budget.wall_seconds_used`
+  stayed at zero for every step ever run, `StepFinished.wall_seconds`
+  reported zero, and `max_wall_seconds` - a stop condition §4 lists, and the
+  guard against a hang - could not be reached. `fit_to_host` exists to stop
+  the clock cutting a step off partway through its token budget, which made it
+  a mitigation for a mechanism that was not running.
+- The clock is now charged where the time goes: inference in `observe_model`,
+  tool execution in `observe_tool`. Both take the duration as an argument,
+  because the domain reads no clock - the step runner measures its own two
+  calls, being the only layer allowed to.
+- `model.response` and `tool.returned` carry `duration_seconds`, so the log
+  says where a step's time went and not only how much of it there was. A gate
+  run and a file read are both one call and are not the same cost. Both suites
+  fold the two into `inference_seconds` and `tool_seconds`, and the records
+  carry `overhead_seconds`: what is left of the wall after the backend and the
+  tools is the harness's own cost, which §11 asks to see separately rather
+  than hidden inside model latency.
+
 ### Added
 
 - **The first L2 numbers, and what they say.** Three passes of the eight cases

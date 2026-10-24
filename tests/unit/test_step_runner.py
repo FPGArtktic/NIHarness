@@ -448,3 +448,30 @@ async def test_a_degenerate_answer_never_enters_the_window() -> None:
     assert any("repeated itself" in message.content for message in later.messages), (
         "the model is told why, so it can answer differently"
     )
+
+
+async def test_the_clock_is_spent_and_the_log_says_where_it_went() -> None:
+    """The wall budget was dead: nothing passed a duration, so nothing was charged.
+
+    `observe_tool` has always taken `wall_seconds` and the one caller never
+    passed it, and model time was not charged at all - so
+    `budget.wall_seconds_used` stayed at zero, `StepFinished.wall_seconds`
+    reported zero, and `max_wall_seconds` could not fire. `fit_to_host` exists
+    to keep the clock from cutting a step off mid-token-budget, which is a
+    mitigation for a mechanism that was not running.
+    """
+    backend = FakeBackend(proposes("read_file", {"path": "src/a.py"}), final_answer())
+    tools, sink = FakeTools(), FakeSink()
+    state = await runner(backend, tools, sink).run(
+        config(), await seeded_window(), step_id=STEP
+    )
+
+    assert state.budget.wall_seconds_used > 0, "the clock is charged for the step"
+    timed = [
+        body for body in sink.bodies if isinstance(body, ev.ModelResponse | ev.ToolReturned)
+    ]
+    assert len(timed) == 3, "two responses and one result"
+    for body in timed:
+        assert body.duration_seconds > 0, f"{type(body).__name__} says how long it took"
+    finished = next(body for body in sink.bodies if isinstance(body, ev.StepFinished))
+    assert finished.wall_seconds > 0, "and the step reports it"

@@ -597,3 +597,24 @@ def test_a_caller_that_brings_its_own_schema_keeps_it() -> None:
         response_format=mine,
     )
     assert config.response_format == mine
+
+
+def test_a_step_can_run_out_of_clock() -> None:
+    """`max_wall_seconds` is a stop condition §4 lists and nothing could reach.
+
+    The clock is charged where the time goes: inference in `observe_model`,
+    tool execution in `observe_tool`. Both take the duration as an argument,
+    because the domain reads no clock - and until the caller passed one, the
+    guard against a hang was a number nothing compared anything to.
+    """
+    short = start(
+        config(budgets=Budgets(max_tool_calls=10, max_tokens=10_000, max_wall_seconds=30))
+    ).state
+    step = observe_model(short, proposes("read_file", {"path": "src/a.py"}), seconds=12.0)
+    assert step.state.budget.wall_seconds_used == 12.0
+    assert step.state.stop_reason is None, "twelve of thirty seconds is not exhausted"
+
+    spent = observe_tool(step.state, result(), wall_seconds=25.0)
+    assert spent.state.stop_reason is StopReason.BUDGET_WALL_TIME
+    returned = next(body for body in spent.events if isinstance(body, ev.ToolReturned))
+    assert returned.duration_seconds == 25.0, "and the log says where the time went"

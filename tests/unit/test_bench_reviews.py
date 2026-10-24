@@ -20,13 +20,14 @@ from niharness.domain.bench import (
 from niharness.domain.events import (
     InterventionLevel,
     LoopIntervention,
+    ModelResponse,
     Payload,
     StepFinished,
     StopReason,
     ToolCalled,
     ToolReturned,
 )
-from niharness.domain.identity import CallId, digest_json
+from niharness.domain.identity import CallId, Digest, digest_json
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -78,7 +79,7 @@ def verdict(
     )
 
 
-def ran_the_tests(*, green: bool = True) -> tuple[Payload, ...]:
+def ran_the_tests(*, green: bool = True, seconds: float = 0.0) -> tuple[Payload, ...]:
     call = CallId("c1")
     return (
         ToolCalled(
@@ -93,6 +94,7 @@ def ran_the_tests(*, green: bool = True) -> tuple[Payload, ...]:
             result_digest=digest_json({"out": green}),
             truncated=False,
             summary="4 passed" if green else "1 failed",
+            duration_seconds=seconds,
         ),
         StepFinished(
             stop_reason=StopReason.FINAL_ANSWER,
@@ -455,3 +457,32 @@ def test_a_case_records_which_tools_it_called() -> None:
     assert scored.tools["read_file"] == 2
     assert "run_tests" in scored.tools, "the call that earns an evidence claim"
     assert score_reviews((scored,)).tools()["read_file"] == 2
+
+
+def test_a_case_says_where_its_clock_went() -> None:
+    """§11 asks for harness overhead separately from inference, so both are folded.
+
+    Neither was available until the step runner started timing its own calls:
+    `ModelResponse` and `ToolReturned` carry a duration now, and what is left
+    of the wall after the two of them is the harness's own cost.
+    """
+    scored = score_case(
+        nak_case(),
+        verdict(Decision.NAK),
+        (
+            ModelResponse(
+                model="m",
+                prompt_tokens=10,
+                completion_tokens=5,
+                finish_reason="stop",
+                content_digest=Digest("0" * 16),
+                duration_seconds=4.0,
+            ),
+            *ran_the_tests(seconds=1.5),
+        ),
+    )
+    assert scored.inference_seconds == 4.0
+    assert scored.tool_seconds == 1.5
+    suite = score_reviews((scored,))
+    assert suite.inference_seconds == 4.0
+    assert suite.tool_seconds == 1.5

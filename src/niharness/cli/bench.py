@@ -668,6 +668,11 @@ def record(
         "violation_examples": score.examples(),
         "pathologies": score.pathologies(),
         "tools": score.tools(),
+        "inference_seconds": score.inference_seconds,
+        "tool_seconds": score.tool_seconds,
+        "overhead_seconds": round(
+            max(0.0, seconds - score.inference_seconds - score.tool_seconds), 1
+        ),
         "wall_seconds": round(seconds, 1),
         "per_task": [
             {
@@ -678,6 +683,8 @@ def record(
                 "interventions": task.interventions,
                 "pathologies": task.pathologies,
                 "tools": task.tools,
+                "inference_seconds": task.inference_seconds,
+                "tool_seconds": task.tool_seconds,
                 "violations": task.violations,
                 "stop_reason": task.stop_reason.value if task.stop_reason else None,
                 "notes": list(task.notes),
@@ -723,6 +730,11 @@ def record_reviews(
         },
         "pathologies": score.pathologies(),
         "tools": score.tools(),
+        "inference_seconds": score.inference_seconds,
+        "tool_seconds": score.tool_seconds,
+        "overhead_seconds": round(
+            max(0.0, seconds - score.inference_seconds - score.tool_seconds), 1
+        ),
         "wall_seconds": round(seconds, 1),
         "per_case": [
             {
@@ -737,6 +749,8 @@ def record_reviews(
                 "interventions": case.interventions,
                 "pathologies": case.pathologies,
                 "tools": case.tools,
+                "inference_seconds": case.inference_seconds,
+                "tool_seconds": case.tool_seconds,
                 "diff_lines": case.diff_lines,
                 "notes": list(case.notes),
             }

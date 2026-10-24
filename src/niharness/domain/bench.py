@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from niharness.domain.artifacts import Decision, Verdict
 from niharness.domain.events import (
     LoopIntervention,
+    ModelResponse,
     Payload,
     StepFinished,
     StopReason,
@@ -125,6 +126,8 @@ class TaskScore(BaseModel):
         "step did; this says what of, which is the difference between a step that "
         "ran the tests and one that read four files.",
     )
+    inference_seconds: float = Field(default=0.0, ge=0)
+    tool_seconds: float = Field(default=0.0, ge=0)
     violations: dict[str, int] = Field(
         default_factory=dict,
         description="How many calls each rule refused. `valid_calls_ratio` says how "
@@ -232,6 +235,16 @@ class SuiteScore(BaseModel):
         """Every tool the suite called, with how often, across every task."""
         return _tallied(task.tools for task in self.tasks)
 
+    @property
+    def inference_seconds(self) -> float:
+        """How long the backend held the suite, summed over every task."""
+        return round(sum(task.inference_seconds for task in self.tasks), 1)
+
+    @property
+    def tool_seconds(self) -> float:
+        """How long the tools held it. The rest of the clock is the harness."""
+        return round(sum(task.tool_seconds for task in self.tasks), 1)
+
     def violations(self) -> dict[str, int]:
         """Every rule that refused a call, with how often, across the suite.
 
@@ -338,6 +351,8 @@ def score_task(
         interventions=len(interventions),
         pathologies=_counted(event.pathology for event in interventions),
         tools=_counted(event.name for event in called),
+        inference_seconds=_seconds(events, ModelResponse),
+        tool_seconds=_seconds(events, ToolReturned),
         violations=_counted(event.violation for event in refused),
         examples=_examples(refused),
         sequence_ok=sequence_ok,
@@ -498,6 +513,21 @@ def _examples(refused: Sequence[ToolRejected]) -> dict[str, str]:
     return found
 
 
+def _seconds(
+    events: Sequence[Payload],
+    kind: type[ModelResponse] | type[ToolReturned],
+) -> float:
+    """Sum the durations of one kind of event.
+
+    The clock is measured by whoever called the thing and recorded on the
+    event, so adding it up is a fold like every other metric here. §11 asks
+    for harness overhead to be reported separately from inference: what is
+    left of the wall after these two is the harness, and hiding it inside
+    model latency would be convenient and dishonest.
+    """
+    return round(sum(body.duration_seconds for body in events if isinstance(body, kind)), 3)
+
+
 def _tallied(tallies: Iterable[Mapping[str, int]]) -> dict[str, int]:
     """Sum several tallies into one, most frequent first."""
     total: dict[str, int] = {}
@@ -620,6 +650,8 @@ class CaseScore(BaseModel):
         "and saw something, or never called it - and a count of calls cannot tell "
         "those apart.",
     )
+    inference_seconds: float = Field(default=0.0, ge=0)
+    tool_seconds: float = Field(default=0.0, ge=0)
     diff_lines: int = Field(default=0, ge=0)
     notes: tuple[str, ...] = ()
 
@@ -767,6 +799,16 @@ class L2Score(BaseModel):
         """Every tool the suite called, with how often, across every case."""
         return _tallied(case.tools for case in self.cases)
 
+    @property
+    def inference_seconds(self) -> float:
+        """How long the backend held the suite, summed over every case."""
+        return round(sum(case.inference_seconds for case in self.cases), 1)
+
+    @property
+    def tool_seconds(self) -> float:
+        """How long the tools held it. The rest of the clock is the harness."""
+        return round(sum(case.tool_seconds for case in self.cases), 1)
+
     def outcomes(self) -> tuple[tuple[str, bool], ...]:
         """Each case's id and whether it passed, for the across-passes report."""
         return tuple((case.case_id, case.passed) for case in self.cases)
@@ -858,6 +900,8 @@ def score_case(
         highest_intervention=max((int(body.level) for body in interventions), default=0),
         pathologies=_counted(body.pathology for body in interventions),
         tools=_counted(body.name for body in called),
+        inference_seconds=_seconds(events, ModelResponse),
+        tool_seconds=_seconds(events, ToolReturned),
         diff_lines=diff_lines,
         notes=tuple(notes),
     )

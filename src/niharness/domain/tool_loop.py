@@ -399,7 +399,7 @@ def _intervene(state: LoopState) -> tuple[LoopState, tuple[EventBody, ...]]:
     return updated, tuple(emitted)
 
 
-def observe_model(state: LoopState, response: ChatResponse) -> Step:
+def observe_model(state: LoopState, response: ChatResponse, *, seconds: float = 0.0) -> Step:
     """Fold a model response into the loop.
 
     One tool call is taken per turn, deliberately: a step that fans out loses
@@ -409,6 +409,9 @@ def observe_model(state: LoopState, response: ChatResponse) -> Step:
     Args:
         state: the current state.
         response: what the backend returned.
+        seconds: how long the call took. Passed in rather than measured here,
+            because the domain does not read a clock - and charged against the
+            wall budget, because inference is where a step's time goes.
 
     Returns:
         The new state and the events for this turn.
@@ -423,6 +426,7 @@ def observe_model(state: LoopState, response: ChatResponse) -> Step:
             completion_tokens=response.usage.completion_tokens,
             finish_reason=response.finish_reason,
             content_digest=digest_text(response.content),
+            duration_seconds=seconds,
         ),
     ]
     if response.reasoning_content:
@@ -434,7 +438,7 @@ def observe_model(state: LoopState, response: ChatResponse) -> Step:
     # reading rather than on work. Measured on a live run: a 27B spent its
     # whole token budget on four file reads. The window is bounded by the
     # context window and compaction, and the compute is bounded by the clock.
-    working = _spent(state, tokens=response.usage.completion_tokens)
+    working = _spent(state, tokens=response.usage.completion_tokens, wall_seconds=seconds)
     working = working.model_copy(
         update={"pending_instruction": "", "pending_tool_choice": ToolChoice.AUTO},
     )
@@ -760,6 +764,7 @@ def observe_tool(
         result_digest=digest,
         truncated=result.truncated,
         summary=result.summary,
+        duration_seconds=wall_seconds,
     )
     arguments_digest = _arguments_digest_of(pending)
     working = _spent(state, tool_calls=1, wall_seconds=wall_seconds)

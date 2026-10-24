@@ -17,6 +17,7 @@ no branches a test would want to pin beyond "it did what it was told".
 
 from __future__ import annotations
 
+import time
 from collections.abc import Awaitable, Callable
 
 import structlog
@@ -227,7 +228,9 @@ class StepRunner:
             ),
             step_id=step_id,
         )
+        started = time.perf_counter()
         response = await self._backend.chat(request)
+        elapsed = time.perf_counter() - started
         # A degenerate answer never enters the window. The loop refuses it, but
         # refusing is too late on its own: the turn was recorded first, and the
         # *next* `prepare()` asked the backend to render a tool call whose JSON
@@ -238,7 +241,7 @@ class StepRunner:
             # Reasoning is logged as an event by the loop and deliberately left
             # out of the window: no field on a Message could carry it.
             await window.add_assistant(response.content, response.tool_calls)
-        step = observe_model(state, response)
+        step = observe_model(state, response, seconds=elapsed)
         await self._append(step, step_id)
         return step.state
 
@@ -250,7 +253,9 @@ class StepRunner:
         step_id: StepId | None,
     ) -> LoopState:
         """Run a validated call in the sandbox and fold the result back."""
+        started = time.perf_counter()
         result = await self._tools.call(action.call)
+        elapsed = time.perf_counter() - started
         await window.add_tool_result(result)
         signature = ""
         if not result.ok and result.tool in GATE_TOOLS:
@@ -258,7 +263,13 @@ class StepRunner:
         tree = None
         if self._vcs is not None and self._worktree is not None:
             tree = await self._vcs.tree_digest(self._worktree)
-        step = observe_tool(state, result, tree_digest=tree, gate_signature=signature)
+        step = observe_tool(
+            state,
+            result,
+            tree_digest=tree,
+            gate_signature=signature,
+            wall_seconds=elapsed,
+        )
         await self._append(step, step_id)
         return step.state
 

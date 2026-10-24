@@ -141,6 +141,7 @@ A response arrived. Token counts come from the backend, never from characters.
 | `completion_tokens` | `int` | required |  |
 | `finish_reason` | `str` | required |  |
 | `content_digest` | `identity.Digest` | required |  |
+| `duration_seconds` | `float` | `0.0` | How long the call took, measured by the caller. Inference is most of a step's clock, and §11 asks for harness overhead to be reported separately from it - which cannot be done if nothing times the call. |
 
 ### `model.reasoning`
 
@@ -175,6 +176,7 @@ A tool call produced a structured, truncated result.
 | `result_digest` | `identity.Digest` | required |  |
 | `truncated` | `bool` | required |  |
 | `summary` | `str` | required |  |
+| `duration_seconds` | `float` | `0.0` | How long the call took, measured by the caller. A gate run and a file read are both one call and are not the same cost. |
 
 ### `tool.rejected`
 

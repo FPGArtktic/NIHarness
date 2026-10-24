@@ -379,6 +379,13 @@
           "title": "Content Digest",
           "type": "string"
         },
+        "duration_seconds": {
+          "default": 0.0,
+          "description": "How long the call took, measured by the caller. Inference is most of a step's clock, and \u00a711 asks for harness overhead to be reported separately from it - which cannot be done if nothing times the call.",
+          "minimum": 0,
+          "title": "Duration Seconds",
+          "type": "number"
+        },
         "finish_reason": {
           "title": "Finish Reason",
           "type": "string"
@@ -999,6 +1006,13 @@
         "call_id": {
           "title": "Call Id",
           "type": "string"
+        },
+        "duration_seconds": {
+          "default": 0.0,
+          "description": "How long the call took, measured by the caller. A gate run and a file read are both one call and are not the same cost.",
+          "minimum": 0,
+          "title": "Duration Seconds",
+          "type": "number"
         },
         "ok": {
           "title": "Ok",

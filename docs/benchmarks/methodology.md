@@ -491,7 +491,12 @@ one. The review half is what exists; see [the roadmap](../roadmap.md).
   for L1 - with their licenses next to them and listed in `THIRD_PARTY.md`.
 - Harness overhead is reported separately from inference time. If the harness is
   slow, that is the harness's problem, and hiding it inside model latency would
-  be convenient and dishonest.
+  be convenient and dishonest. Each record carries `inference_seconds` and
+  `tool_seconds`, folded from the durations on `model.response` and
+  `tool.returned`, and `overhead_seconds` for what is left of the wall after
+  both. None of the three existed until the step runner began timing its own
+  two calls - and neither did the wall-clock budget, which was charged nothing
+  and could therefore never fire.
 - `nih bench report` renders the records as Markdown - a column per harness
   commit, a cell per metric showing the range across that column's passes,
   and a table saying how many of each column's passes every case or task

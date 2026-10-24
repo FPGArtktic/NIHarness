@@ -178,6 +178,13 @@ class ModelResponse(Payload):
     completion_tokens: int = Field(ge=0)
     finish_reason: str
     content_digest: Digest
+    duration_seconds: float = Field(
+        default=0.0,
+        ge=0,
+        description="How long the call took, measured by the caller. Inference is "
+        "most of a step's clock, and §11 asks for harness overhead to be reported "
+        "separately from it - which cannot be done if nothing times the call.",
+    )
 
 
 class ModelReasoning(Payload):
@@ -224,6 +231,12 @@ class ToolReturned(Payload):
     result_digest: Digest
     truncated: bool
     summary: str
+    duration_seconds: float = Field(
+        default=0.0,
+        ge=0,
+        description="How long the call took, measured by the caller. A gate run and "
+        "a file read are both one call and are not the same cost.",
+    )
 
 
 class ToolRejected(Payload):
