@@ -11,6 +11,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **The gate decides whether a step is done, not the model's checklist.** An
+  implement or fix step counted as finished only if its `FinalAnswer` had all
+  ten Definition of Done items ticked, and an unfinished one routed straight to
+  handoff *before the commit gate ran*. So a self-assessment decided whether
+  work ever reached the gate, which is the one thing §1 says it cannot.
+  `finished` now means the step produced an answer; the commit gate sees what
+  landed, the reviewer reads the diff, the hidden tests grade the result
+  (ADR 0030, `docs/adr/0030-the-gate-decides-whether-a-step-is-done.md`).
+- Measured: `handback_ratio` **1.0 in every L3 pass ever recorded**, including
+  the pass that committed two whole tasks whose work the hidden tests accepted
+  - committed, reviewed, refused, then handed back by a fix step reporting an
+  incomplete checklist. And across fourteen passes all ten items appear in the
+  unticked list about equally often, "no dependency was added" as often as
+  "`run_tests` succeeded", on tasks where no dependency could have been added.
+  That is a checklist returned false wholesale, not one weighed item by item.
+- **The commit check no longer exempts an incomplete checklist**, for the same
+  reason: "I am not done" was being taken as evidence and is not evidence
+  either. A step that owes a commit and has none is asked once whatever its
+  checklist says, with tools on and budget left to act.
+- The Definition of Done is now what it reads like: a prompt that makes a model
+  check itself, and a record of what it thought. Its items are in the L3 record
+  as `unfinished`.
+
 ### Added
 
 - **L3 records which tools came back failed, and what they said.** A refused

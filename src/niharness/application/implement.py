@@ -64,12 +64,22 @@ class StepResult(BaseModel):
 
     @property
     def finished(self) -> bool:
-        """True when the model stopped because it was done, with a filled checklist."""
-        return (
-            self.stop_reason is StopReason.FINAL_ANSWER
-            and self.answer is not None
-            and self.answer.complete
-        )
+        """True when the model stopped because it had answered.
+
+        Not "with a filled checklist". Requiring `answer.complete` made a
+        model's self-assessment the thing that decides whether its work ever
+        reaches the gate, and §1 says the gate is the only way in. Measured on
+        L3 across fourteen passes: every one of the ten Definition of Done
+        items appears in the unticked list about equally often, which is a
+        model returning the whole checklist false rather than one weighing
+        each item - and `handback_ratio` was 1.0 in every pass ever recorded,
+        including one whose committed work the hidden tests accepted
+        (ADR 0030).
+
+        The checklist is still asked for, still logged, and still what a human
+        reads on a handoff. It is no longer the gate on reaching the gate.
+        """
+        return self.stop_reason is StopReason.FINAL_ANSWER and self.answer is not None
 
 
 class TaskResult(BaseModel):

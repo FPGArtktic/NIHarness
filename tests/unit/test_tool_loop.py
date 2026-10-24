@@ -691,11 +691,22 @@ def test_a_red_gate_is_not_a_commit() -> None:
     assert "came back red" in answered.state.pending_instruction
 
 
-def test_an_honest_incomplete_checklist_is_not_touched() -> None:
-    """A model saying it is not done is being honest; the handoff is designed."""
+def test_an_incomplete_checklist_is_asked_about_the_commit_too() -> None:
+    """Saying "I am not done" was taken as evidence, and it is not evidence.
+
+    The exemption was written on the reading that a model leaving items
+    unticked is weighing them. Fourteen L3 passes say otherwise: all ten
+    Definition of Done items appear in the unticked list about equally often,
+    which is a checklist returned false wholesale (ADR 0030).
+    """
     answered = observe_model(start(config(requires_commit=True)).state, answers(done=False))
-    assert answered.state.stop_reason is StopReason.FINAL_ANSWER
-    assert answered.state.commit_asked is False
+    assert answered.state.stop_reason is None, "asked once, while there is budget"
+    assert answered.state.commit_asked is True
+    assert "git_commit" in answered.state.pending_instruction
+
+    # And still only once, whatever the second answer says.
+    again = observe_model(answered.state, answers(done=False))
+    assert again.state.stop_reason is StopReason.FINAL_ANSWER
 
 
 def test_a_step_that_owes_no_commit_is_never_asked_for_one() -> None:

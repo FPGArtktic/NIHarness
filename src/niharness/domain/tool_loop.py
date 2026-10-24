@@ -736,7 +736,7 @@ def _handle_final_answer(
         if asked is not None:
             return asked
     if isinstance(artifact, FinalAnswer):
-        asked = _ask_for_the_commit(state, artifact)
+        asked = _ask_for_the_commit(state)
         if asked is not None:
             return asked
     answered = state.model_copy(update={"final": artifact})
@@ -746,9 +746,12 @@ def _handle_final_answer(
 
 def _ask_for_the_commit(
     state: LoopState,
-    answer: FinalAnswer,
 ) -> tuple[LoopState, tuple[EventBody, ...]] | None:
-    """Send a completed answer back once when nothing was committed.
+    """Send an answer back once when the step owed a commit and has none.
+
+    It reads the step's calls and not the answer, which is the whole point:
+    whether a commit landed is a fact in the log, and what the answer says
+    about it has been measured and does not carry (ADR 0030).
 
     The same standard the reviewer is held to, applied to the implementer. A
     verdict claiming the tests passed must point at a green `run_tests` call;
@@ -761,8 +764,13 @@ def _ask_for_the_commit(
     and the fix loop burned its revisions on work the hidden tests already
     accepted. Nobody checked the one claim the harness could check.
 
-    An **incomplete** checklist is not touched. A model saying it is not done
-    is being honest, and the handoff that follows is the designed ending.
+    Asked whatever the checklist says. The exemption for an incomplete one was
+    written on the reading that a model leaving items unticked is weighing
+    them; fourteen L3 passes say otherwise - all ten items appear in the
+    unticked list about equally often, which is a checklist returned false
+    wholesale. So "I am not done" is not evidence of anything either, and the
+    question is still worth asking once while there is budget to commit
+    (ADR 0030).
 
     Asked once, and never when the step owes no commit or has no budget left
     to make one: telling a model to commit on a turn that cannot call a tool
@@ -772,8 +780,6 @@ def _ask_for_the_commit(
         The state and events for the retry, or None when the answer stands.
     """
     if state.commit_asked or not state.config.requires_commit:
-        return None
-    if not answer.complete:
         return None
     missing = uncommitted_completion(state.calls)
     if not missing:
@@ -785,10 +791,10 @@ def _ask_for_the_commit(
             "commit_asked": True,
             "pending_tool_choice": ToolChoice.AUTO,
             "pending_instruction": (
-                f"This answer reports the task done, and {missing}. The gate has not "
-                "run, so by this project's rules the work has not happened. Commit it "
-                "with `git_commit`, which is the gate - or answer again with the "
-                "checklist showing what is not done, and why, in NOTES.md."
+                f"This step is ending and {missing}. The gate has not run, so by this "
+                "project's rules the work has not happened. Commit it with "
+                "`git_commit`, which is the gate - or write in NOTES.md what stopped "
+                "you, and answer again."
             ),
         },
     )
