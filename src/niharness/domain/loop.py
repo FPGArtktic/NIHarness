@@ -86,6 +86,36 @@ class CallRecord(BaseModel):
     gate_signature: str = ""
 
 
+def uncommitted_completion(calls: Sequence[CallRecord]) -> str:
+    """Return why a step reporting itself done has not committed, or "".
+
+    The reviewer's claim that the tests passed is checked against a green
+    `run_tests` call in the same step. An implementer reporting the task done
+    makes a claim of exactly the same kind - the Definition of Done says the
+    change is one logical change in one commit - and it is checkable against
+    the same log: either a `git_commit` call in this step came back green, or
+    nothing was committed and the gate has not run.
+
+    Measured on the first L3 passes: two of three tasks per pass had work the
+    hidden tests accept, sitting uncommitted, while the step ended with a
+    complete checklist. The commit gate then found nothing had landed and sent
+    the task round the fix loop until it ran out, so correct work was thrown
+    away over a claim nobody checked.
+
+    Args:
+        calls: this step's executed calls, in order.
+
+    Returns:
+        One line naming what is missing, or empty when a commit landed.
+    """
+    attempts = [call for call in calls if call.tool == "git_commit"]
+    if not attempts:
+        return "git_commit was never called in this step, so nothing was committed"
+    if all(call.failed for call in attempts):
+        return "every git_commit call in this step came back red, so nothing was committed"
+    return ""
+
+
 def unbacked_claims(
     calls: Sequence[CallRecord],
     *,

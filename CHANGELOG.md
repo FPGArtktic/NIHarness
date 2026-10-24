@@ -13,6 +13,26 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **The implementer is held to the standard the reviewer is held to.** An
+  answer reporting the task done claims a commit - the Definition of Done says
+  the change is one logical change in one commit, and the gate is `git_commit`
+  - so an answer claiming completion with no green `git_commit` call in its
+  own step is sent back once, with what is missing named and tools still on
+  the table. An **incomplete** checklist is never touched: a model saying it
+  is not done is being honest, and the handoff that follows is the designed
+  ending. Only a step that owes a commit is asked, and
+  `LoopConfig.requires_commit` is declared by the caller rather than inferred
+  from the allowlist, so the pipeline's implement and fix steps are asked and
+  a benchmark task that edits a file to prove it can is not.
+- Found by measuring, and the cost of not checking it was visible: on the
+  first L3 passes two of three tasks per pass had work the hidden tests
+  **accept**, sitting uncommitted, while the step reported a complete
+  checklist. The commit gate then found nothing had landed and the fix loop
+  spent its revisions on work that was already right. Measured by L3, where
+  `committed_ratio` is the number to watch.
+
+### Added
+
 - **`nih bench --layer L3`: whole tasks, end to end.** The layer the README
   calls the first blocker. A task runs through `ImplementationRun` - the same
   object `nih implement` drives - in a fresh git repository made from the

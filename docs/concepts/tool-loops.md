@@ -209,6 +209,37 @@ tool calls, neither of them `run_tests`, while asserting that the tests
 passed - see [the methodology](../benchmarks/methodology.md) and
 [ADR 0027](../adr/0027-a-review-case-is-a-tree-and-its-verdict-must-be-earned.md).
 
+### The implementer makes the same claim
+
+An answer that reports the task **done** claims a commit: the Definition of
+Done says the change is one logical change in one commit, and the gate is
+`git_commit`. That is checkable against the same log - either a `git_commit`
+call in this step came back green, or nothing was committed and the gate has
+not run.
+
+> This answer reports the task done, and git_commit was never called in this
+> step, so nothing was committed. The gate has not run, so by this project's
+> rules the work has not happened. Commit it with `git_commit`, which is the
+> gate - or answer again with the checklist showing what is not done, and why,
+> in NOTES.md.
+
+The same three properties hold, and two more matter here:
+
+- **An incomplete checklist is not touched.** A model saying it is not done is
+  being honest, and the handoff that follows is the designed ending. Only a
+  step claiming completion is asked about the commit.
+- **Only a step that owes a commit.** `LoopConfig.requires_commit` is declared
+  by the caller, and the pipeline sets it for implement and fix alone. A
+  benchmark task that edits a file to prove it can call `replace_in_file` has
+  finished when the file is edited; demanding a commit of it would measure a
+  pipeline nobody runs.
+
+This one was also found by measuring, and the cost of not checking it was
+visible: on the first L3 passes two of three tasks per pass had work the
+hidden tests **accept**, sitting uncommitted, while the step reported a
+complete checklist. The commit gate then found nothing had landed and the fix
+loop spent its revisions on work that was already right.
+
 ## Intervention ladder
 
 A degenerate response is the one the loop **refuses** outright rather than

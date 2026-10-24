@@ -618,3 +618,88 @@ def test_a_step_can_run_out_of_clock() -> None:
     assert spent.state.stop_reason is StopReason.BUDGET_WALL_TIME
     returned = next(body for body in spent.events if isinstance(body, ev.ToolReturned))
     assert returned.duration_seconds == 25.0, "and the log says where the time went"
+
+
+def answers_complete() -> ChatResponse:
+    """A final answer whose checklist is fully ticked."""
+    answer = FinalAnswer(
+        summary="debits added alongside credits",
+        dod=(
+            DodItem(statement="implemented", done=True, evidence="replace_in_file"),
+            DodItem(statement="committed in one commit", done=True, evidence="git_commit"),
+        ),
+    )
+    return ChatResponse(
+        content=answer.model_dump_json(),
+        finish_reason="stop",
+        usage=Usage(prompt_tokens=200, completion_tokens=50),
+    )
+
+
+def committing(*, green: bool = True) -> LoopState:
+    """A state in which a `git_commit` call has been executed."""
+    state = observe_model(
+        start(config(requires_commit=True)).state,
+        proposes(
+            "git_commit",
+            {
+                "message": "feat: add debits alongside credits\n\n"
+                "A caller reconciling a statement needs the money out as well as "
+                "the money in.",
+            },
+        ),
+    ).state
+    return observe_tool(state, result(ok=green)).state
+
+
+def test_a_step_that_says_done_without_committing_is_asked_once() -> None:
+    """The implementer is held to the standard the reviewer is held to.
+
+    Measured on L3: the step ended with a complete checklist, `git_commit` was
+    never called, the commit gate found nothing landed, and the fix loop burned
+    its revisions on work the hidden tests already accepted.
+    """
+    edited = observe_tool(
+        observe_model(
+            start(config(requires_commit=True)).state,
+            proposes("replace_in_file", {"path": "src/a.py", "find": "x", "replace": "y"}),
+        ).state,
+        result(),
+    ).state
+    asked = observe_model(edited, answers_complete())
+    assert asked.state.stop_reason is None, "the step is not over"
+    assert asked.state.commit_asked is True
+    assert "git_commit" in asked.state.pending_instruction
+    assert asked.state.pending_tool_choice is ToolChoice.AUTO, "it must be able to commit"
+    fired = [body for body in asked.events if isinstance(body, ev.LoopIntervention)]
+    assert [body.pathology for body in fired] == ["uncommitted_completion"]
+
+    # Asked once. A second unbacked answer is accepted and the log keeps it.
+    again = observe_model(asked.state, answers_complete())
+    assert again.state.stop_reason is StopReason.FINAL_ANSWER
+
+
+def test_a_committed_step_is_left_alone() -> None:
+    answered = observe_model(committing(), answers_complete())
+    assert answered.state.stop_reason is StopReason.FINAL_ANSWER
+    assert answered.state.commit_asked is False
+
+
+def test_a_red_gate_is_not_a_commit() -> None:
+    answered = observe_model(committing(green=False), answers_complete())
+    assert answered.state.stop_reason is None, "nothing landed, so the claim is unearned"
+    assert "came back red" in answered.state.pending_instruction
+
+
+def test_an_honest_incomplete_checklist_is_not_touched() -> None:
+    """A model saying it is not done is being honest; the handoff is designed."""
+    answered = observe_model(start(config(requires_commit=True)).state, answers(done=False))
+    assert answered.state.stop_reason is StopReason.FINAL_ANSWER
+    assert answered.state.commit_asked is False
+
+
+def test_a_step_that_owes_no_commit_is_never_asked_for_one() -> None:
+    """An L1 task that edits a file to prove it can has finished when it has."""
+    answered = observe_model(state(), answers_complete())
+    assert answered.state.stop_reason is StopReason.FINAL_ANSWER
+    assert answered.state.commit_asked is False

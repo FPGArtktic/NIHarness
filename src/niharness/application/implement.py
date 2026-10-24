@@ -463,6 +463,10 @@ class ImplementationRun:
             task_id=task.id,
             temperature=spec.temperature,
             final_artifact=kind,
+            # Only the two stages that write code owe a commit. Declared here
+            # rather than inferred from the allowlist, so a benchmark step that
+            # edits a file to prove it can is not asked for one it never owed.
+            requires_commit=stage in {Stage.IMPLEMENT, Stage.FIX},
             response_format=ResponseFormat(
                 name=kind.value,
                 json_schema=ARTIFACT_SCHEMAS[kind](),

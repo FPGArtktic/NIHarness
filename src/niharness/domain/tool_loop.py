@@ -41,6 +41,7 @@ from niharness.domain.loop import (
     next_level,
     synthetic_result,
     unbacked_claims,
+    uncommitted_completion,
 )
 from niharness.domain.messages import ChatResponse, ResponseFormat, ToolChoice
 from niharness.domain.roles import Role
@@ -81,6 +82,16 @@ class ArtifactKind(StrEnum):
     SPEC = "Spec"
 
 
+REQUIRES_COMMIT_DEFAULT = False
+"""Whether a step owes a commit. Declared by the caller, never inferred.
+
+The pipeline's implement and fix steps owe one: §4 and the Definition of Done
+both say the change lands in a commit through the gate. An arbitrary
+tool-using step does not - a benchmark task that edits a file to prove it can
+call `replace_in_file` has finished when the file is edited, and demanding a
+commit of it would measure a pipeline nobody runs.
+"""
+
 DEFAULT_ARTIFACT = ArtifactKind.FINAL_ANSWER
 """What ends a step unless the caller says otherwise."""
 
@@ -112,6 +123,12 @@ class LoopConfig(BaseModel):
     final_artifact: ArtifactKind | None = Field(
         default=DEFAULT_ARTIFACT,
         description="The artifact that ends this step; None means any prose answer does.",
+    )
+    requires_commit: bool = Field(
+        default=REQUIRES_COMMIT_DEFAULT,
+        description="Whether reporting this step done also claims a commit. True for "
+        "the pipeline's implement and fix steps; false for a step that owes no commit, "
+        "which is why it is declared rather than inferred from the allowlist.",
     )
     task_id: str | None = None
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
@@ -170,6 +187,12 @@ class LoopState(BaseModel):
     synthetic_text: str = ""
     rollback_reason: str = ""
     invalid_responses: int = Field(default=0, ge=0)
+    commit_asked: bool = Field(
+        default=False,
+        description="Whether a completed step has already been told it has not "
+        "committed. Asked once: a step that cannot end is worse than a claim the "
+        "log records.",
+    )
     evidence_asked: bool = Field(
         default=False,
         description="Whether a verdict has already been sent back for unearned "
@@ -679,9 +702,70 @@ def _handle_final_answer(
         asked = _ask_for_the_evidence(state, artifact)
         if asked is not None:
             return asked
+    if isinstance(artifact, FinalAnswer):
+        asked = _ask_for_the_commit(state, artifact)
+        if asked is not None:
+            return asked
     answered = state.model_copy(update={"final": artifact})
     stopped = _finish(answered, StopReason.FINAL_ANSWER)
     return stopped.state, stopped.events
+
+
+def _ask_for_the_commit(
+    state: LoopState,
+    answer: FinalAnswer,
+) -> tuple[LoopState, tuple[EventBody, ...]] | None:
+    """Send a completed answer back once when nothing was committed.
+
+    The same standard the reviewer is held to, applied to the implementer. A
+    verdict claiming the tests passed must point at a green `run_tests` call;
+    an answer reporting the task done claims a commit, because the Definition
+    of Done says the change is one logical change in one commit, and that is
+    checkable against this step's own log.
+
+    Measured on the first L3 passes: the step ended with a complete checklist,
+    `git_commit` was never called, the commit gate found nothing had landed,
+    and the fix loop burned its revisions on work the hidden tests already
+    accepted. Nobody checked the one claim the harness could check.
+
+    An **incomplete** checklist is not touched. A model saying it is not done
+    is being honest, and the handoff that follows is the designed ending.
+
+    Asked once, and never when the step owes no commit or has no budget left
+    to make one: telling a model to commit on a turn that cannot call a tool
+    is the shape of refusal this project keeps removing.
+
+    Returns:
+        The state and events for the retry, or None when the answer stands.
+    """
+    if state.commit_asked or not state.config.requires_commit:
+        return None
+    if not answer.complete:
+        return None
+    missing = uncommitted_completion(state.calls)
+    if not missing:
+        return None
+    if state.budget.must_finalize:
+        return None
+    asked = state.model_copy(
+        update={
+            "commit_asked": True,
+            "pending_tool_choice": ToolChoice.AUTO,
+            "pending_instruction": (
+                f"This answer reports the task done, and {missing}. The gate has not "
+                "run, so by this project's rules the work has not happened. Commit it "
+                "with `git_commit`, which is the gate - or answer again with the "
+                "checklist showing what is not done, and why, in NOTES.md."
+            ),
+        },
+    )
+    return asked, (
+        ev.LoopIntervention(
+            level=InterventionLevel.SYNTHETIC_RESULT,
+            pathology="uncommitted_completion",
+            detail=missing,
+        ),
+    )
 
 
 def _ask_for_the_evidence(
