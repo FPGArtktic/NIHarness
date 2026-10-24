@@ -13,10 +13,13 @@ from pathlib import Path
 import pytest
 
 from niharness.domain.bench import (
+    L0Probe,
     L1Task,
     is_subsequence,
     score_suite,
     score_task,
+    score_throughput,
+    throughput,
 )
 from niharness.domain.events import (
     InterventionLevel,
@@ -529,3 +532,95 @@ def test_a_tool_cache_never_reaches_a_task_fixture(tmp_path: Path) -> None:
         assert not list(copied.rglob("__pycache__"))
     finally:
         shutil.rmtree(fixture / ".ruff_cache", ignore_errors=True)
+
+
+# ----------------------------------------------------------------- L0: throughput
+
+
+def probe(context: int = 8192, generate: int = 64) -> L0Probe:
+    return L0Probe(context_tokens=context, generate_tokens=generate)
+
+
+def test_two_timings_separate_the_prompt_from_the_generation() -> None:
+    # 64 tokens generated; the long request took 0.63s longer than the short
+    # one, so generation runs at 63/0.63 = 100 tok/s. The short request took
+    # 0.51s, of which one token of generation is 0.01s, leaving 0.5s for 8192
+    # prompt tokens.
+    sample = throughput(
+        probe(),
+        prompt_tokens=8192,
+        generated=64,
+        first_seconds=0.51,
+        full_seconds=1.14,
+    )
+    assert sample.generation_tps == 100.0
+    assert sample.prompt_tps == pytest.approx(16384.0, rel=0.01)
+    assert sample.notes == ()
+    assert sample.measured
+
+
+def test_a_long_request_no_slower_than_the_short_one_measures_nothing() -> None:
+    sample = throughput(
+        probe(),
+        prompt_tokens=8192,
+        generated=64,
+        first_seconds=0.9,
+        full_seconds=0.9,
+    )
+    assert sample.generation_tps == 0.0
+    assert sample.prompt_tps == 0.0
+    assert not sample.measured
+    assert any("nothing to divide" in note for note in sample.notes)
+
+
+def test_a_prompt_cheaper_than_one_token_of_generation_says_so() -> None:
+    # Generation at 100 tok/s means one token costs 0.01s; a short request that
+    # took 0.005s in total cannot have spent anything on the prompt.
+    sample = throughput(
+        probe(context=64),
+        prompt_tokens=64,
+        generated=64,
+        first_seconds=0.005,
+        full_seconds=0.635,
+    )
+    assert sample.generation_tps == 100.0
+    assert sample.prompt_tps == 0.0
+    assert any("noise floor" in note for note in sample.notes)
+
+
+def test_the_metrics_are_named_by_the_context_they_were_measured_at() -> None:
+    score = score_throughput(
+        (
+            throughput(
+                probe(context=2048),
+                prompt_tokens=2048,
+                generated=64,
+                first_seconds=0.2,
+                full_seconds=0.83,
+            ),
+            throughput(
+                probe(context=32768),
+                prompt_tokens=32768,
+                generated=64,
+                first_seconds=1.2,
+                full_seconds=1.83,
+            ),
+        ),
+    )
+    assert set(score.metrics()) == {
+        "prompt_tps_2k",
+        "generation_tps_2k",
+        "prompt_tps_32k",
+        "generation_tps_32k",
+    }
+    assert score.metrics()["generation_tps_2k"] == 100.0
+    assert score.outcomes() == (), "nothing passes or fails at L0"
+
+
+def test_the_declared_probes_load() -> None:
+    from niharness.cli.bench import load_l0
+
+    root = Path(__file__).resolve().parents[2]
+    probes = load_l0(root)
+    assert [one.context_tokens for one in probes] == [2048, 8192, 32768, 65536]
+    assert [one.id for one in probes] == ["2k-ctx", "8k-ctx", "32k-ctx", "64k-ctx"]

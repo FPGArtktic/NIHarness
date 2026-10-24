@@ -16,6 +16,62 @@ profile and date, and committed under `benchmarks/results/`.
 | L2 steps | gate and review on a golden set | first-attempt gate pass rate, revisions per task, reviewer precision and recall against human verdicts, diff size, highest intervention level reached |
 | L3 end-to-end | 10 tasks per language, hidden tests | pass@1, wall time, tokens, tool calls, harness overhead outside inference |
 
+## Running L0
+
+```bash
+uv run nih bench --layer L0
+uv run nih bench --layer L0 --repeat 3
+```
+
+How fast this host is, through the port the harness actually uses. Every step
+budget is fitted to these numbers, which is why they belong in the same record
+format as the layers that grade something - and why they should not be taken
+by hand.
+
+### Two requests, and the arithmetic between them
+
+Each probe sends the same prompt twice: once generating a single token, once
+generating `generate_tokens`. The difference between them is generation alone:
+
+- `generation_tps = (generated - 1) / (full_seconds - first_seconds)`
+- `prompt_tps = prompt_tokens / (first_seconds - 1 / generation_tps)`
+
+No backend timings are read. The port is OpenAI-compatible HTTP and nothing
+more, so a measurement that depended on `llama.cpp` reporting its own numbers
+would be a backend-specific code path with extra steps. The prompt is counted
+by the backend's tokenizer, never estimated from characters - a throughput
+divided by a wrong token count is a wrong throughput.
+
+### The prefix cache will ruin this if you let it
+
+The first version of this ran the two requests with an identical prompt. The
+long one came back **3.6 seconds faster** than the short one, because
+llama-server caches the prompt and the second request never reprocessed it. A
+negative duration is not a generation rate.
+
+So each request carries a different marker in its **first** line. First,
+because a prefix cache matches a prefix: appending a nonce changes nothing.
+
+### What it is not
+
+Not `llama-bench`. That tool controls batch sizes, warms up and repeats, and
+it measures a different journey: no HTTP, no server scheduling, no tokenizer
+round trip. Its numbers are better controlled; these are the ones the harness
+lives with.
+
+The two agree closely enough to believe both. Ternary Bonsai 2 4B in `PQ2_0`
+on an RTX 3050 Laptop: `llama-bench` said 1539 prompt / 105.6 generation,
+this said **1444.8 / 107.17** at 2k of context - within about 7% on the prompt
+rate and inside the noise on generation.
+
+### What it does not measure
+
+Load time, which §11 asks for. Measuring it means owning the server's
+lifecycle, and the harness does not start the backend. A probe that needs more
+tokens than the served context window can hold - prompt *plus* its own
+generation - is skipped and named in the record, rather than sent and recorded
+as a zero that would read as "infinitely slow at 64k".
+
 ## Running L1
 
 ```bash

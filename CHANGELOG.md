@@ -18,6 +18,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   and `PLAN.md` is written and stored by digest. `nih plan approve PLAN.md`
   records the decision, which is what `nih implement` then runs. Two of three
   entry points now work end to end.
+- **`nih bench --layer L0`: throughput, by the runner rather than by hand.**
+  Two timed requests per context size with the same prompt; the difference
+  between them is generation alone, so both rates come out of the arithmetic
+  without reading any backend's own timings - the port is HTTP and nothing
+  more. It agrees with the hand-taken `llama-bench` figures to about 7% on
+  prompt processing and inside the noise on generation.
+- That took one real bug to find. With an identical prompt in both requests,
+  llama-server's prefix cache answered the second from the first and the
+  **long request came back 3.6 seconds faster than the short one**. Each
+  request now carries a different marker in its *first* line, because a prefix
+  cache matches a prefix and appending a nonce changes nothing.
 - **`nih bench --layer L2`: the review layer.** Eight golden cases, four ACK
   and four NAK, each one the fixture plus a directory of replacement files
   committed as one change - so the reviewer reads a diff git produced, a case

@@ -42,6 +42,7 @@ from niharness.application.implement import ARTIFACT_SCHEMAS
 from niharness.application.step_runner import StepRunner
 from niharness.application.window import Window
 from niharness.cli.blocking import blocking
+from niharness.cli.init import probe as probe_hardware
 from niharness.cli.output import emit, fail
 from niharness.cli.retrieval import open_retrieval
 from niharness.cli.unavailable import EX_UNAVAILABLE
@@ -49,22 +50,29 @@ from niharness.cli.wiring import backend_for, server_parameters
 from niharness.config import HarnessConfig, ModelConfig
 from niharness.domain.bench import (
     CaseScore,
+    L0Probe,
+    L0Score,
     L1Task,
     L2Case,
     L2Score,
     SuiteScore,
     TaskScore,
+    Throughput,
     score_case,
     score_reviews,
     score_suite,
     score_task,
+    score_throughput,
+    throughput,
 )
 from niharness.domain.budgets import Budgets, fit_to_host
 from niharness.domain.events import Payload
 from niharness.domain.identity import RunId, StepId
-from niharness.domain.messages import ResponseFormat
+from niharness.domain.messages import ChatRequest, Message, MessageRole, ResponseFormat
 from niharness.domain.roles import DEFAULT_ROLES, Role
 from niharness.domain.tool_loop import ArtifactKind, LoopConfig
+from niharness.ports.model_backend import ModelBackend
+from niharness.ports.tokenizer import Tokenizer
 from niharness.ports.vcs import Worktree
 from niharness.prompts import assemble
 
@@ -277,6 +285,190 @@ def read_back(root: Path, wanted: Mapping[str, tuple[str, ...]]) -> dict[str, st
         if target.is_file():
             found[path] = target.read_text(encoding="utf-8", errors="replace")
     return found
+
+
+FILLER = (
+    "The sampler reads a run of values, keeps the ones inside the band, and "
+    "reports their mean. Nothing here is executed; this text exists only to "
+    "occupy a measured number of tokens. "
+)
+"""Prose for an L0 prompt.
+
+Prose rather than a repeated token, because a tokenizer compresses repetition
+and the prompt would then be shorter in tokens than in characters by a factor
+nobody can predict. Trimmed to the measured count either way.
+"""
+
+
+def load_l0(root: Path) -> tuple[L0Probe, ...]:
+    """Return the L0 probes the suite declares.
+
+    Raises:
+        SuiteError: when the file is missing or does not parse into probes.
+    """
+    path = root / SUITES / "l0" / "probes.toml"
+    if not path.is_file():
+        msg = f"no L0 suite at {path}"
+        raise SuiteError(msg)
+    try:
+        body = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as error:
+        msg = f"{path}: {error}"
+        raise SuiteError(msg) from error
+    raw = body.get("probe")
+    if not isinstance(raw, list) or not raw:
+        msg = f"{path} declares no [[probe]]"
+        raise SuiteError(msg)
+    try:
+        return tuple(L0Probe.model_validate(entry) for entry in raw)
+    except ValueError as error:
+        msg = f"{path}: {error}"
+        raise SuiteError(msg) from error
+
+
+async def prompt_of(tokenizer: Tokenizer, tokens: int) -> tuple[str, int]:
+    """Return filler text of about `tokens` tokens, and what it actually counted.
+
+    Counted through the backend's own tokenizer rather than estimated from
+    characters, for the same reason the window is: a character heuristic is
+    wrong by a different amount for every model, and a throughput number
+    divided by a wrong token count is a wrong throughput number.
+
+    Returns:
+        The text and its measured token count.
+    """
+    per_block = max(1, await tokenizer.count_text(FILLER))
+    text = FILLER * max(1, tokens // per_block)
+    counted = await tokenizer.count_text(text)
+    # Two corrections are enough to land inside a percent: the first scales by
+    # the error, the second fixes the rounding. Looping to exactness would cost
+    # a round trip per token for no measurable gain.
+    for _ in range(2):
+        if counted == 0 or abs(counted - tokens) <= max(8, tokens // 100):
+            break
+        blocks = max(1, round(len(text) / len(FILLER) * tokens / counted))
+        text = FILLER * blocks
+        counted = await tokenizer.count_text(text)
+    return text, counted
+
+
+async def run_probe(
+    probe: L0Probe,
+    *,
+    model: ModelConfig,
+    backend: ModelBackend,
+    tokenizer: Tokenizer,
+) -> Throughput:
+    """Time two requests at this probe's prompt length and derive both rates.
+
+    Each request carries a different marker in its **first** line, which is
+    what makes the measurement work at all. A server with a prefix cache -
+    llama-server has one, on by default - answers the second request without
+    reprocessing a prompt it has already seen, and the long request then comes
+    back *faster* than the short one. Measured here before the markers existed:
+    the difference was minus 3.6 seconds, which is not a generation rate.
+
+    The marker goes first because a prefix cache matches a prefix. Appending
+    one changes nothing.
+    """
+    text, _ = await prompt_of(tokenizer, probe.context_tokens)
+
+    async def timed(limit: int, marker: str) -> tuple[float, int, int]:
+        """Send one uniquely-prefixed request; return its time, tokens out and in."""
+        content = f"// probe {marker}\n{text}"
+        counted = await tokenizer.count_text(content)
+        started = time.monotonic()
+        response = await backend.chat(
+            ChatRequest(
+                model=model.name,
+                messages=(Message(role=MessageRole.USER, content=content),),
+                max_tokens=limit,
+                temperature=0.0,
+                seed=0,
+            ),
+        )
+        elapsed = time.monotonic() - started
+        return elapsed, response.usage.completion_tokens, counted
+
+    first_seconds, _, counted = await timed(1, "a")
+    full_seconds, generated, _ = await timed(probe.generate_tokens, "b")
+    return throughput(
+        probe,
+        prompt_tokens=counted,
+        generated=generated,
+        first_seconds=first_seconds,
+        full_seconds=full_seconds,
+    )
+
+
+def record_throughput(
+    config: HarnessConfig,
+    score: L0Score,
+    *,
+    model: ModelConfig,
+    seconds: float,
+    commit: str,
+    dirty: bool,
+    skipped: Sequence[str] = (),
+    attempt: int = 1,
+    of: int = 1,
+) -> dict[str, object]:
+    """Return the JSONL record for one throughput run.
+
+    Every metric is recorded rather than a declared subset: the names are
+    derived from the probes, so a suite that declares them separately would
+    only be a second place for them to disagree.
+    """
+    host = probe_hardware()
+    return {
+        "layer": score.layer,
+        "date": datetime.now(tz=UTC).date().isoformat(),
+        "harness_commit": commit,
+        "harness_dirty": dirty,
+        "model": model.name,
+        "quantization": model.quantization,
+        "profile": config.profile,
+        "base_url": model.base_url,
+        "context_window": model.context_window,
+        "pass": attempt,
+        "of_passes": of,
+        **score.metrics(),
+        "host": host.model_dump(mode="json"),
+        "skipped": list(skipped),
+        "wall_seconds": round(seconds, 1),
+        "per_probe": [sample.model_dump(mode="json") for sample in score.samples],
+    }
+
+
+def human_throughput(entry: dict[str, object], score: L0Score) -> str:
+    """Render a throughput run: a row per context size, and what was skipped."""
+    host = entry["host"] if isinstance(entry["host"], dict) else {}
+    lines = [
+        f"L0 on {entry['model']} ({entry['quantization']}) at {entry['base_url']}, "
+        f"{entry['wall_seconds']}s"
+        + (
+            " [uncommitted tree: a working note, not a result]"
+            if entry["harness_dirty"]
+            else ""
+        ),
+        f"  host: {host.get('cpu_cores')} core(s), {host.get('ram_mb')} MiB RAM"
+        + (
+            f", {host.get('gpu_name')} {host.get('vram_mb')} MiB"
+            if host.get("gpu_name")
+            else ""
+        ),
+        "",
+        f"  {'context':<12}{'prompt tok/s':>14}{'generation tok/s':>18}",
+    ]
+    for sample in score.samples:
+        lines.append(
+            f"  {sample.probe_id:<12}{sample.prompt_tps:>14}{sample.generation_tps:>18}"
+        )
+        lines += [f"      {note}" for note in sample.notes]
+    skipped = entry["skipped"]
+    if isinstance(skipped, list) and skipped:
+        lines += ["", f"  skipped: {', '.join(str(one) for one in skipped)}"]
+    return "\n".join(lines)
 
 
 CASE_TEMPLATE = """## Review `{id}`
@@ -692,6 +884,73 @@ class LayerScore(Protocol):
         ...
 
 
+def _suite(
+    root: Path, layer: str
+) -> tuple[Sequence[L1Task] | Sequence[L2Case], tuple[str, ...]]:
+    """Return the graded layer's units and declared metrics, empty for L0.
+
+    Raises:
+        SuiteError: when the suite cannot be read.
+    """
+    if layer == "L1":
+        return load_l1(root)
+    if layer == "L2":
+        return load_l2(root)
+    return (), ()
+
+
+async def _throughput_pass(
+    config: HarnessConfig,
+    probes: Sequence[L0Probe],
+    *,
+    attempt: int,
+    repeat: int,
+    model: ModelConfig,
+    backend: ModelBackend,
+    tokenizer: Tokenizer,
+    commit: str,
+    dirty: bool,
+    json_mode: bool,
+) -> tuple[dict[str, object], LayerScore]:
+    """Measure every probe once and build the record for that pass.
+
+    A probe that does not leave room for its own generation inside the served
+    context window is skipped rather than sent: the backend would refuse it,
+    and a refusal recorded as a zero would read as "this host is infinitely
+    slow at 64k". Prompt *plus* generation, because a 64k prompt in a 64k
+    window has nowhere to put the answer - which is the one case a naive
+    comparison lets through.
+    """
+    started = time.monotonic()
+    samples: list[Throughput] = []
+    skipped: list[str] = []
+    for probe in probes:
+        needed = probe.context_tokens + probe.generate_tokens
+        if needed > model.context_window:
+            skipped.append(
+                f"{probe.id} (needs {needed} tokens with its generation; "
+                f"the served window is {model.context_window})"
+            )
+            continue
+        if not json_mode:
+            typer.echo(f"  [{attempt}/{repeat}] {probe.id} ...", err=True)
+        samples.append(
+            await run_probe(probe, model=model, backend=backend, tokenizer=tokenizer),
+        )
+    score = score_throughput(samples)
+    return record_throughput(
+        config,
+        score,
+        model=model,
+        seconds=time.monotonic() - started,
+        commit=commit,
+        dirty=dirty,
+        skipped=skipped,
+        attempt=attempt,
+        of=repeat,
+    ), score
+
+
 async def _one_pass(
     config: HarnessConfig,
     units: Sequence[L1Task] | Sequence[L2Case],
@@ -773,9 +1032,9 @@ def bench(
             the model does not answer.
     """
     chosen = layer.upper()
-    if chosen not in {"L1", "L2"}:
+    if chosen not in {"L0", "L1", "L2"}:
         fail(
-            f"no runner for {chosen} yet; L1 and L2 are the ones that exist. "
+            f"no runner for {chosen} yet; L0, L1 and L2 are the ones that exist. "
             "See docs/benchmarks/methodology.md",
             json_mode=json_mode,
             code=EX_UNAVAILABLE,
@@ -792,12 +1051,10 @@ def bench(
     backend = backend_for(model)
     passes: list[tuple[dict[str, object], LayerScore]] = []
     written: list[Path] = []
-    unit = "task" if chosen == "L1" else "case"
 
     try:
-        units, metrics = (
-            load_l1(config.project_root) if chosen == "L1" else load_l2(config.project_root)
-        )
+        probes = load_l0(config.project_root) if chosen == "L0" else ()
+        units, metrics = _suite(config.project_root, chosen)
     except SuiteError as error:
         fail(str(error), json_mode=json_mode)
         raise typer.Exit(1) from error
@@ -805,19 +1062,34 @@ def bench(
     async def drive() -> None:
         try:
             for attempt in range(1, max(1, repeat) + 1):
-                entry, score = await _one_pass(
-                    config,
-                    units,
-                    layer=chosen,
-                    attempt=attempt,
-                    repeat=max(1, repeat),
-                    model=model,
-                    backend=backend,
-                    metrics=metrics,
-                    commit=commit,
-                    dirty=dirty,
-                    local_tools=local_tools,
-                    json_mode=json_mode,
+                entry, score = await (
+                    _throughput_pass(
+                        config,
+                        probes,
+                        attempt=attempt,
+                        repeat=max(1, repeat),
+                        model=model,
+                        backend=backend,
+                        tokenizer=backend,
+                        commit=commit,
+                        dirty=dirty,
+                        json_mode=json_mode,
+                    )
+                    if chosen == "L0"
+                    else _one_pass(
+                        config,
+                        units,
+                        layer=chosen,
+                        attempt=attempt,
+                        repeat=max(1, repeat),
+                        model=model,
+                        backend=backend,
+                        metrics=metrics,
+                        commit=commit,
+                        dirty=dirty,
+                        local_tools=local_tools,
+                        json_mode=json_mode,
+                    )
                 )
                 # Written as the pass completes rather than at the end: three
                 # passes are twelve minutes of model time, and an interrupted
@@ -851,7 +1123,7 @@ def bench(
             **({"stopped": broke} if broke else {}),
         },
         json_mode=json_mode,
-        human=f"{_rendered(passes, unit=unit)}\n\nrecorded in {target}{note}",
+        human=f"{_rendered(passes)}\n\nrecorded in {target}{note}",
     )
     if broke:
         raise typer.Exit(1)
@@ -863,23 +1135,21 @@ def _one_rendered(entry: dict[str, object], score: LayerScore) -> str:
         return human(entry, score)
     if isinstance(score, L2Score):
         return human_reviews(entry, score)
+    if isinstance(score, L0Score):
+        return human_throughput(entry, score)
     msg = f"no report for {type(score).__name__}"  # pragma: no cover - both layers covered
     raise AssertionError(msg)  # pragma: no cover
 
 
-def _rendered(
-    passes: Sequence[tuple[dict[str, object], LayerScore]],
-    *,
-    unit: str,
-) -> str:
+def _rendered(passes: Sequence[tuple[dict[str, object], LayerScore]]) -> str:
     """Render every pass, and the spread when there is more than one."""
     parts = [_one_rendered(entry, score) for entry, score in passes]
     if len(passes) < 2:
         return "\n\n".join(parts)
-    return "\n\n".join([*parts, _spread([score for _, score in passes], unit=unit)])
+    return "\n\n".join([*parts, _spread([score for _, score in passes])])
 
 
-def _spread(scores: Sequence[LayerScore], *, unit: str) -> str:
+def _spread(scores: Sequence[LayerScore]) -> str:
     """Report each metric's range across passes, and which units were not stable.
 
     The point of repeating: a unit that passes once and fails once has said
@@ -905,5 +1175,4 @@ def _spread(scores: Sequence[LayerScore], *, unit: str) -> str:
         ]
     if always:
         lines.append(f"  failed every pass: {', '.join(always)}")
-    _ = unit
     return "\n".join(lines)

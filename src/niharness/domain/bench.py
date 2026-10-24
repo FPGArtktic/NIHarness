@@ -850,3 +850,154 @@ def _evidence(
         return True, ""
     ran = "never ran the tests" if not ids else "ran the tests and they did not pass"
     return False, f"claimed the tests passed but {ran}"
+
+
+# ------------------------------------------------------------------------- L0
+
+MIN_GENERATED_FOR_A_RATE = 2
+"""Two tokens at least: the rate is derived from the gap between the first and the rest."""
+
+
+class L0Probe(BaseModel):
+    """One throughput measurement: how long a prompt, and how much to generate."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    context_tokens: int = Field(ge=64, description="Prompt length to measure at.")
+    generate_tokens: int = Field(
+        default=64,
+        ge=MIN_GENERATED_FOR_A_RATE,
+        description="Tokens to generate in the long request.",
+    )
+
+    @property
+    def id(self) -> str:
+        """A readable name for this probe, used in records and progress lines."""
+        return f"{_thousands(self.context_tokens)}-ctx"
+
+
+class Throughput(BaseModel):
+    """What one probe measured, and what it could not."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    probe_id: str
+    context_tokens: int = Field(ge=0, description="What was asked for.")
+    prompt_tokens: int = Field(ge=0, description="What the tokenizer actually counted.")
+    generated: int = Field(ge=0)
+    first_seconds: float = Field(ge=0.0)
+    full_seconds: float = Field(ge=0.0)
+    prompt_tps: float = Field(ge=0.0)
+    generation_tps: float = Field(ge=0.0)
+    notes: tuple[str, ...] = ()
+
+    @property
+    def measured(self) -> bool:
+        """Whether both rates came out of the arithmetic."""
+        return self.prompt_tps > 0.0 and self.generation_tps > 0.0
+
+
+def throughput(
+    probe: L0Probe,
+    *,
+    prompt_tokens: int,
+    generated: int,
+    first_seconds: float,
+    full_seconds: float,
+) -> Throughput:
+    """Derive prompt-processing and generation rates from two timed requests.
+
+    Two requests with the same prompt: one that generates a single token, one
+    that generates `generated`. The difference between them is generation
+    alone, which is what separates the two rates without asking the backend to
+    report its own timings - and a backend's own timings are exactly the kind
+    of thing this project may not depend on, because the port is
+    OpenAI-compatible HTTP and nothing more.
+
+    It also measures the path the harness actually uses. `llama-bench` numbers
+    are better controlled and describe a different journey: no HTTP, no server
+    scheduling, no tokenizer round trip.
+
+    Args:
+        probe: what was asked for.
+        prompt_tokens: what the tokenizer counted for the prompt that was sent.
+        generated: completion tokens the long request produced.
+        first_seconds: wall time of the single-token request.
+        full_seconds: wall time of the long request.
+
+    Returns:
+        The sample, with a note for each rate the arithmetic could not produce.
+    """
+    notes: list[str] = []
+    generation_gap = full_seconds - first_seconds
+    produced = generated - 1
+    generation_tps = 0.0
+    if produced >= 1 and generation_gap > 0:
+        generation_tps = produced / generation_gap
+    else:
+        notes.append(
+            f"no generation rate: {produced} token(s) over {generation_gap:.3f}s. "
+            "The long request has to be slower than the short one and produce more "
+            "than one token, or there is nothing to divide."
+        )
+
+    prompt_tps = 0.0
+    if generation_tps > 0.0:
+        prompt_seconds = first_seconds - (1.0 / generation_tps)
+        if prompt_seconds > 0 and prompt_tokens > 0:
+            prompt_tps = prompt_tokens / prompt_seconds
+        else:
+            notes.append(
+                "no prompt rate: the single-token request was not slower than one "
+                "token of generation, so the prompt cost less than the noise floor"
+            )
+    return Throughput(
+        probe_id=probe.id,
+        context_tokens=probe.context_tokens,
+        prompt_tokens=prompt_tokens,
+        generated=generated,
+        first_seconds=round(first_seconds, 3),
+        full_seconds=round(full_seconds, 3),
+        prompt_tps=round(prompt_tps, 1),
+        generation_tps=round(generation_tps, 2),
+        notes=tuple(notes),
+    )
+
+
+class L0Score(BaseModel):
+    """The inference layer's result: rates per context size, nothing graded.
+
+    There is no pass or fail here. L0 says how fast the host is, and every
+    step budget in the harness is fitted to those numbers - which is why it
+    belongs in the same record format as the layers that do grade something.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    layer: str = "L0"
+    samples: tuple[Throughput, ...]
+
+    def outcomes(self) -> tuple[tuple[str, bool], ...]:
+        """Nothing passes or fails, so the across-passes table has no rows."""
+        return ()
+
+    def metrics(self) -> dict[str, float]:
+        """Both rates at each context size, named by it."""
+        found: dict[str, float] = {}
+        for sample in self.samples:
+            size = _thousands(sample.context_tokens)
+            found[f"prompt_tps_{size}"] = sample.prompt_tps
+            found[f"generation_tps_{size}"] = sample.generation_tps
+        return found
+
+
+def score_throughput(samples: Iterable[Throughput]) -> L0Score:
+    """Assemble the layer's result from its samples."""
+    return L0Score(samples=tuple(samples))
+
+
+def _thousands(tokens: int) -> str:
+    """Render a token count the way a record reads it: 8192 -> 8k, 1500 -> 1500."""
+    if tokens >= 1024 and tokens % 1024 == 0:
+        return f"{tokens // 1024}k"
+    return str(tokens)

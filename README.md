@@ -107,7 +107,10 @@ call on a CPU-only profile is tens of seconds of wall clock.
 
 ### What is measured so far
 
-**L0 only** - throughput, and by hand rather than by the runner. Host: Intel i5-12500H
+**L0 and L1 and L2.** The L0 numbers below were taken by hand with
+`llama-bench`; `nih bench --layer L0` now produces them through the port the
+harness actually uses and agrees with those figures to about 7% on prompt
+processing. Host: Intel i5-12500H
 (4 P-cores + 8 E-cores), RTX 3050 Laptop 4 GiB, 62 GiB RAM. Ternary Bonsai 2 on the
 PrismML llama.cpp fork, prompt-processing / generation tok/s:
 
@@ -124,16 +127,29 @@ on a CPU **25x slower** than the 4B in `PQ2_0`, for 6.4x the parameters. Picking
 file size picks the wrong one. And more threads than P-cores costs throughput - 16
 threads is slower than 8, because the E-cores contend.
 
+**L1** - tool calling. Twenty tasks, three passes from one clean commit, the 4B in
+`PQ2_0`: `passed_ratio` **0.65 - 0.90**, `terminated_ratio` 1.0,
+`loop_incidents_per_task` 0.45 - 0.75. The spread is the point: four tasks in twenty
+move with nothing changed between passes, so a single pass is not a measurement, and
+the suite cannot see a one-task change in its headline number.
+
+**L2** - review. Eight golden cases with human verdicts, one pass, same model:
+**precision 1.0, recall 0.25**. It refused no correct change and caught one defect in
+four. That is the small-model reviewer profile in one line - agreeable - and it is
+why precision alone would have looked excellent. One ACK in eight claimed the tests
+passed without ever running them, which is the failure a reviewer exists to prevent,
+committed by the reviewer.
+
 Records: [`benchmarks/results/`](benchmarks/results/), one JSONL line each, tagged with
 the harness commit, model, quantization, profile, host and date.
 
 ### What is *not* measured
 
-The two layers that would answer the question for whole tasks. L2 (gate and review)
-and L3 (end to end) have a [methodology](docs/benchmarks/methodology.md), a record
-format and a seed set of cases, and **no runner**, so no data: L2 needs a golden set
-with human verdicts to score reviewer precision against, L3 the vendored reference
-sets. Until they exist, every claim here about review quality or about finishing a
+Whole tasks. L3 (end to end) has a [methodology](docs/benchmarks/methodology.md), a
+record format and a seed set of cases, and **no runner**, so no data: it needs the
+vendored reference sets. L2's implementer half - first-attempt gate pass rate,
+revisions per task - needs implement, gate, review and fix run end to end, which is
+L3's shape. Until they exist, every claim here about finishing a
 real task is an observation from live runs - an anecdote, not a measurement, and
 labelled as one wherever it appears.
 
@@ -182,13 +198,12 @@ unattended. Everything below is the detail of that sentence.
 | **Retrieval** | Qdrant over REST, embeddings over `/v1/embeddings`, `nih ingest` reading PDFs with OCR and citing pages, `rag_query` over documents and over what compaction dropped | the code index (needs tree-sitter chunking); `nih compact` and `nih research` are stubs |
 | **Management** | `nih mcp`, `nih runs`, `nih status`, `nih cancel`, `nih resume`, `--json`, `--detach` | answering `Questions` from outside |
 | **TUI** | follows a live run's event log, writes the control inbox, cancels | the questions picker and plan approval |
-| **Benchmarks** | `nih bench --layer L1` (twenty tool-calling tasks) and `--layer L2` (eight golden review cases with human verdicts, scored on precision, recall, where, why and whether the evidence was gathered), each unit in its own fixture copy, scored by folding its event log, `--repeat` for variance; L0 numbers taken by hand | **L3 has no runner**; L2's implementer half; `--layer L0` is not wired; no vendored reference sets |
+| **Benchmarks** | `nih bench --layer L0` (throughput, two timed requests per context size), `--layer L1` (twenty tool-calling tasks) and `--layer L2` (eight golden review cases with human verdicts, scored on precision, recall, where, why and whether the evidence was gathered), each unit in its own fixture copy, scored by folding its event log, `--repeat` for variance | **L3 has no runner**; L2's implementer half; load time; no vendored reference sets |
 
-Three things block the rest, in order: **L2 and L3** (review quality and whole tasks
-are unmeasured), **brainstorm** (the last entry point, and the only interactive one),
-and **the code index** (the one retrieval collection nothing writes to). 30 of 62
-roadmap items are done; the count is a poor measure, because the remaining ones are
-the large ones.
+Three things block the rest, in order: **L3** (whole tasks are still unmeasured),
+**brainstorm** (the last entry point, and the only interactive one), and **the code
+index** (the one retrieval collection nothing writes to). 33 of 65 roadmap items are
+done; the count is a poor measure, because the remaining ones are the large ones.
 
 [`docs/orientation.md`](docs/orientation.md) is the long version of this table,
 [`docs/roadmap.md`](docs/roadmap.md) the itemised list, and

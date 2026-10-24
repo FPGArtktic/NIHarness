@@ -238,10 +238,16 @@ never attempted a diff.
       possible, which is why this item is still open rather than quietly done:
       nobody has taken the before-and-after measurement, and a prompt change
       without a number is how prompts quietly rot.
-- [ ] `nih bench --layer L0`. The numbers in
-      `benchmarks/results/l0-bonsai2-2026-10-22.jsonl` were taken by hand with
-      `llama-bench`; the runner has to produce them, and the record format
-      there is a first draft of what it should write.
+- [x] `nih bench --layer L0`. Two timed requests per context size, with a
+      different marker in each one's first line - without that, llama-server's
+      prefix cache answers the second from the first and the long request
+      comes back 3.6 seconds *faster*, which is not a generation rate. No
+      backend timings are read, because the port is HTTP and nothing more.
+      It agrees with the hand-taken `llama-bench` figures to about 7% on
+      prompt processing and inside the noise on generation, which is the
+      cross-check that makes a new instrument believable.
+- [ ] Load time, which §11 asks L0 for. It means owning the backend's
+      lifecycle, and the harness does not start the server.
 - [ ] A second slot is a waste for this client. Measured: `--parallel 1`
       raised prompt processing from 4.8 to 15.8 tok/s, because the harness is
       one conversation per run and four slots split the KV cache four ways.

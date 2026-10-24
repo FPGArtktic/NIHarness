@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# L0: inference. How fast this host is, through the port the harness actually
+# uses - OpenAI-compatible HTTP, with the tokenizer counting the prompt.
+#
+# Each probe is two timed requests with the same prompt: one that generates a
+# single token, one that generates `generate_tokens`. The difference between
+# them is generation alone, which separates the two rates without asking the
+# backend to report its own timings. The harness may not depend on those: the
+# port is HTTP and nothing more.
+#
+# `llama-bench` is better controlled and measures a different journey - no
+# HTTP, no server scheduling, no tokenizer round trip. These numbers are the
+# ones the step budgets are fitted to, so they are the ones worth recording.
+#
+# A probe larger than the served model's context window is skipped and said so
+# in the record. On a CPU-only host the 64k probe is a long wait: 64k tokens at
+# 50 tok/s of prompt processing is twenty minutes for that line alone.
+
+[[probe]]
+context_tokens = 2048
+generate_tokens = 64
+
+[[probe]]
+context_tokens = 8192
+generate_tokens = 64
+
+[[probe]]
+context_tokens = 32768
+generate_tokens = 64
+
+[[probe]]
+context_tokens = 65536
+generate_tokens = 64
