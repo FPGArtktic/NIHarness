@@ -66,6 +66,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   plausibly affects that choice, and the older records predate the tally, so
   the swing is recorded unattributed rather than explained.
 
+### Added
+
+- **L3's first real numbers: the work gets done and never offered to the
+  gate.** Two passes at `a376620` (a third was lost to a machine crash) agree
+  exactly: `committed_ratio` **0.0**, `gate_attempts` 0 on every task - and
+  that number counts `git_commit` calls now, so the gate was genuinely never
+  called. `uncommitted_would_pass` is true for two of the three tasks in both
+  passes: the hidden tests accept the working tree, so the work was right.
+- The mechanism is not a failed step. `debits-alongside-credits` records two
+  revisions in one pass and one in the other, so the implement step ended with
+  a `FinalAnswer` whose Definition of Done was **complete** - and the DoD's
+  third item is "the change is one logical change, in one commit". The commit
+  gate then found nothing had landed and sent the task round the fix loop
+  until it ran out. The model ticked a checklist item claiming a commit it
+  never made, which is the same unbacked claim the reviewer makes about tests
+  it never ran, and is checkable the same way.
+
 ### Fixed
 
 - **L3's first scorer had two bugs, and its own second use found both.**

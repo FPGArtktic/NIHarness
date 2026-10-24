@@ -173,3 +173,35 @@ Per unit, how many of that column's passes it passed:
 | `a-guard-with-both-sides-tested` | 1/1 | 3/3 | 3/3 | 3/3 |
 | `a-rename-that-reached-every-use` | 1/1 | 3/3 | 3/3 | 3/3 |
 | `a-helper-extracted` | 0/1 | 2/3 | 2/3 | 3/3 |
+
+## L3 on Ternary-Bonsai-2-4B-PQ2_0 (PQ2_0)
+
+| Metric | `a376620` 2026-10-24, 2 passes |
+|---|---|
+| `calls_per_task` | 8.0 - 9.6667 |
+| `committed_ratio` | 0.0 |
+| `first_attempt_gate_ratio` | 0.0 |
+| `handback_ratio` | 1.0 |
+| `inference_seconds` | 120.6 - 209.2 |
+| `overhead_seconds` | 5.5 - 6.3 |
+| `pass_at_1_ratio` | 0.0 |
+| `revisions_per_task` | 0.3333 - 0.6667 |
+| `tokens_per_task` | 2800.0 - 5349.6667 |
+| `tool_seconds` | 2.2 - 2.8 |
+
+<div class="nih-strips">
+<figure class="nih-strip"><figcaption>calls_per_task</figcaption><svg viewBox="0 0 340 64" width="340" height="64" role="img" xmlns="http://www.w3.org/2000/svg"><title>calls_per_task: a376620 8.0 - 9.6667</title><line x1="8" y1="56.0" x2="332" y2="56.0" stroke="currentColor" stroke-width="0.5" opacity="0.3" /><text x="2" y="11" font-size="7" fill="currentColor" opacity="0.7">9.6667</text><text x="2" y="59" font-size="7" fill="currentColor" opacity="0.7">8.0</text><line x1="170.0" y1="56.0" x2="170.0" y2="8.0" stroke="currentColor" stroke-width="7" stroke-linecap="round" opacity="0.25" /><circle cx="170.0" cy="56.0" r="2.5" fill="currentColor" /><circle cx="170.0" cy="8.0" r="2.5" fill="currentColor" /><text x="170.0" y="63" text-anchor="middle" font-size="7" fill="currentColor" opacity="0.7">a376620</text></svg></figure>
+<figure class="nih-strip"><figcaption>inference_seconds</figcaption><svg viewBox="0 0 340 64" width="340" height="64" role="img" xmlns="http://www.w3.org/2000/svg"><title>inference_seconds: a376620 120.6 - 209.2</title><line x1="8" y1="56.0" x2="332" y2="56.0" stroke="currentColor" stroke-width="0.5" opacity="0.3" /><text x="2" y="11" font-size="7" fill="currentColor" opacity="0.7">209.2</text><text x="2" y="59" font-size="7" fill="currentColor" opacity="0.7">120.6</text><line x1="170.0" y1="56.0" x2="170.0" y2="8.0" stroke="currentColor" stroke-width="7" stroke-linecap="round" opacity="0.25" /><circle cx="170.0" cy="56.0" r="2.5" fill="currentColor" /><circle cx="170.0" cy="8.0" r="2.5" fill="currentColor" /><text x="170.0" y="63" text-anchor="middle" font-size="7" fill="currentColor" opacity="0.7">a376620</text></svg></figure>
+<figure class="nih-strip"><figcaption>overhead_seconds</figcaption><svg viewBox="0 0 340 64" width="340" height="64" role="img" xmlns="http://www.w3.org/2000/svg"><title>overhead_seconds: a376620 5.5 - 6.3</title><line x1="8" y1="56.0" x2="332" y2="56.0" stroke="currentColor" stroke-width="0.5" opacity="0.3" /><text x="2" y="11" font-size="7" fill="currentColor" opacity="0.7">6.3</text><text x="2" y="59" font-size="7" fill="currentColor" opacity="0.7">5.5</text><line x1="170.0" y1="56.0" x2="170.0" y2="8.0" stroke="currentColor" stroke-width="7" stroke-linecap="round" opacity="0.25" /><circle cx="170.0" cy="56.0" r="2.5" fill="currentColor" /><circle cx="170.0" cy="8.0" r="2.5" fill="currentColor" /><text x="170.0" y="63" text-anchor="middle" font-size="7" fill="currentColor" opacity="0.7">a376620</text></svg></figure>
+<figure class="nih-strip"><figcaption>revisions_per_task</figcaption><svg viewBox="0 0 340 64" width="340" height="64" role="img" xmlns="http://www.w3.org/2000/svg"><title>revisions_per_task: a376620 0.3333 - 0.6667</title><line x1="8" y1="56.0" x2="332" y2="56.0" stroke="currentColor" stroke-width="0.5" opacity="0.3" /><text x="2" y="11" font-size="7" fill="currentColor" opacity="0.7">1.0</text><text x="2" y="59" font-size="7" fill="currentColor" opacity="0.7">0.0</text><line x1="170.0" y1="40.0" x2="170.0" y2="24.0" stroke="currentColor" stroke-width="7" stroke-linecap="round" opacity="0.25" /><circle cx="170.0" cy="40.0" r="2.5" fill="currentColor" /><circle cx="170.0" cy="24.0" r="2.5" fill="currentColor" /><text x="170.0" y="63" text-anchor="middle" font-size="7" fill="currentColor" opacity="0.7">a376620</text></svg></figure>
+<figure class="nih-strip"><figcaption>tokens_per_task</figcaption><svg viewBox="0 0 340 64" width="340" height="64" role="img" xmlns="http://www.w3.org/2000/svg"><title>tokens_per_task: a376620 2800.0 - 5349.6667</title><line x1="8" y1="56.0" x2="332" y2="56.0" stroke="currentColor" stroke-width="0.5" opacity="0.3" /><text x="2" y="11" font-size="7" fill="currentColor" opacity="0.7">5349.6667</text><text x="2" y="59" font-size="7" fill="currentColor" opacity="0.7">2800.0</text><line x1="170.0" y1="56.0" x2="170.0" y2="8.0" stroke="currentColor" stroke-width="7" stroke-linecap="round" opacity="0.25" /><circle cx="170.0" cy="56.0" r="2.5" fill="currentColor" /><circle cx="170.0" cy="8.0" r="2.5" fill="currentColor" /><text x="170.0" y="63" text-anchor="middle" font-size="7" fill="currentColor" opacity="0.7">a376620</text></svg></figure>
+<figure class="nih-strip"><figcaption>tool_seconds</figcaption><svg viewBox="0 0 340 64" width="340" height="64" role="img" xmlns="http://www.w3.org/2000/svg"><title>tool_seconds: a376620 2.2 - 2.8</title><line x1="8" y1="56.0" x2="332" y2="56.0" stroke="currentColor" stroke-width="0.5" opacity="0.3" /><text x="2" y="11" font-size="7" fill="currentColor" opacity="0.7">2.8</text><text x="2" y="59" font-size="7" fill="currentColor" opacity="0.7">2.2</text><line x1="170.0" y1="56.0" x2="170.0" y2="8.0" stroke="currentColor" stroke-width="7" stroke-linecap="round" opacity="0.25" /><circle cx="170.0" cy="56.0" r="2.5" fill="currentColor" /><circle cx="170.0" cy="8.0" r="2.5" fill="currentColor" /><text x="170.0" y="63" text-anchor="middle" font-size="7" fill="currentColor" opacity="0.7">a376620</text></svg></figure>
+</div>
+
+Per unit, how many of that column's passes it passed:
+
+| Case or task | `a376620` 2026-10-24, 2 passes |
+|---|---|
+| `debits-alongside-credits` | 0/2 |
+| `an-empty-ledger-is-not-a-balanced-one` | 0/2 |
+| `entries-read-from-text` | 0/2 |

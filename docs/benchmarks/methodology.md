@@ -590,6 +590,38 @@ question is whether the work was right when it was first offered, which only
 exists once something has been offered to a gate. `first_attempt_gate_ratio`
 and `revisions_per_task` are folded from `gate.finished` and `task.finished`.
 
+### What L3 said first: the work is done and never offered to the gate
+
+Two passes at `a376620` - a third was lost when the machine crashed, and the
+two that landed agree exactly:
+
+| Metric | both passes |
+|---|---|
+| `committed_ratio` | **0.0** |
+| `pass_at_1_ratio` | 0.0 |
+| `first_attempt_gate_ratio` | 0.0 |
+| `handback_ratio` | 1.0 |
+
+`gate_attempts` is 0 on every task, and that number now counts `git_commit`
+calls, so the plain reading is right: **the gate was never called.** And
+`uncommitted_would_pass` is true for two of the three tasks in both passes -
+the hidden tests accept the working tree. The work was right. It was never
+offered.
+
+The mechanism is worth stating exactly, because it is not what it looks like.
+`debits-alongside-credits` records **two revisions** in the first pass and one
+in the second, which means the implement step did *not* fail: it ended with a
+`FinalAnswer` whose Definition of Done was **complete**. The DoD's third item
+is "the change is one logical change, in one commit". The commit-gate stage
+then looked for what landed, found nothing, and sent the task to the fix loop
+until it ran out.
+
+So the model ticked a checklist item saying it had committed, having never
+called `git_commit`. That is the same unbacked claim the reviewer makes when
+it asserts the tests passed without running them - and the harness can check
+this one the same way, because whether a `git_commit` call in this step
+returned ok is a fact in its own log.
+
 ### Three tasks is not ten per language
 
 §11 asks for ten per language and a vendored SWE-bench subset. The subset is a
