@@ -25,13 +25,15 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
-from niharness.domain.artifacts import Decision, Verdict
+from niharness.domain.artifacts import Decision, NonEmpty, Verdict
 from niharness.domain.events import (
+    GateFinished,
     LoopIntervention,
     ModelResponse,
     Payload,
     StepFinished,
     StopReason,
+    TaskFinished,
     ToolCalled,
     ToolRejected,
     ToolReturned,
@@ -1514,3 +1516,233 @@ def _worth_drawing(columns: Sequence[tuple[str, Sequence[float]]]) -> bool:
 def _escaped(text: str) -> str:
     """Escape the three characters that would end an element early."""
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+# ------------------------------------------------------------------------- L3
+
+HIDDEN_TESTS_ARE_THE_POINT = """A task is graded by tests the model never saw.
+
+Its own tests are evidence it gathered, which is exactly what the gate is for
+and exactly what a benchmark may not score: a model that writes a test
+asserting what it happened to implement passes its own gate and has done
+nothing. The hidden tests say what the task asked for, and they are applied
+after the run is over and the commits are made.
+"""
+"""Why L3 keeps a set of tests out of the worktree."""
+
+
+class L3Task(BaseModel):
+    """One whole task: a statement of work, and hidden tests that grade it.
+
+    L1 asks whether a model can call tools and L2 whether it can review. L3
+    asks the only question that matters to somebody using the harness: given
+    a task, does the work it commits do what was asked. Everything between -
+    the plan's task, the implement step, the gate, the review, the fixes - is
+    the pipeline doing its job, and none of it is scored directly here.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str = Field(min_length=1)
+    title: str = Field(min_length=1, description="The task, as a plan would state it.")
+    intent: str = Field(min_length=1, description="Why, in the commit-message sense.")
+    commit_type: str = Field(default="feat", description="Conventional Commits type.")
+    files: tuple[str, ...] = Field(
+        default=(),
+        description="The files the task expects to touch, as a plan's hint. Not an "
+        "expectation: a model that reached the same end another way has not failed.",
+    )
+    acceptance: tuple[NonEmpty, ...] = Field(
+        default=(),
+        description="What the task says it must do, in the model's own brief. The "
+        "hidden tests check these; the model is told them and not shown the tests.",
+    )
+
+    @model_validator(mode="after")
+    def _a_task_says_what_done_means(self) -> Self:
+        """A task without acceptance criteria cannot be graded by anything."""
+        if not self.acceptance:
+            msg = f"{self.id}: a task states what done means, or nothing can grade it"
+            raise ValueError(msg)
+        return self
+
+
+class BuildScore(BaseModel):
+    """What happened to one whole task, end to end."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    task_id: str
+    hidden_tests_passed: bool = Field(
+        default=False,
+        description="The only measure of success here. False when the run never "
+        "committed, too: work that did not land is work that did not happen.",
+    )
+    committed: bool = False
+    gate_attempts: int = Field(default=0, ge=0)
+    gate_passes: int = Field(default=0, ge=0)
+    revisions: int = Field(default=0, ge=0)
+    handed_back: bool = Field(
+        default=False,
+        description="The run returned the task to a human. Not a crash: the designed "
+        "ending when the fix loop runs out, and worth counting separately from a "
+        "task that committed something wrong.",
+    )
+    calls: int = Field(default=0, ge=0)
+    tokens: int = Field(default=0, ge=0)
+    tools: dict[str, int] = Field(default_factory=dict)
+    inference_seconds: float = Field(default=0.0, ge=0)
+    tool_seconds: float = Field(default=0.0, ge=0)
+    notes: tuple[str, ...] = ()
+
+    @property
+    def first_attempt_gate(self) -> bool:
+        """Whether the first gate attempt passed.
+
+        §11 asks L2 for this and it belongs to a whole task rather than to a
+        step: the question is whether the work was right when it was first
+        offered, which only exists once something was offered.
+        """
+        return self.gate_attempts > 0 and self.gate_passes == self.gate_attempts == 1
+
+    @property
+    def passed(self) -> bool:
+        """Whether the task is done: committed, and the hidden tests agree."""
+        return self.committed and self.hidden_tests_passed
+
+
+class L3Score(BaseModel):
+    """The end-to-end layer's result, as the record format carries it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    layer: str = "L3"
+    builds: tuple[BuildScore, ...]
+
+    @property
+    def pass_at_1_ratio(self) -> float:
+        """Tasks whose committed work passed tests the model never saw."""
+        return _ratio(sum(1 for build in self.builds if build.passed), len(self.builds))
+
+    @property
+    def committed_ratio(self) -> float:
+        """Tasks that landed anything at all. The ceiling on `pass_at_1_ratio`."""
+        return _ratio(sum(1 for build in self.builds if build.committed), len(self.builds))
+
+    @property
+    def first_attempt_gate_ratio(self) -> float:
+        """Tasks whose first gate attempt passed, of those that attempted one."""
+        attempted = [build for build in self.builds if build.gate_attempts > 0]
+        return _ratio(sum(1 for build in attempted if build.first_attempt_gate), len(attempted))
+
+    @property
+    def handback_ratio(self) -> float:
+        """Tasks the run returned to a human rather than finishing."""
+        return _ratio(sum(1 for build in self.builds if build.handed_back), len(self.builds))
+
+    @property
+    def revisions_per_task(self) -> float:
+        """Fix rounds per task. §11 asks for it; a reviewer is what causes it."""
+        return _ratio(sum(build.revisions for build in self.builds), len(self.builds), scale=1)
+
+    @property
+    def calls_per_task(self) -> float:
+        """Tool calls per task, which is what a budget is spent on."""
+        return _ratio(sum(build.calls for build in self.builds), len(self.builds), scale=1)
+
+    @property
+    def tokens_per_task(self) -> float:
+        """Completion tokens per task, counted by the backend."""
+        return _ratio(sum(build.tokens for build in self.builds), len(self.builds), scale=1)
+
+    @property
+    def inference_seconds(self) -> float:
+        """How long the backend held the suite."""
+        return round(sum(build.inference_seconds for build in self.builds), 1)
+
+    @property
+    def tool_seconds(self) -> float:
+        """How long the tools held it. The rest of the clock is the harness."""
+        return round(sum(build.tool_seconds for build in self.builds), 1)
+
+    def tools(self) -> dict[str, int]:
+        """Every tool the suite called, with how often, across every task."""
+        return _tallied(build.tools for build in self.builds)
+
+    def outcomes(self) -> tuple[tuple[str, bool], ...]:
+        """Each task's id and whether it passed, for the across-passes report."""
+        return tuple((build.task_id, build.passed) for build in self.builds)
+
+    def metrics(self) -> dict[str, float]:
+        """Return the metrics the suite declares, by the names it declares them."""
+        return {
+            "pass_at_1_ratio": self.pass_at_1_ratio,
+            "committed_ratio": self.committed_ratio,
+            "first_attempt_gate_ratio": self.first_attempt_gate_ratio,
+            "handback_ratio": self.handback_ratio,
+            "revisions_per_task": self.revisions_per_task,
+            "calls_per_task": self.calls_per_task,
+            "tokens_per_task": self.tokens_per_task,
+        }
+
+
+def score_build(
+    task: L3Task,
+    events: Sequence[Payload],
+    *,
+    hidden_tests_passed: bool,
+) -> BuildScore:
+    """Score one whole task by folding the run's events plus the hidden verdict.
+
+    Everything except the hidden tests comes out of the log, as ADR 0024
+    requires. The hidden verdict is passed in because it is produced after the
+    run ends, by applying tests the worktree never held.
+
+    Args:
+        task: the task and what it said done means.
+        events: the payloads the run appended, in order.
+        hidden_tests_passed: whether the hidden tests passed on the committed
+            tree.
+
+    Returns:
+        The score, with a note for anything that did not go as asked.
+    """
+    gates = [body for body in events if isinstance(body, GateFinished)]
+    called = [body for body in events if isinstance(body, ToolCalled)]
+    responses = [body for body in events if isinstance(body, ModelResponse)]
+    finished = next(
+        (body for body in events if isinstance(body, TaskFinished) and body.task_id == task.id),
+        None,
+    )
+    committed = bool(finished and finished.commits)
+
+    notes: list[str] = []
+    if finished is None:
+        notes.append("the run never reached a conclusion about this task")
+    elif finished.outcome == "handoff":
+        notes.append(f"handed back: {finished.reason or 'no reason recorded'}")
+    if committed and not hidden_tests_passed:
+        notes.append("committed work that the hidden tests refuse")
+    if not committed and hidden_tests_passed:
+        notes.append("the hidden tests pass on a tree nothing was committed to")
+
+    return BuildScore(
+        task_id=task.id,
+        hidden_tests_passed=hidden_tests_passed,
+        committed=committed,
+        gate_attempts=len(gates),
+        gate_passes=sum(1 for body in gates if body.passed),
+        revisions=finished.revisions if finished else 0,
+        handed_back=bool(finished and finished.outcome == "handoff"),
+        calls=len(called),
+        tokens=sum(body.completion_tokens for body in responses),
+        tools=_counted(body.name for body in called),
+        inference_seconds=_seconds(events, ModelResponse),
+        tool_seconds=_seconds(events, ToolReturned),
+        notes=tuple(notes),
+    )
+
+
+def score_builds(scores: Iterable[BuildScore]) -> L3Score:
+    """Assemble the layer's score from its tasks."""
+    return L3Score(builds=tuple(scores))

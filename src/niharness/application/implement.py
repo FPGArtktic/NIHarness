@@ -135,6 +135,12 @@ def render_task(task: Task, plan: Plan, position: int) -> str:
         lines.append(f"- files the planner expected to touch: {', '.join(task.files)}")
     if task.depends_on:
         lines.append(f"- builds on: {', '.join(task.depends_on)} (already done in this run)")
+    if task.acceptance:
+        # Its own section rather than another bullet: a list inside the intent
+        # bullet ran on into the ones after it, so "expected commit type" read
+        # as a fourth thing the task had to do.
+        lines += ["", "Done means all of these:", ""]
+        lines += [f"- {line}" for line in task.acceptance]
     lines += [
         "",
         "Do this task and nothing else. Commit it through `git_commit`: that is "

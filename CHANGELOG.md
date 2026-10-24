@@ -11,6 +11,61 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **`nih bench --layer L3`: whole tasks, end to end.** The layer the README
+  calls the first blocker. A task runs through `ImplementationRun` - the same
+  object `nih implement` drives - in a fresh git repository made from the
+  suite's own fixture, so implement, the commit gate, review and the bounded
+  fix loop are measured as they actually run.
+- **The grade is tests the model never saw.** A model's own tests are evidence
+  it gathered, which is what the gate is for and what a benchmark may not
+  score: `assert isinstance(result, float)` passes its own gate, and L2 has a
+  case about exactly that being waved through. Each task's tests live outside
+  the fixture under `hidden/<task-id>/` and are copied in after the run has
+  ended and its commits are made. `pass_at_1_ratio` needs a task to have
+  committed *and* passed them; `committed_ratio` is the ceiling on it, so a
+  wrong answer and no answer are not the same number.
+- `first_attempt_gate_ratio` and `revisions_per_task`, which §11 asked of L2
+  and which belong to a whole task: whether the work was right when it was
+  first offered only exists once something has been offered to a gate.
+- **`Task.acceptance`**, a tuple of sentences saying what done means for one
+  task, rendered as its own section in the statement of work. A plan's task
+  carried `satisfies`, which points at a spec's criteria by id - a reference a
+  model cannot read. L3's hidden tests check exactly those sentences, so a
+  test demanding a choice the brief did not state is a bug in the case rather
+  than a hard task. The planner does not fill it yet: that is a prompt change
+  and needs its own measurement
+  (ADR 0028, `docs/adr/0028-a-whole-task-is-graded-by-tests-it-never-saw.md`).
+- Three Python tasks, not the ten per language §11 asks for, and no vendored
+  SWE-bench subset - that is a download, which the air gap does not have. A
+  locally written suite is one whose fairness can be checked, which for the
+  first three tasks matters more than scale.
+
+### Added
+
+- **The harness costs 2.2% to 3.4% of the clock.** Three L1 passes at
+  `380e82a`, the first runs in which anything timed itself: inference 471 -
+  738s, tools 8 - 10s, harness **16.4 - 16.9s**. The number is less
+  convincing than its shape - inference moved by 266 seconds across the three
+  passes while the harness's own cost moved by half a second, which is what a
+  constant per-task cost should do against variable generation. About 0.84
+  seconds a task, nearly all of it starting a tool server.
+- **Only one detector has ever fired.** The pathology tally across every run
+  that has one: `exact_repeat` 29 times in L1 and 6 in L2; `state_cycle`,
+  `progress_stall`, `gate_thrash`, `invalid_calls`, `degenerate_output` and
+  `unbacked_claim` zero. Either the `[loop]` thresholds are past what these
+  tasks provoke or the tasks do not provoke them, and the suites cannot tell
+  those apart - but the ladder is one rung in practice, and levels 2 to 4 are
+  reached by `exact_repeat` escalating and nothing else.
+- **`write-down-what-cannot-be-done` fails every pass again** after passing
+  3/3 at `e62dc3e`, and the new tool tally says why: `add_dependency` was
+  never called in any of the three passes. The tool works - its contract
+  tests pass and it writes the refused request to `NOTES.md` - so this is the
+  model not reaching for it. Nothing in the changes between the two runs
+  plausibly affects that choice, and the older records predate the tally, so
+  the swing is recorded unattributed rather than explained.
+
 ### Fixed
 
 - **The wall-clock budget was never spent, so it never fired.** `observe_tool`
@@ -32,6 +87,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   carry `overhead_seconds`: what is left of the wall after the backend and the
   tools is the harness's own cost, which §11 asks to see separately rather
   than hidden inside model latency.
+- Checked for others of the same shape - a keyword parameter in the domain or
+  the application that no caller ever passes - and the clock was the only one
+  that disabled a mechanism. The three others are optional overrides with
+  working defaults.
 
 ### Added
 

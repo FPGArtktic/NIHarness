@@ -1,33 +1,71 @@
 # SPDX-FileCopyrightText: 2026 Mateusz Okulanis
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# L3: end-to-end. Ten tasks per language, each with hidden tests the agent never
-# sees. Harness overhead is recorded separately from inference time.
+# L3: whole tasks, end to end. Each task runs through the real pipeline -
+# implement, the commit gate, review, bounded fixes - and is then graded by
+# tests the model never saw.
+#
+# Hidden tests, because a model's own tests are evidence it gathered, which is
+# what the gate is for and what a benchmark may not score: a test asserting
+# whatever happened to be implemented passes its own gate and says nothing.
+# The `acceptance` lines below are given to the model verbatim; the tests under
+# `hidden/<id>/` check exactly those lines and are applied after the run ends.
+#
+# So a task is fair only if its acceptance criteria name everything the hidden
+# tests check, including the function's name. A hidden test that demands a
+# choice the brief did not state is measuring telepathy.
+#
+# No task declares a budget. L1 and L2 drive one step each and size it, but
+# L3 runs the whole pipeline, whose per-step budgets are in
+# `domain/pipeline.py` and fitted to the measured host. A benchmark that set
+# its own would be measuring a pipeline nobody runs.
 
 [metrics]
 record = [
-  "pass_at_1",
-  "wall_seconds",
-  "tokens_total",
-  "tool_calls_total",
-  "harness_overhead_seconds",
+  "pass_at_1_ratio",
+  "committed_ratio",
+  "first_attempt_gate_ratio",
+  "handback_ratio",
+  "revisions_per_task",
+  "calls_per_task",
+  "tokens_per_task",
 ]
 
-[sources]
-# Vendored offline; verify the version and license before adding files.
-swebench_subset = "vendor/swebench-lite-subset"   # MIT, see THIRD_PARTY.md
-languages = ["python", "c", "rust", "bash"]
+[[task]]
+id = "debits-alongside-credits"
+title = "Add debits alongside credits"
+intent = "a caller reconciling a statement needs the money out as well as the money in"
+commit_type = "feat"
+files = ["src/ledger.py", "tests/test_ledger.py"]
+acceptance = [
+  "a function `debits(entries)` in `src/ledger.py` returns only the entries whose amount is negative, in the order they were given",
+  "an entry of exactly zero cents is returned by neither `credits` nor `debits`",
+  "the new behaviour has a test in `tests/test_ledger.py` that fails without the change",
+]
 
 [[task]]
-id = "py-cli-flag"
-language = "python"
-repo = "fixtures/py-cli"
-spec = "tasks/py-cli-flag.md"
-hidden_tests = "tasks/py-cli-flag.tests.py"
+id = "an-empty-ledger-is-not-a-balanced-one"
+title = "Refuse to balance an empty ledger"
+intent = "zero from no entries and zero from entries that cancel are different answers and were the same"
+commit_type = "fix"
+files = ["src/ledger.py", "tests/test_ledger.py"]
+acceptance = [
+  "`balance([])` raises `ValueError` instead of returning 0",
+  "the exception message contains the words `no entries`",
+  "`balance` still returns the sum for a ledger that has entries, including when they cancel to zero",
+  "the new behaviour has a test in `tests/test_ledger.py` that fails without the change",
+]
 
 [[task]]
-id = "c-off-by-one"
-language = "c"
-repo = "fixtures/c-ring"
-spec = "tasks/c-off-by-one.md"
-hidden_tests = "tasks/c-off-by-one.test.c"
+id = "entries-read-from-text"
+title = "Read entries from text"
+intent = "the ledger is typed up from a statement, and retyping it as Python is where mistakes come from"
+commit_type = "feat"
+files = ["src/ledger.py", "tests/test_ledger.py"]
+acceptance = [
+  "a function `entries_from_text(text)` in `src/ledger.py` returns a list of `Entry`, one per non-empty line",
+  "a line is a description, then a comma, then the amount in whole cents, for example `wages,120000`",
+  "surrounding whitespace on either field is not part of the value",
+  "a line that is not in that shape raises `ValueError` whose message contains the line",
+  "the new behaviour has a test in `tests/test_ledger.py` that fails without the change",
+]

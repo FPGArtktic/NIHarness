@@ -162,3 +162,4 @@ nav:
       - adr/0025-creation-is-an-edit-with-nothing-to-find.md
       - adr/0026-the-planner-writes-the-work-the-harness-binds-the-spec.md
       - adr/0027-a-review-case-is-a-tree-and-its-verdict-must-be-earned.md
+      - adr/0028-a-whole-task-is-graded-by-tests-it-never-saw.md

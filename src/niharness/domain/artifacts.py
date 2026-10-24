@@ -110,6 +110,12 @@ class Task(Artifact):
         default="feat",
         description="Conventional Commits type the gate will expect.",
     )
+    acceptance: tuple[NonEmpty, ...] = Field(
+        default=(),
+        description="What done means for this task, in words the implementer can "
+        "check its own work against. `satisfies` points at the spec's criteria by "
+        "id, which is a reference the model cannot read; this is the text.",
+    )
 
 
 class Plan(Artifact):

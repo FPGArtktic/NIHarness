@@ -258,6 +258,21 @@ never attempted a diff.
       `nih init` should write the server command line it expects, rather than
       leaving it to be rediscovered.
 
+## One rung of the ladder is all that has ever run
+
+`exact_repeat` has fired 29 times across three L1 passes and 6 times across
+six L2 passes. `state_cycle`, `progress_stall`, `gate_thrash`,
+`invalid_calls`, `degenerate_output` and `unbacked_claim` have fired **zero**
+times in every recorded run that tallies them.
+
+- [ ] Find out which reading is true: thresholds in `[loop]` set past what
+      these tasks provoke, or tasks that do not provoke them. A case built to
+      trigger one detector on purpose would answer it for that detector, and
+      is the same shape of case the evidence check needs.
+- [ ] Until then, treat the ladder as one rung when reasoning about it. Levels
+      2 to 4 - the reflection turn, the rollback, the step failure - are
+      reached by `exact_repeat` escalating and by nothing else.
+
 ## The open problem both layers found
 
 Two places that have to agree, and only one of them changed. It is the same
@@ -266,6 +281,15 @@ failure in the implementer and in the reviewer, measured independently:
 - **L1 `two-places-must-agree`** fails every pass. The task says a constant
   and the document that quotes it must match; the model changes the constant
   and commits.
+- **L1 `write-down-what-cannot-be-done`** fails every pass again, having
+  passed 3/3 at `e62dc3e`. The tool tally says why, which no record could
+  before: `add_dependency` was **never called** in any of the three passes -
+  the model explored the tree, read files and ran the linter instead. The tool
+  is fine; its contract tests pass, and it refuses a dependency absent from
+  the mirror by writing the request to `NOTES.md`. Nothing in the changes
+  between the two runs plausibly touches the implementer's choice of tool, and
+  the `e62dc3e` records predate the tally so they cannot say whether it was
+  called then. Unattributed, and recorded as such rather than explained.
 - **L2 `documentation-left-behind`** is waved through every pass. The change
   raises a bound in the code and leaves `docs/limits.md` quoting the old one;
   the reviewer ACKs it.
@@ -416,13 +440,35 @@ the change and stop.
       rate and revisions per task over a golden set of tasks. That needs
       implement, gate, review and fix run end to end, which is closer to L3's
       shape than to the review half's.
-- [ ] The L3 runner, and the vendored reference sets it needs.
+- [x] `nih bench --layer L3`: whole tasks, end to end, graded by tests the
+      model never saw. The real pipeline - `ImplementationRun`, the object
+      `nih implement` drives - in a fresh repository made from the suite's own
+      fixture, with `hidden/<task-id>/` copied in after the run ends and its
+      commits are made. `pass_at_1_ratio` needs a task to have committed
+      *and* passed; `committed_ratio` is the ceiling on it. Brings
+      `first_attempt_gate_ratio` and `revisions_per_task` with it, which §11
+      asked of L2 and which belong to a whole task
+      ([ADR 0028](adr/0028-a-whole-task-is-graded-by-tests-it-never-saw.md)).
+- [ ] Ten tasks per language, against the three **Python** tasks the L3
+      suite has. The placeholder named C, Rust and Bash fixtures that were
+      never written, and still are not. The shape is proven; the set is one
+      language.
+- [ ] A fixture per L3 task, for when there is a second language. The suite
+      has one fixture and `hidden/<task-id>/`, which is what three Python
+      tasks need; a C task needs its own tree. Worth doing when there is a C
+      task, not before.
+- [ ] The vendored reference sets §11 names - a SWE-bench subset for L3, BFCL
+      for L1 - with their licenses next to them and listed in
+      `THIRD_PARTY.md`. A download, so not from inside the air gap.
+- [ ] Have the planner fill `Task.acceptance`. The field exists and L3 uses
+      it; a planner that states what done means per task is strictly better
+      than one that points at a spec's criteria by id. It is a prompt change,
+      so it needs a golden update and an L1-L3 run in the same commit.
 - [ ] Answer the ternary question with it. A natively ternary 27B-class model at
       4-6 GB would change the profile arithmetic entirely - see
       `docs/operations/models.md` - and nothing but an L0-L3 run on this
       project's own suites settles whether it holds up at 64k and on a diff
       that has to apply.
-- [ ] L0 inference, L1 tool calling, L2 steps, L3 end-to-end.
 - [ ] Vendored reference sets (SWE-bench subset, BFCL) with their licenses.
 
 ## Blocked on the network, by design

@@ -11,26 +11,32 @@ import shutil
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from niharness.domain.bench import (
     L0Probe,
     L1Task,
+    L3Task,
     ReportRow,
     _worth_drawing,
     is_subsequence,
     range_strip_svg,
     report_markdown,
+    score_build,
+    score_builds,
     score_suite,
     score_task,
     score_throughput,
     throughput,
 )
 from niharness.domain.events import (
+    GateFinished,
     InterventionLevel,
     LoopIntervention,
     Payload,
     StepFinished,
     StopReason,
+    TaskFinished,
     ToolCalled,
     ToolRejected,
     ToolReturned,
@@ -808,3 +814,106 @@ def test_a_drawing_names_no_colour_of_its_own() -> None:
     assert "currentColor" in svg
     for hard_coded in ("#", "rgb(", "black", "white"):
         assert hard_coded not in svg, f"{hard_coded} does not follow the theme"
+
+
+# -------------------------------------------------------------------- L3
+
+
+def gate(*, passed: bool, tier: str = "quick") -> GateFinished:
+    return GateFinished(tier="quick" if tier == "quick" else "full", passed=passed)
+
+
+def task_finished(
+    task_id: str,
+    *,
+    outcome: str = "completed",
+    revisions: int = 0,
+    commits: tuple[str, ...] = (),
+    reason: str = "",
+) -> TaskFinished:
+    return TaskFinished(
+        task_id=task_id,
+        outcome="completed" if outcome == "completed" else "handoff",
+        revisions=revisions,
+        commits=commits,
+        reason=reason,
+    )
+
+
+def build_task(**overrides: object) -> L3Task:
+    base: dict[str, object] = {
+        "id": "a-task",
+        "title": "Add debits alongside credits",
+        "intent": "a caller reconciling a statement needs the money out too",
+        "acceptance": ("`debits(entries)` returns the negative entries",),
+    }
+    return L3Task.model_validate(base | overrides)
+
+
+def test_a_task_without_acceptance_criteria_cannot_be_graded() -> None:
+    """Hidden tests check the brief; a brief that says nothing checks nothing."""
+    with pytest.raises(ValidationError, match="what done means"):
+        L3Task(id="t", title="Do the thing", intent="because")
+
+
+def test_a_task_passes_when_it_committed_and_the_hidden_tests_agree() -> None:
+    events = (
+        gate(passed=False),
+        gate(passed=True),
+        task_finished("a-task", outcome="completed", revisions=1, commits=("abc1234",)),
+    )
+    scored = score_build(build_task(), events, hidden_tests_passed=True)
+    assert scored.passed
+    assert scored.gate_attempts == 2
+    assert scored.first_attempt_gate is False, "the first offer was red"
+    assert scored.revisions == 1
+    assert scored.notes == ()
+
+
+def test_committed_work_the_hidden_tests_refuse_is_a_failure_with_a_reason() -> None:
+    """The one measure of success is tests the model never saw.
+
+    A model that writes a test asserting whatever it happened to implement
+    passes its own gate and has done nothing, which is why its own evidence
+    cannot be the grade.
+    """
+    scored = score_build(
+        build_task(),
+        (gate(passed=True), task_finished("a-task", commits=("abc1234",))),
+        hidden_tests_passed=False,
+    )
+    assert scored.committed is True
+    assert scored.passed is False
+    assert scored.first_attempt_gate is True, "it was right on the first offer, and still wrong"
+    assert "hidden tests refuse" in " ".join(scored.notes)
+
+
+def test_a_handback_is_counted_as_itself() -> None:
+    """The designed ending when the fix loop runs out, not a crash."""
+    scored = score_build(
+        build_task(),
+        (gate(passed=False), task_finished("a-task", outcome="handoff", reason="fix limit")),
+        hidden_tests_passed=False,
+    )
+    assert scored.handed_back is True
+    assert scored.committed is False
+    assert "handed back: fix limit" in scored.notes
+
+
+def test_the_suite_reports_what_landed_and_what_was_right() -> None:
+    passed = score_build(
+        build_task(id="one"),
+        (gate(passed=True), task_finished("one", commits=("a",))),
+        hidden_tests_passed=True,
+    )
+    wrong = score_build(
+        build_task(id="two"),
+        (gate(passed=True), task_finished("two", commits=("b",))),
+        hidden_tests_passed=False,
+    )
+    score = score_builds((passed, wrong))
+    assert score.pass_at_1_ratio == 0.5
+    assert score.committed_ratio == 1.0, "both landed; one of them was wrong"
+    assert score.first_attempt_gate_ratio == 1.0, "the gate is not the measure"
+    assert score.outcomes() == (("one", True), ("two", False))
+    assert set(score.metrics()) >= {"pass_at_1_ratio", "committed_ratio", "revisions_per_task"}

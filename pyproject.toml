@@ -89,7 +89,7 @@ src = ["src", "tests"]
 # have none, so they would otherwise be linted against this project's rules -
 # which is the wrong gate. The gate a case has to pass is the fixture's, and
 # the suite's invariant is that every one of them does.
-extend-exclude = ["benchmarks/suites/*/cases"]
+extend-exclude = ["benchmarks/suites/*/cases", "benchmarks/suites/*/hidden"]
 
 [tool.ruff.lint]
 select = [

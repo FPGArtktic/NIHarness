@@ -542,7 +542,7 @@ def test_bench_options_still_work_without_naming_the_subcommand(tmp_path: Path) 
     """
     ran = runner.invoke(app, ["bench", "--layer", "L9", "-C", str(tmp_path)])
     assert ran.exit_code == EX_UNAVAILABLE
-    assert "no runner for L9" in ran.stderr
+    assert "no such layer as L9" in ran.stderr
 
     helped = runner.invoke(app, ["bench", "--help"])
     assert helped.exit_code == 0

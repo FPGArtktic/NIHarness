@@ -68,7 +68,14 @@ suggestion. See [Architecture](concepts/architecture.md) and
   gave each one, scored on precision and recall, on whether a refusal landed
   in the right place for the right reason, and on whether the verdict's claim
   that the tests passed was earned. Records land in `benchmarks/results/`.
-  L3 has a methodology and no runner.
+- `nih bench --layer L3`: whole tasks. Each one runs through the real
+  pipeline - implement, the commit gate, review, the bounded fix loop - in a
+  fresh repository made from the suite's fixture, and is graded by tests kept
+  out of that repository until the run has ended. Three Python tasks, where
+  §11 asks for ten per language.
+- `nih bench report`: the committed records as Markdown, a column per harness
+  commit and a cell per metric showing the range across that column's passes.
+  The same renderer writes `docs/benchmarks/results.md`.
 - `nih plan SPEC.md`: entry B. Runs both halves of the spec gate - the schema
   check offline, then one reviewer pass over the spec - then the planner over
   the code with read-only tools, writes `PLAN.md`, and leaves it for a human.

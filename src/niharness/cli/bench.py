@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 import time
 import tomllib
 import uuid
@@ -40,8 +41,9 @@ from typer.core import TyperGroup
 from niharness.adapters.git import GitVcs
 from niharness.adapters.jsonl_events import JsonlEventSink
 from niharness.adapters.mcp import connect_tools
-from niharness.application.implement import ARTIFACT_SCHEMAS
+from niharness.application.implement import ARTIFACT_SCHEMAS, ImplementationRun
 from niharness.application.step_runner import StepRunner
+from niharness.application.summarizer import ModelSummarizer
 from niharness.application.window import Window
 from niharness.cli.blocking import blocking
 from niharness.cli.init import probe as probe_hardware
@@ -50,18 +52,24 @@ from niharness.cli.retrieval import open_retrieval
 from niharness.cli.unavailable import EX_UNAVAILABLE
 from niharness.cli.wiring import backend_for, server_parameters
 from niharness.config import HarnessConfig, ModelConfig
+from niharness.domain.artifacts import Plan, Slug, Task
 from niharness.domain.bench import (
+    BuildScore,
     CaseScore,
     L0Probe,
     L0Score,
     L1Task,
     L2Case,
     L2Score,
+    L3Score,
+    L3Task,
     ReportRow,
     SuiteScore,
     TaskScore,
     Throughput,
     report_markdown,
+    score_build,
+    score_builds,
     score_case,
     score_reviews,
     score_suite,
@@ -71,7 +79,7 @@ from niharness.domain.bench import (
 )
 from niharness.domain.budgets import Budgets, fit_to_host
 from niharness.domain.events import Payload
-from niharness.domain.identity import RunId, StepId
+from niharness.domain.identity import RunId, StepId, digest_json
 from niharness.domain.messages import ChatRequest, Message, MessageRole, ResponseFormat
 from niharness.domain.roles import DEFAULT_ROLES, Role
 from niharness.domain.tool_loop import ArtifactKind, LoopConfig
@@ -882,13 +890,14 @@ def human(entry: dict[str, object], score: SuiteScore) -> str:
 
 async def _scored(
     config: HarnessConfig,
-    unit: L1Task | L2Case,
+    unit: BenchUnit,
     *,
     model: ModelConfig,
     backend: object,
+    utility: object,
     scratch: Path,
     local_tools: bool,
-) -> TaskScore | CaseScore:
+) -> TaskScore | CaseScore | BuildScore:
     """Run one unit of whichever suite it belongs to."""
     if isinstance(unit, L1Task):
         return await run_task(
@@ -896,6 +905,16 @@ async def _scored(
             unit,
             model=model,
             backend=backend,
+            scratch=scratch,
+            local_tools=local_tools,
+        )
+    if isinstance(unit, L3Task):
+        return await run_build(
+            config,
+            unit,
+            model=model,
+            backend=backend,
+            utility=utility,
             scratch=scratch,
             local_tools=local_tools,
         )
@@ -907,6 +926,10 @@ async def _scored(
         scratch=scratch,
         local_tools=local_tools,
     )
+
+
+BenchUnit = L1Task | L2Case | L3Task
+"""A unit of a graded suite: a tool-calling task, a review case, a whole task."""
 
 
 class LayerScore(Protocol):
@@ -927,9 +950,7 @@ class LayerScore(Protocol):
         ...
 
 
-def _suite(
-    root: Path, layer: str
-) -> tuple[Sequence[L1Task] | Sequence[L2Case], tuple[str, ...]]:
+def _suite(root: Path, layer: str) -> tuple[Sequence[BenchUnit], tuple[str, ...]]:
     """Return the graded layer's units and declared metrics, empty for L0.
 
     Raises:
@@ -939,6 +960,8 @@ def _suite(
         return load_l1(root)
     if layer == "L2":
         return load_l2(root)
+    if layer == "L3":
+        return load_l3(root)
     return (), ()
 
 
@@ -996,13 +1019,14 @@ async def _throughput_pass(
 
 async def _one_pass(
     config: HarnessConfig,
-    units: Sequence[L1Task] | Sequence[L2Case],
+    units: Sequence[BenchUnit],
     *,
     layer: str,
     attempt: int,
     repeat: int,
     model: ModelConfig,
     backend: object,
+    utility: object,
     metrics: Sequence[str],
     commit: str,
     dirty: bool,
@@ -1011,7 +1035,7 @@ async def _one_pass(
 ) -> tuple[dict[str, object], LayerScore]:
     """Run every unit of the suite once and build the record for that pass."""
     started = time.monotonic()
-    scored: list[TaskScore | CaseScore] = []
+    scored: list[TaskScore | CaseScore | BuildScore] = []
     for item in units:
         with TemporaryDirectory(prefix=f"nih-bench-{item.id}-") as scratch:
             if not json_mode:
@@ -1022,6 +1046,7 @@ async def _one_pass(
                     item,
                     model=model,
                     backend=backend,
+                    utility=utility,
                     scratch=Path(scratch),
                     local_tools=local_tools,
                 ),
@@ -1040,6 +1065,19 @@ async def _one_pass(
             attempt=attempt,
             of=repeat,
         ), suite
+    if layer == "L3":
+        builds = score_builds([one for one in scored if isinstance(one, BuildScore)])
+        return record_builds(
+            config,
+            builds,
+            model=model,
+            metrics=metrics,
+            seconds=seconds,
+            commit=commit,
+            dirty=dirty,
+            attempt=attempt,
+            of=repeat,
+        ), builds
     reviews = score_reviews([one for one in scored if isinstance(one, CaseScore)])
     return record_reviews(
         config,
@@ -1075,9 +1113,9 @@ def bench(
             the model does not answer.
     """
     chosen = layer.upper()
-    if chosen not in {"L0", "L1", "L2"}:
+    if chosen not in {"L0", "L1", "L2", "L3"}:
         fail(
-            f"no runner for {chosen} yet; L0, L1 and L2 are the ones that exist. "
+            f"no such layer as {chosen}; L0, L1, L2 and L3 are the ones that exist. "
             "See docs/benchmarks/methodology.md",
             json_mode=json_mode,
             code=EX_UNAVAILABLE,
@@ -1092,6 +1130,10 @@ def bench(
     commit = _commit(config.project_root)
     dirty = _dirty(config.project_root)
     backend = backend_for(model)
+    # L3 runs the whole pipeline, which compacts its window with the utility
+    # model. Opened only for that layer: a client to a service L1 never calls
+    # would be one more way for a pass to fail before it measured anything.
+    utility = backend_for(config.models.utility) if chosen == "L3" else None
     passes: list[tuple[dict[str, object], LayerScore]] = []
     written: list[Path] = []
 
@@ -1127,6 +1169,7 @@ def bench(
                         repeat=max(1, repeat),
                         model=model,
                         backend=backend,
+                        utility=utility,
                         metrics=metrics,
                         commit=commit,
                         dirty=dirty,
@@ -1141,6 +1184,8 @@ def bench(
                 passes.append((entry, score))
         finally:
             await backend.aclose()
+            if utility is not None:
+                await utility.aclose()
 
     broke = ""
     try:
@@ -1178,9 +1223,11 @@ def _one_rendered(entry: dict[str, object], score: LayerScore) -> str:
         return human(entry, score)
     if isinstance(score, L2Score):
         return human_reviews(entry, score)
+    if isinstance(score, L3Score):
+        return human_builds(entry, score)
     if isinstance(score, L0Score):
         return human_throughput(entry, score)
-    msg = f"no report for {type(score).__name__}"  # pragma: no cover - both layers covered
+    msg = f"no report for {type(score).__name__}"  # pragma: no cover - every layer covered
     raise AssertionError(msg)  # pragma: no cover
 
 
@@ -1350,3 +1397,297 @@ def report(root: Path, *, layer: str | None = None, out: Path | None = None) -> 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
     typer.echo(f"wrote {out} - {len(rows)} record(s)")
+
+
+# ------------------------------------------------------------------------- L3
+
+HIDDEN = "hidden"
+"""Directory under a suite holding the tests a task is graded by."""
+
+
+def load_l3(root: Path) -> tuple[tuple[L3Task, ...], tuple[str, ...]]:
+    """Return the L3 tasks and the metric names the suite declares.
+
+    Raises:
+        SuiteError: when the file is missing, does not parse, or names a task
+            with no hidden tests - which would be a task nothing can grade.
+    """
+    path = root / SUITES / "l3" / "tasks.toml"
+    if not path.is_file():
+        msg = f"no L3 suite at {path}"
+        raise SuiteError(msg)
+    try:
+        body = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as error:
+        msg = f"{path}: {error}"
+        raise SuiteError(msg) from error
+    raw = body.get("task")
+    if not isinstance(raw, list) or not raw:
+        msg = f"{path} declares no [[task]]"
+        raise SuiteError(msg)
+    try:
+        tasks = tuple(L3Task.model_validate(entry) for entry in raw)
+    except ValueError as error:
+        msg = f"{path}: {error}"
+        raise SuiteError(msg) from error
+    hidden = root / SUITES / "l3" / HIDDEN
+    missing = [
+        task.id
+        for task in tasks
+        if not any((hidden / task.id).glob("test_*.py"))
+        if (hidden / task.id).is_dir()
+    ]
+    absent = [task.id for task in tasks if not (hidden / task.id).is_dir()]
+    if absent or missing:
+        named = ", ".join(sorted({*absent, *missing}))
+        msg = f"{path}: no hidden tests under {HIDDEN}/ for {named}"
+        raise SuiteError(msg)
+    metrics = body.get("metrics", {}).get("record", [])
+    return tasks, tuple(str(name) for name in metrics)
+
+
+def plan_of(task: L3Task) -> Plan:
+    """Return a one-task plan for this task, bound to a digest of the task itself.
+
+    A plan's `spec_digest` ties it to the spec it came from, and a benchmark
+    task has no spec. Digesting the task is the honest substitute: it is still
+    a value nothing can transcribe wrongly, and two records of the same task
+    carry the same one.
+    """
+    return Plan(
+        spec_digest=digest_json(task.model_dump(mode="json")),
+        tasks=(
+            Task(
+                id=Slug(task.id),
+                title=task.title,
+                intent=task.intent,
+                files=task.files,
+                commit_type=task.commit_type,
+                acceptance=task.acceptance,
+            ),
+        ),
+    )
+
+
+def stage_hidden(root: Path, task: L3Task, repo: Path) -> int:
+    """Copy a task's hidden tests into the finished worktree and count them.
+
+    After the run, never before: they are the grade, and a worktree that held
+    them would be handing the model the answer key.
+
+    Raises:
+        SuiteError: when the tests cannot be placed.
+    """
+    source = root / SUITES / "l3" / HIDDEN / task.id
+    tests = repo / "tests"
+    try:
+        tests.mkdir(parents=True, exist_ok=True)
+        staged = 0
+        for path in sorted(source.glob("test_*.py")):
+            shutil.copy2(path, tests / path.name)
+            staged += 1
+    except OSError as error:
+        msg = f"cannot stage the hidden tests for {task.id}: {error}"
+        raise SuiteError(msg) from error
+    return staged
+
+
+def hidden_verdict(repo: Path) -> tuple[bool, str]:
+    """Run the tests in `repo` and return whether they passed, with the tail.
+
+    The fixture's own `pyproject.toml` says where its sources are, so this is
+    the same command a human would run in that directory - and the same one
+    the gate's Python row runs.
+    """
+    try:
+        finished = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=HIDDEN_TIMEOUT,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return False, f"the hidden tests could not be run: {error}"
+    tail = (finished.stdout or finished.stderr).strip().splitlines()
+    return finished.returncode == 0, " / ".join(tail[-2:])
+
+
+HIDDEN_TIMEOUT = 300
+"""Seconds for the hidden tests. A task's own work is already budgeted."""
+
+
+async def run_build(
+    config: HarnessConfig,
+    task: L3Task,
+    *,
+    model: ModelConfig,
+    backend: object,
+    utility: object,
+    scratch: Path,
+    local_tools: bool,
+) -> BuildScore:
+    """Run one whole task through the real pipeline, then grade it on hidden tests.
+
+    The pipeline is `ImplementationRun` - the same object `nih implement`
+    drives - so what is measured is implement, the commit gate, review and
+    bounded fixes as they actually run, rather than a rig that resembles them.
+    The only thing this function adds is the grade, and it adds it after the
+    run has ended and its commits are made.
+
+    The hidden tests run against the **working tree**, not against `HEAD`, and
+    `BuildScore.passed` separately requires that something was committed. That
+    keeps two facts apart which a reset would merge: whether the work was
+    right, and whether it got through the gate. A tree that would pass and was
+    never committed is a gate problem; a commit that fails is a work problem;
+    and both read as "failed" with a note saying which.
+
+    Raises:
+        SuiteError: when the fixture or the hidden tests cannot be staged.
+    """
+    worktree = prepare_fixture(config.project_root, scratch / "repo", suite="l3")
+    run_id = RunId(f"bench-{task.id}")
+    sink = JsonlEventSink(scratch / "runs", run_id)
+    vcs = GitVcs(Path(worktree.path))
+
+    async with AsyncExitStack() as stack:
+        retrieval = await stack.enter_async_context(open_retrieval(config))
+        tools = await stack.enter_async_context(
+            connect_tools(
+                server_parameters(config, worktree, local=local_tools),
+                (),
+                limits=config.tools,
+                local=retrieval.tools(config, run_id=run_id),
+            ),
+        )
+        runner = StepRunner(
+            backend=backend,  # type: ignore[arg-type]
+            tools=tools,
+            events=sink,
+            vcs=vcs,
+            worktree=worktree,
+        )
+        run = ImplementationRun(
+            runner=runner,
+            events=sink,
+            tokenizer=backend,  # type: ignore[arg-type]
+            model=model.name,
+            policy=config.compact,
+            thresholds=config.loop,
+            limits=config.tools,
+            summarizer=ModelSummarizer(utility, config.models.utility.name),  # type: ignore[arg-type]
+            vcs=vcs,
+            worktree=worktree,
+            catalog=tools.catalog,
+            generation_tps=model.measured_generation_tps,
+            max_revisions=config.max_revisions,
+        )
+        await run.run(
+            plan_of(task),
+            run_id,
+            branch=worktree.branch,
+            profile=config.profile,
+            tools="local" if local_tools else "sandbox",
+            sandbox_network=config.sandbox.network,
+        )
+
+    staged = stage_hidden(config.project_root, task, Path(worktree.path))
+    passed, tail = hidden_verdict(Path(worktree.path))
+    scored = score_build(task, await payloads_of(sink, run_id), hidden_tests_passed=passed)
+    if not passed:
+        return scored.model_copy(
+            update={"notes": (*scored.notes, f"{staged} hidden file(s): {tail}")}
+        )
+    return scored
+
+
+def record_builds(
+    config: HarnessConfig,
+    score: L3Score,
+    *,
+    model: ModelConfig,
+    metrics: Sequence[str],
+    seconds: float,
+    commit: str,
+    dirty: bool,
+    attempt: int = 1,
+    of: int = 1,
+) -> dict[str, object]:
+    """Return the JSONL record for one end-to-end run."""
+    declared = {name: score.metrics()[name] for name in metrics if name in score.metrics()}
+    return {
+        "layer": score.layer,
+        "date": datetime.now(tz=UTC).date().isoformat(),
+        "harness_commit": commit,
+        "harness_dirty": dirty,
+        "model": model.name,
+        "quantization": model.quantization,
+        "profile": config.profile,
+        "base_url": model.base_url,
+        "tasks": len(score.builds),
+        "pass": attempt,
+        "of_passes": of,
+        **declared,
+        "tools": score.tools(),
+        "inference_seconds": score.inference_seconds,
+        "tool_seconds": score.tool_seconds,
+        "overhead_seconds": round(
+            max(0.0, seconds - score.inference_seconds - score.tool_seconds), 1
+        ),
+        "wall_seconds": round(seconds, 1),
+        "per_task": [
+            {
+                "id": build.task_id,
+                "passed": build.passed,
+                "committed": build.committed,
+                "hidden_tests_passed": build.hidden_tests_passed,
+                "first_attempt_gate": build.first_attempt_gate,
+                "gate_attempts": build.gate_attempts,
+                "revisions": build.revisions,
+                "handed_back": build.handed_back,
+                "calls": build.calls,
+                "tokens": build.tokens,
+                "tools": build.tools,
+                "inference_seconds": build.inference_seconds,
+                "tool_seconds": build.tool_seconds,
+                "notes": list(build.notes),
+            }
+            for build in score.builds
+        ],
+    }
+
+
+def human_builds(entry: dict[str, object], score: L3Score) -> str:
+    """Render an end-to-end run: the metrics, then what each task did."""
+    lines = [
+        f"L3 on {entry['model']} ({entry['quantization']}), {entry['tasks']} task(s) "
+        f"in {entry['wall_seconds']}s"
+        + (
+            " [uncommitted tree: a working note, not a result]"
+            if entry["harness_dirty"]
+            else ""
+        ),
+        "",
+    ]
+    for name, value in score.metrics().items():
+        lines.append(f"  {name:<26} {value}")
+    used = score.tools()
+    if used:
+        detail = ", ".join(f"{name} x{count}" for name, count in used.items())
+        lines.append(f"  {'called':<26} {detail}")
+    lines += [
+        "",
+        f"  inference {score.inference_seconds}s, tools {score.tool_seconds}s, "
+        f"harness {entry['overhead_seconds']}s",
+        "",
+    ]
+    for build in score.builds:
+        mark = "ok  " if build.passed else "FAIL"
+        landed = "committed" if build.committed else "nothing committed"
+        lines.append(
+            f"  [{mark}] {build.task_id:<36} {landed}, {build.gate_attempts} gate "
+            f"attempt(s), {build.revisions} revision(s), {build.calls} call(s)"
+        )
+        lines += [f"         {note}" for note in build.notes]
+    return "\n".join(lines)

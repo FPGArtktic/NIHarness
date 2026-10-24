@@ -33,9 +33,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 > - **Two of three entry points work.** You can hand it a `SPEC.md`, have it
 >   gated and planned, and bring a finished `PLAN.md` to execute. `nih brainstorm`
 >   is still a stub that exits 69 and says so.
-> - **The central question is half answered.** L1 (tool calling) and L2 (review)
->   have runners and numbers; L3 (whole tasks) has a methodology and no runner.
->   One model family, one host.
+> - **The central question is half answered.** All four layers have runners.
+>   L0, L1 and L2 have numbers; L3 has three tasks where §11 asks for ten per
+>   language. One model family, one host.
 > - **Nothing is stable.** Event schemas, the config, the artifact contracts and the
 >   tool surface all change without notice, and there has been no release.
 >
@@ -157,13 +157,14 @@ the harness commit, model, quantization, profile, host and date.
 
 ### What is *not* measured
 
-Whole tasks. L3 (end to end) has a [methodology](docs/benchmarks/methodology.md), a
-record format and a seed set of cases, and **no runner**, so no data: it needs the
-vendored reference sets. L2's implementer half - first-attempt gate pass rate,
-revisions per task - needs implement, gate, review and fix run end to end, which is
-L3's shape. Until they exist, every claim here about finishing a
-real task is an observation from live runs - an anecdote, not a measurement, and
-labelled as one wherever it appears.
+Whole tasks at any scale, and any language but Python. L3 runs end to end and is
+graded by tests the model never saw, but on **three Python tasks** where §11 asks for
+ten per language, and without
+the vendored SWE-bench subset - that is a download the air gap does not have. It
+brings L2's implementer half with it, first-attempt gate pass rate and revisions per
+task, because both belong to a whole task. Until the set is bigger, a claim about
+finishing real work rests on three tasks and the live runs below - which are
+observations, not measurements, and labelled as such wherever they appear.
 
 One result is worth stating against that, with its limits. A **4B** has now produced
 a green commit unattended: `rag_query` to read a value out of an ingested datasheet
@@ -175,8 +176,8 @@ ignoring it destroys. Verified by re-running the gate on the commit by hand.
 The limits matter as much as the result: one task, one file, one constant, and a
 sample of three runs of which two finished inside the time limit and both committed.
 It says the pipeline closes. It does not say how often, on what size of task, or for
-which models. L1 now answers the first of those for tool calling; L2 and L3 would
-answer the rest, and they have no runner yet.
+which models. L1 answers the first for tool calling, L2 for review, and L3 now asks
+it of whole tasks - on three of them, which is a shape rather than an answer.
 
 ## Pipeline
 
@@ -210,11 +211,12 @@ unattended. Everything below is the detail of that sentence.
 | **Retrieval** | Qdrant over REST, embeddings over `/v1/embeddings`, `nih ingest` reading PDFs with OCR and citing pages, `rag_query` over documents and over what compaction dropped | the code index (needs tree-sitter chunking); `nih compact` and `nih research` are stubs |
 | **Management** | `nih mcp`, `nih runs`, `nih status`, `nih cancel`, `nih resume`, `--json`, `--detach` | answering `Questions` from outside |
 | **TUI** | follows a live run's event log, writes the control inbox, cancels | the questions picker and plan approval |
-| **Benchmarks** | `nih bench --layer L0` (throughput, three timed requests per context size, using the server's prefix cache as the instrument), `--layer L1` (twenty tool-calling tasks) and `--layer L2` (eight golden review cases with human verdicts, scored on precision, recall, where, why and whether the evidence was gathered), each unit in its own fixture copy, scored by folding its event log, `--repeat` for variance, `nih bench report` for the records as a table per commit | **L3 has no runner**; L2's implementer half; load time; no vendored reference sets |
+| **Benchmarks** | `nih bench --layer L0` (throughput, three timed requests per context size, using the server's prefix cache as the instrument), `--layer L1` (twenty tool-calling tasks) and `--layer L2` (eight golden review cases with human verdicts, scored on precision, recall, where, why and whether the evidence was gathered), each unit in its own fixture copy, scored by folding its event log, `--layer L3` (whole tasks through the real pipeline, graded by tests kept out of the worktree), `--repeat` for variance, `nih bench report` for the records as a table per commit | Three L3 tasks where §11 asks ten per language; no vendored reference sets; load time |
 
-Three things block the rest, in order: **L3** (whole tasks are still unmeasured),
-**brainstorm** (the last entry point, and the only interactive one), and **the code
-index** (the one retrieval collection nothing writes to). 36 of 74 roadmap items are
+Two things block the rest, in order: **brainstorm** (the last entry point, and the
+only interactive one) and **the code index** (the one retrieval collection nothing
+writes to). L3 now runs whole tasks end to end, graded by tests the model never saw,
+on three Python tasks rather than the ten per language §11 asks for. 36 of 74 roadmap items are
 done; the count is a poor measure, because the remaining ones are the large ones.
 
 [`docs/orientation.md`](docs/orientation.md) is the long version of this table,

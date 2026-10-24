@@ -14,7 +14,7 @@ profile and date, and committed under `benchmarks/results/`.
 | L0 inference | backend × profile × quantization | prompt-processing and generation tok/s at 8k / 32k / 64k, RAM, VRAM, load time |
 | L1 tool calling | 20 tasks, 3-5 calls each | syntactically valid calls, correct sequences, correct arguments, terminated loops, loop incidents per task |
 | L2 steps | gate and review on a golden set | first-attempt gate pass rate, revisions per task, reviewer precision and recall against human verdicts, diff size, highest intervention level reached |
-| L3 end-to-end | 10 tasks per language, hidden tests | pass@1, wall time, tokens, tool calls, harness overhead outside inference |
+| L3 end-to-end | whole tasks, hidden tests | pass@1, first-attempt gate rate, revisions, tokens, tool calls, harness overhead outside inference |
 
 ## Running L0
 
@@ -477,6 +477,112 @@ this project to get wrong is what a measurement keeps.
 revisions per task over a golden set of tasks. That needs implement, gate,
 review and fix run end to end, which is closer to L3's shape than to this
 one. The review half is what exists; see [the roadmap](../roadmap.md).
+
+### What the clock said, the first time it was asked
+
+Three L1 passes at `380e82a`, the first runs in which anything timed itself:
+
+| | pass 1 | pass 2 | pass 3 |
+|---|---|---|---|
+| inference | 471.4s | 536.2s | 737.7s |
+| tools | 9.1s | 9.7s | 7.8s |
+| **harness** | **16.9s** | **16.5s** | **16.4s** |
+| wall | 497.4s | 562.4s | 761.9s |
+
+**The harness costs 2.2% to 3.4% of the clock**, and the shape of that is what
+makes it believable rather than the number: inference moved by 266 seconds
+across the three passes while the harness's own cost moved by half a second.
+A constant per-task cost - staging a fixture, starting a tool server, writing
+events - is exactly what should stay still while generation varies. About
+0.84 seconds a task, nearly all of it starting a tool server.
+
+So the honest answer to "is the harness slow" is that it is not where the time
+goes, and now there is a number instead of an opinion.
+
+### Only one detector has ever fired
+
+The pathology tally, across every recorded run that has one - three L1 passes
+over twenty tasks and six L2 passes over eight cases:
+
+| Pathology | Times fired |
+|---|---|
+| `exact_repeat` | 29 in L1, 6 in L2 |
+| everything else | **0** |
+
+`state_cycle`, `progress_stall`, `gate_thrash`, `invalid_calls`,
+`degenerate_output` and `unbacked_claim` have never fired in a recorded run.
+That is one fact with two possible readings and the suites cannot tell them
+apart: either the thresholds in `[loop]` are set past what these tasks
+provoke, or these tasks do not provoke them. Both are worth knowing and
+neither is a result yet - it is [on the roadmap](../roadmap.md). What it does
+already say is that the intervention ladder is, in practice, one rung: the
+repeat message measured on L1, and nothing else has been exercised by
+anything.
+
+## Running L3
+
+```bash
+uv run nih bench --layer L3                        # in the sandbox
+uv run nih bench --layer L3 --unsafe-local-tools   # on this host
+uv run nih bench --layer L3 --repeat 3             # and the spread
+```
+
+L3 asks the only question somebody using the harness has: **given a task, does
+the work it commits do what was asked.** Everything in between - the implement
+step, the commit gate, review, the bounded fix loop - is the pipeline doing
+its job, and none of it is the grade.
+
+The pipeline is the real one. A task runs through `ImplementationRun`, the
+same object `nih implement` drives, in a fresh git repository made from
+`benchmarks/suites/l3/fixture/`. So a number here is about the harness and the
+model, not about a rig that resembles them.
+
+### The grade is tests the model never saw
+
+A model's own tests are evidence it gathered. That is what the gate is for and
+what a benchmark may not score: `assert isinstance(result, float)` passes its
+own gate, and [L2 has a case](#every-case-is-green) about precisely that being
+waved through. So each task's tests live in
+`benchmarks/suites/l3/hidden/<task-id>/`, outside the fixture, and are copied
+in **after** the run has ended and its commits are made.
+
+`pass_at_1_ratio` counts tasks that committed something *and* passed those
+tests. `committed_ratio` is the ceiling on it: work that did not land did not
+happen, and the two apart say whether a failure was a wrong answer or no
+answer.
+
+The tests run against the working tree rather than against `HEAD`, which
+keeps those two facts separate. A tree that would have passed and was never
+committed is a gate problem, a commit that fails the tests is a work problem,
+and resetting to `HEAD` first would report both as the same thing. Both read
+as a failure, with a note saying which one it was.
+
+### A task is only fair if its brief says what the tests check
+
+`Task.acceptance` is a tuple of sentences, given to the model verbatim in the
+step's statement of work, and the hidden tests check exactly those sentences -
+including the name of the function they call. A hidden test that demands a
+choice the brief did not state is measuring telepathy, and it is a bug in the
+case rather than a hard task.
+
+That field is new. A plan's task carries `satisfies`, which points at a spec's
+criteria by id, and an id is a reference a model cannot read.
+
+### What it also measures, because a whole task is where they live
+
+§11 asks L2 for the implementer's side - first-attempt gate pass rate and
+revisions per task. Both belong to a whole task rather than to a step: the
+question is whether the work was right when it was first offered, which only
+exists once something has been offered to a gate. `first_attempt_gate_ratio`
+and `revisions_per_task` are folded from `gate.finished` and `task.finished`.
+
+### Three tasks is not ten per language
+
+§11 asks for ten per language and a vendored SWE-bench subset. The subset is a
+download, which is not available inside the air gap; the shortfall is on [the
+roadmap](../roadmap.md). A locally written suite is one whose fairness can be
+checked, which for the first three tasks matters more than scale
+([ADR 0028](../adr/0028-a-whole-task-is-graded-by-tests-it-never-saw.md)).
 
 ## Rules
 

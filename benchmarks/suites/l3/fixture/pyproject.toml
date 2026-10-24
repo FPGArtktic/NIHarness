@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Mateusz Okulanis
+# SPDX-License-Identifier: GPL-3.0-or-later
+[project]
+name = "ledger"
+version = "0.1.0"
+description = "A tiny ledger, for the end-to-end benchmark to work on."
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 96
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
