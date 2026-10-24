@@ -52,6 +52,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - This is also the first code in the project that writes `NOTES.md`. The
   prompts point at it, the refusal messages point at it, the event catalogue
   has `notes.appended` - and nothing had ever created the file.
+- **`add_dependency` measured, and what the suite could not see.** Three clean
+  passes at `e62dc3e` against three at `6e43ea8`, same model, same host:
+  `write-down-what-cannot-be-done` went from **0/3 to 3/3**. That is the task
+  `add_dependency` was written for and the clearest per-task result in the
+  suite so far. The aggregate did not move - `passed_ratio` 0.65-0.85 before,
+  0.65-0.90 after, overlapping ranges - because one task of twenty is 0.05 of
+  that ratio and the pass-to-pass spread is 0.25. Worth stating as a property
+  of the instrument rather than of the model: at twenty tasks and three
+  passes, this suite cannot see a one-task change in its headline number, and
+  the per-task table is where such a change is visible at all.
+- Two tasks still fail every pass. `two-places-must-agree`: the model changes
+  one of the two files that have to agree and commits. `recover-from-an-ambiguous-passage`
+  went 1/3 to 0/3, which at this sample size is noise and not a regression.
 - **Correction, and the first provenanced record of the full suite.** Three
   passes of the 20 tasks from one clean commit put `passed_ratio` at
   **0.65 - 0.85** - thirteen to seventeen of twenty. A single pass taken right
