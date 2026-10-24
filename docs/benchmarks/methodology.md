@@ -320,6 +320,55 @@ One review in thirty-two claimed the tests passed without running them. That
 is rare rather than routine, and it is also [checked by the harness
 now](../concepts/tool-loops.md) - a claim the harness can verify, it verifies.
 
+### Measuring the evidence check, and a measurement designed wrong
+
+The harness then gained [a check](../concepts/tool-loops.md) that sends back a
+verdict claiming evidence its own step does not have. Three more passes at
+`73a5c99`, against the three above:
+
+| Metric | `50a13ef` | `73a5c99` |
+|---|---|---|
+| `reviewer_precision` | 1.0 - 1.0 | 0.75 - 1.0 |
+| `reviewer_recall` | 0.25 - 0.5 | 0.25 - 0.75 |
+| `decision_ratio` | 0.5 - 0.75 | 0.625 - 0.75 |
+| `located_ratio` | 0.5 - 1.0 | 0.5 - 1.0 |
+| `reasoned_ratio` | 1.0 - 1.0 | 1.0 - 1.0 |
+| `evidence_ratio` | 1.0 - 1.0 | 1.0 - 1.0 |
+| `passed_ratio` | 0.5 - 0.625 | 0.625 - 0.75 |
+
+**These numbers say nothing about the change, and that was predictable before
+they were taken.** `evidence_ratio` is the metric the check acts on and it was
+already 1.0 in all three before-passes - there was no room above it. The only
+run that ever recorded less is the single pass at `8bdc634`, at 0.875: one
+review in eight, and one in thirty-two across everything recorded before the
+check existed. Twenty-four reviews that contain no unbacked claim are what a
+rate of one in thirty-two produces about half the time on its own. The right
+measurement for a rare event is either many more passes or a case built to
+provoke it, not three passes of a suite where it happens by accident.
+
+Every other range overlaps its predecessor. `passed_ratio` is one case higher
+at both ends, and one case of eight is 0.125 against a pass-to-pass spread of
+0.125 and more. The set of cases that failed *every* pass shrank from three to
+one, which is the most suggestive line here and still not a result: the two
+that left it now pass one and two times out of three, which is unstable rather
+than fixed.
+
+One thing in the after-passes is new, and it is a warning and not a finding.
+The suite recorded its **first false positive** in fifty-six reviews: a NAK on
+`a-helper-extracted`, a correct change, reasoned as "cannot verify build and
+tests without Python language server". That is the shape of the risk this
+check carries - pressure to back a claim can become a refusal to decide - and
+the reason is wrong on its own terms, because a language server does not run
+tests. One occurrence is a thing to watch in the next passes.
+
+The record also cannot answer the question that decides the matter: **did the
+check ever fire?** A case records how many interventions it saw and the
+highest level any of them reached, not which pathology produced them, so
+twenty-four reviews with `evidence_ratio` 1.0 are consistent with the check
+firing and with the check being dead code. Until the record names the
+pathology, nothing in the intervention ladder can be measured - it is on [the
+roadmap](../roadmap.md).
+
 ### What L2 does not measure yet
 
 §11 asks L2 for the implementer's side too - first-attempt gate pass rate and

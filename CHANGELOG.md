@@ -24,6 +24,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   document left stale. When it did catch one it named the thing every time, so
   the gap is detection rather than articulation, which says the prompt is not
   where to look.
+- **The evidence check was measured, and the measurement was designed
+  wrong.** Three passes at `73a5c99` against three at `50a13ef`: precision
+  **1.0 - 1.0 to 0.75 - 1.0**, recall **0.25 - 0.5 to 0.25 - 0.75**,
+  `passed_ratio` **0.5 - 0.625 to 0.625 - 0.75**, and `evidence_ratio` 1.0 in
+  both. The metric the check acts on was already at its ceiling before the
+  check existed, and an unbacked claim happened once in thirty-two reviews -
+  twenty-four clean reviews are what that rate produces by itself about half
+  the time. Every other range overlaps. The set of cases failing every pass
+  shrank from three to one, and the two that left it now pass one and two
+  times out of three, which is unstable rather than fixed. Recorded as what it
+  is: no evidence either way, from passes that could not have provided it.
+- The after-passes did record the suite's **first false positive** in
+  fifty-six reviews - a NAK on a correct change, reasoned as "cannot verify
+  build and tests without Python language server". That is the risk this check
+  carries, stated when the check was added: pressure to back a claim can
+  become a refusal to decide. One occurrence, and the reason is wrong on its
+  own terms, so it is a thing to watch rather than a result.
 - **A verdict's claims are checked against its own step.** `Verdict` asserts
   that the build and the tests passed, §4 has always said the reviewer runs
   both itself, and nothing checked whether it did. A verdict whose claims no
