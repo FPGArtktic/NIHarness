@@ -59,6 +59,17 @@ from niharness.prompts import assemble
 SUITES = Path("benchmarks/suites")
 RESULTS = Path("benchmarks/results")
 
+LITTER = ("__pycache__", ".ruff_cache", ".pytest_cache", ".mypy_cache")
+"""Tool caches, never copied into a task's fixture.
+
+Running `ruff` or `pytest` in the suite's own fixture directory - which is
+what checking its baseline invariant looks like - leaves a cache behind. The
+fixture is then committed with that cache in it, so the tree hash the
+state-cycle detector compares depends on which version of ruff somebody last
+ran by hand, and two machines prepare measurably different fixtures from the
+same checked-in files.
+"""
+
 TASK_TEMPLATE = """## Benchmark task `{id}`
 
 {prompt}
@@ -121,7 +132,7 @@ def prepare_fixture(root: Path, into: Path) -> Worktree:
         msg = f"no L1 fixture at {fixture}"
         raise SuiteError(msg)
     git = _git()
-    shutil.copytree(fixture, into, dirs_exist_ok=True)
+    shutil.copytree(fixture, into, dirs_exist_ok=True, ignore=shutil.ignore_patterns(*LITTER))
     try:
         for args in (
             ("init", "-q", "-b", "bench", "."),

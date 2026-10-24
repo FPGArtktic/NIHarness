@@ -7,6 +7,9 @@ scoring by folding the log: the grader is testable without a model, so a
 number it produces later is about the model and not about the grader.
 """
 
+import shutil
+from pathlib import Path
+
 import pytest
 
 from niharness.domain.bench import (
@@ -507,3 +510,22 @@ def test_a_forbidden_fragment_in_a_file_that_is_gone_is_not_a_pass() -> None:
     score = score_task(REMOVED, answered(called("replace_in_file", path="a")), {})
     assert not score.complete
     assert "was not read back" in " ".join(score.notes)
+
+
+def test_a_tool_cache_never_reaches_a_task_fixture(tmp_path: Path) -> None:
+    """A fixture's tree hash must not depend on which ruff somebody last ran."""
+    from niharness.cli.bench import prepare_fixture
+
+    root = Path(__file__).resolve().parents[2]
+    fixture = root / "benchmarks" / "suites" / "l1" / "fixture"
+    litter = fixture / ".ruff_cache" / "0.0.0"
+    litter.mkdir(parents=True, exist_ok=True)
+    (litter / "stale").write_text("whatever ruff left here", encoding="utf-8")
+    try:
+        worktree = prepare_fixture(root, tmp_path / "repo")
+        copied = Path(worktree.path)
+        assert (copied / "src" / "widget.py").is_file(), "the fixture itself is copied"
+        assert not (copied / ".ruff_cache").exists()
+        assert not list(copied.rglob("__pycache__"))
+    finally:
+        shutil.rmtree(fixture / ".ruff_cache", ignore_errors=True)

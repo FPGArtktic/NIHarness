@@ -423,6 +423,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- A task's fixture is copied without tool caches. Checking the suite's
+  baseline invariant means running `ruff` and `pytest` in the fixture
+  directory, which leaves a cache behind - and the fixture was then committed
+  with it, so the tree hash the state-cycle detector compares depended on
+  which ruff somebody last ran by hand, and two machines prepared measurably
+  different fixtures from identical checked-in files.
+
 - `spec.accepted` carries `reviewed`. The spec gate has two halves - a schema
   check and a reviewer pass - and only the first one exists, so the event says
   which ran instead of implying a review nobody performed.
