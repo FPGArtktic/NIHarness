@@ -622,6 +622,46 @@ it asserts the tests passed without running them - and the harness can check
 this one the same way, because whether a `git_commit` call in this step
 returned ok is a fact in its own log.
 
+### The first whole tasks it finished, and what still stops the rest
+
+Three passes at `e5291eb`, after the reflection turn stopped ending steps:
+
+| Metric | range |
+|---|---|
+| `pass_at_1_ratio` | **0.0 - 0.6667** |
+| `committed_ratio` | 0.0 - 0.6667 |
+| `first_attempt_gate_ratio` | 0.0 - **1.0** |
+| `handback_ratio` | 1.0 - 1.0 |
+
+One pass finished **two of three whole tasks**: committed through the gate on
+the first attempt, and accepted by tests the model never saw. That is the
+first time this project has measured work it can call done at more than one
+task a run.
+
+It is not attributed to the fix. A pass with two commits had happened before
+it, in [the records discarded for a buggy
+scorer](#the-gate-is-counted-from-the-call-not-from-the-gates-own-events), and
+the other two passes here are 0.0 - so the ranges overlap and three passes
+cannot separate the change from the model. What *is* new is that
+`uncommitted_completion` appears in the tally twice, in the third pass: the
+implementer's commit check has fired, which no record could say before.
+
+`handback_ratio` is **1.0 in every pass**, including the one that finished two
+tasks, and the reason is the stage after the gate. Both successful tasks were
+committed, reviewed, refused, and sent to a fix step that reported an
+incomplete checklist - so the pipeline handed back work the hidden tests
+accept. Keeping `passed` separate from `handback_ratio` is what makes that
+visible: the first says the work was right, the second says the pipeline could
+not tell.
+
+And one failure dominates every pass: `exact_repeat` nine to fourteen times,
+on `replace_in_file`. The model re-sends a refused edit, falls back to
+`apply_patch`, and in one task reported the file left with "duplicate content
+from failed `replace_in_file` operations" - after which nothing could recover
+it. What the tool actually said is the one thing the record did not keep, so
+`violations` and one refusal's own words per rule are in it now, as L1 has had
+from the start.
+
 ### Three tasks is not ten per language
 
 §11 asks for ten per language and a vendored SWE-bench subset. The subset is a

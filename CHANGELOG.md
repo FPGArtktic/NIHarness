@@ -11,6 +11,32 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **L3 finished two whole tasks in one pass**: committed through the gate on
+  the first attempt and accepted by tests the model never saw,
+  `pass_at_1_ratio` **0.6667**. Three passes at `e5291eb` span 0.0 - 0.6667,
+  and a pass with two commits had already happened in the records discarded
+  for a buggy scorer, so the ranges overlap and three passes cannot separate
+  the reflection fix from the model's own variance. Recorded as the first
+  measurement of work this project can call done, not as proof of a cause.
+- `uncommitted_completion` appears in a pathology tally for the first time -
+  twice, in the third pass. The implementer's commit check has fired, which no
+  record could say before the tally reached this layer.
+- **`handback_ratio` is 1.0 in every pass, including the one that finished two
+  tasks.** Both were committed, reviewed, refused, and sent to a fix step that
+  reported an incomplete checklist, so the pipeline handed back work the hidden
+  tests accept. Keeping `passed` separate from `handback_ratio` is what makes
+  it visible: one says the work was right, the other says the pipeline could
+  not tell.
+- **L3 records why a call was refused.** `violations` and one refusal's own
+  words per rule, as L1 has had from the start. The dominant failure in every
+  pass is `exact_repeat` nine to fourteen times on `replace_in_file` - the
+  model re-sends a refused edit, falls back to `apply_patch`, and in one task
+  left the file with "duplicate content from failed `replace_in_file`
+  operations", after which nothing recovered it. What the tool said is the one
+  thing the record did not keep.
+
 ### Fixed
 
 - **The reflection turn was ending steps instead of unsticking them.** The

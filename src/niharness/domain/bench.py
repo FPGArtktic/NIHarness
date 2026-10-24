@@ -1602,6 +1602,18 @@ class BuildScore(BaseModel):
     calls: int = Field(default=0, ge=0)
     tokens: int = Field(default=0, ge=0)
     tools: dict[str, int] = Field(default_factory=dict)
+    rejected: int = Field(default=0, ge=0)
+    violations: dict[str, int] = Field(
+        default_factory=dict,
+        description="How many calls each rule refused. L1 has had this from the "
+        "start; this layer went three runs without it while a repeated refusal was "
+        "its dominant failure.",
+    )
+    examples: dict[str, str] = Field(
+        default_factory=dict,
+        description="One refusal's own words per rule. A tally says which rule fired; "
+        "this says what the model actually got wrong, which is the actionable half.",
+    )
     interventions: int = Field(default=0, ge=0)
     pathologies: dict[str, int] = Field(
         default_factory=dict,
@@ -1698,6 +1710,18 @@ class L3Score(BaseModel):
         """Every pathology a detector fired on, with how often, across the suite."""
         return _tallied(build.pathologies for build in self.builds)
 
+    def violations(self) -> dict[str, int]:
+        """Every rule that refused a call, with how often, across the suite."""
+        return _tallied(build.violations for build in self.builds)
+
+    def examples(self) -> dict[str, str]:
+        """One refusal's words per rule, so the tally explains itself."""
+        found: dict[str, str] = {}
+        for build in self.builds:
+            for rule, detail in build.examples.items():
+                found.setdefault(rule, detail)
+        return dict(sorted(found.items()))
+
     def unfinished(self) -> dict[str, int]:
         """Every Definition of Done item left undone, with how often.
 
@@ -1759,6 +1783,7 @@ def score_build(
     called = [body for body in events if isinstance(body, ToolCalled)]
     responses = [body for body in events if isinstance(body, ModelResponse)]
     interventions = [body for body in events if isinstance(body, LoopIntervention)]
+    refused = [body for body in events if isinstance(body, ToolRejected)]
     # `git_commit` is the gate (§4), and the gate's own events are appended by
     # the tool server's own sink, not this run's. Folding `gate.finished` here
     # counted zero on every task of every pass.
@@ -1794,6 +1819,9 @@ def score_build(
         calls=len(called),
         tokens=sum(body.completion_tokens for body in responses),
         tools=_counted(body.name for body in called),
+        rejected=len(refused),
+        violations=_counted(body.violation for body in refused),
+        examples=_examples(refused),
         interventions=len(interventions),
         pathologies=_counted(body.pathology for body in interventions),
         unfinished=tuple(unfinished),

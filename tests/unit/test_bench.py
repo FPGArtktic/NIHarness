@@ -984,3 +984,32 @@ def test_work_done_and_never_committed_is_said_in_those_words() -> None:
         uncommitted_would_pass=True,
     )
     assert landed.uncommitted_would_pass is False, "it committed; the worktree is not the story"
+
+
+def test_a_build_records_why_a_call_was_refused() -> None:
+    """L1 has had this from the start; L3 went three runs without it.
+
+    A repeated refusal was the dominant failure in every L3 pass -
+    `exact_repeat` nine to fourteen times - and the record could say how often
+    a detector fired but not what the tool had said, which is the half a
+    reader can act on.
+    """
+    scored = score_build(
+        build_task(),
+        (
+            ToolRejected(
+                name="replace_in_file",
+                violation="find_not_found",
+                detail="the passage does not occur in src/ledger.py; the closest line is 31",
+            ),
+            ToolRejected(name="replace_in_file", violation="find_not_found", detail="again"),
+            task_finished("a-task", outcome="handoff", reason="implement failed"),
+        ),
+        hidden_tests_passed=False,
+    )
+    assert scored.rejected == 2
+    assert scored.violations == {"find_not_found": 2}
+    assert "closest line is 31" in scored.examples["find_not_found"], "the tool's own words"
+    suite = score_builds((scored,))
+    assert suite.violations() == {"find_not_found": 2}
+    assert "find_not_found" in suite.examples()
