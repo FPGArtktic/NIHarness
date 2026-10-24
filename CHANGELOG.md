@@ -11,6 +11,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **Development is suspended indefinitely, as of 2026-10-24.** No further work
+  is planned. The repository is left with the gate green, every commit on
+  `main` having passed it, and the benchmark records under
+  `benchmarks/results/` meaning what they say. `docs/` is the handover:
+  `orientation.md` for what works, `roadmap.md` for the 43 open items and what
+  was known about each, and 31 ADRs for the reasoning. GPL-3.0-or-later, so
+  nothing is reserved.
+
 ### Fixed
 
 - **A step that writes nothing never rolls back.** Level three resets the

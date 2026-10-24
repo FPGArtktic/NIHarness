@@ -17,6 +17,30 @@ SPDX-License-Identifier: GPL-3.0-or-later
 [![license](https://img.shields.io/badge/license-GPL--3.0--or--later-1f2937)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.12%2B-3776ab)](pyproject.toml)
 
+> [!IMPORTANT]
+> **Development is suspended indefinitely, as of 2026-10-24.**
+>
+> No further work is planned. The repository is left as it stands: the gate is green,
+> every commit on `main` passed it, and the benchmark records under
+> `benchmarks/results/` are the measurements they claim to be.
+>
+> What that means for a reader:
+>
+> - **It works as far as it is measured, and no further.** All three entry points run,
+>   all four benchmark layers have runners, and `docs/benchmarks/results.md` says what
+>   was measured on one host with one model family. Everything beyond those numbers is
+>   untested rather than broken.
+> - **`docs/` is the handover.** It exists so the *reasoning* can be recovered and not
+>   just the code: [`docs/orientation.md`](docs/orientation.md) for what works today,
+>   [`docs/roadmap.md`](docs/roadmap.md) for the 43 items that were still open and why,
+>   and the 31 records in [`docs/adr/`](docs/adr/README.md) for every decision that
+>   shaped it.
+> - **The open items are honest about themselves.** Two are blocked on the network by
+>   design, including a `certifi` advisory that wants a wheelhouse rebuild; the rest are
+>   listed with what was known about each.
+> - **Nothing is reserved.** GPL-3.0-or-later. Fork it, finish it, or read it for the
+>   parts that were worth writing down.
+
 > [!WARNING]
 > **Research and development. Nothing here is ready to depend on.**
 >
@@ -217,7 +241,7 @@ unattended. Everything below is the detail of that sentence.
 Two things block the rest, in order: **brainstorm** (the last entry point, and the
 only interactive one) and **the code index** (the one retrieval collection nothing
 writes to). L3 now runs whole tasks end to end, graded by tests the model never saw,
-on three Python tasks rather than the ten per language §11 asks for. 36 of 74 roadmap items are
+on three Python tasks rather than the ten per language §11 asks for. 40 of 83 roadmap items are
 done; the count is a poor measure, because the remaining ones are the large ones.
 
 [`docs/orientation.md`](docs/orientation.md) is the long version of this table,
