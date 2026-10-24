@@ -414,15 +414,24 @@ Usage: nih resume [OPTIONS] {run_id}
 ## `nih run`
 
 ```text
-Usage: nih run [OPTIONS] {spec}                                                
+Usage: nih run [OPTIONS] {SPEC.md}                                             
                                                                                 
  Plan and implement without stopping for approval.                              
                                                                                 
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
-│ *    spec      <path>  Path to SPEC.md [required]                            │
+│ *    SPEC.md      <path>  Path to SPEC.md [required]                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --help          Show this message and exit.                                  │
+│ --project-root           -C      <path>  The project to operate on.          │
+│                                          [default: (.)]                      │
+│ --profile                        <str>   Override the profile.               │
+│ --unsafe-local-tools                     Run the tool server on this host    │
+│                                          instead of in the sandbox.          │
+│ --ignore-open-questions                  Implement a plan whose planner says │
+│                                          it had to guess.                    │
+│ --json                                   Print one JSON object instead of    │
+│                                          the human form.                     │
+│ --help                                   Show this message and exit.         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 

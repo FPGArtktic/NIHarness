@@ -281,3 +281,40 @@ def test_planning_refuses_a_spec_whose_criteria_are_not_testable(tmp_path: Path)
     payload = json.loads(result.stdout)
     assert payload["ok"] is False
     assert "not testable" in payload["detail"]
+
+
+def test_run_refuses_to_implement_a_plan_the_planner_guessed_at(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`nih run` removes exactly one stop, and this is the plan that stop was for."""
+    from niharness.application import PlanningResult
+    from niharness.cli import pipeline as pipeline_module
+    from niharness.domain.events import StopReason
+
+    guessed = draft().for_spec(spec().digest())
+    assert guessed.open_questions, "the fixture exists to carry one"
+
+    async def planned_anyway(*args: object, **kwargs: object) -> PlanningResult:
+        return PlanningResult(
+            run_id=RUN,
+            outcome=RunOutcome.COMPLETED,
+            stop_reason=StopReason.FINAL_ANSWER,
+            tool_calls=3,
+            tokens=900,
+            plan=guessed,
+            reason="2 task(s) planned",
+        )
+
+    monkeypatch.setattr(pipeline_module.plan_module, "execute", planned_anyway)
+    (tmp_path / "SPEC.md").write_text(render_spec_file(spec()), encoding="utf-8")
+    result = runner.invoke(
+        app, ["run", str(tmp_path / "SPEC.md"), "-C", str(tmp_path), "--json"]
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert payload["open_questions"] == list(guessed.open_questions)
+    assert "--ignore-open-questions" in payload["error"]
+    assert Path(payload["approved"]).is_file(), "the plan is approved and ready to implement"

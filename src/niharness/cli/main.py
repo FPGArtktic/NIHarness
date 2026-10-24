@@ -22,6 +22,7 @@ from niharness.cli import implement as implement_module
 from niharness.cli import ingest as ingest_module
 from niharness.cli import init as init_module
 from niharness.cli import logging as logging_module
+from niharness.cli import pipeline as pipeline_module
 from niharness.cli import plan as plan_module
 from niharness.cli import runs as runs_module
 from niharness.cli import status as status_module
@@ -250,15 +251,35 @@ def implement(
 
 
 @app.command()
-def run(spec: Annotated[Path, typer.Argument(help="Path to SPEC.md")]) -> None:
+def run(
+    spec: Annotated[Path, typer.Argument(metavar="SPEC.md", help="Path to SPEC.md")],
+    root: ProjectRoot = Path(),
+    profile: Annotated[
+        str | None, typer.Option("--profile", help="Override the profile.")
+    ] = None,
+    local_tools: Annotated[
+        bool,
+        typer.Option(
+            "--unsafe-local-tools",
+            help="Run the tool server on this host instead of in the sandbox.",
+        ),
+    ] = False,
+    ignore_open_questions: Annotated[
+        bool,
+        typer.Option(
+            "--ignore-open-questions",
+            help="Implement a plan whose planner says it had to guess.",
+        ),
+    ] = False,
+    json_mode: JsonOption = False,
+) -> None:
     """Plan and implement without stopping for approval."""
-    del spec
-    unavailable(
-        "run",
-        "the chaining, and a decision about what --json says when one command\n"
-        "produces two runs; `nih plan SPEC.md --approve` then `nih implement`\n"
-        "does the same thing today, in two commands",
-        "docs/roadmap.md, stage 'the run loop'",
+    pipeline_module.run(
+        _config(root.resolve(), profile),
+        spec,
+        local_tools=local_tools,
+        ignore_open_questions=ignore_open_questions,
+        json_mode=json_mode,
     )
 
 

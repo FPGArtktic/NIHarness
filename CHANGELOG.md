@@ -18,6 +18,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   and `PLAN.md` is written and stored by digest. `nih plan approve PLAN.md`
   records the decision, which is what `nih implement` then runs. Two of three
   entry points now work end to end.
+- `nih run SPEC.md`: both halves of the pipeline, with no approval stop. It
+  chains the two fresh runs and approves the plan for you - and refuses to
+  implement a plan whose `open_questions` are not empty. The only stop this
+  command removes is the human reading of the plan, so a planner that says it
+  had to guess is exactly what that stop was for; the plan is left approved and
+  the questions printed, and `--ignore-open-questions` says you have read them.
 - `PlanDraft`: what the planner actually writes. A `Plan` carries the spec's
   digest, and asking a model to reproduce a digest of a document it was shown
   as prose is asking for transcription rather than judgement - the one field in

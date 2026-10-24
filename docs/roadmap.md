@@ -198,9 +198,12 @@ flag on the sandbox adapter:
       formality: an acceptance criterion whose verification only restates an
       intention is rejected offline. `spec.accepted` carries `reviewed: false`
       until the other half exists, rather than implying a review nobody ran.
-- [ ] `nih run`: plan and implement without stopping for approval. Both halves
-      exist now; what is missing is the chaining and a decision about what
-      `--json` should say when one command produces two runs.
+- [x] `nih run`: plan and implement without stopping for approval. It chains
+      the two fresh runs and approves the plan on your behalf - and refuses to
+      implement a plan whose `open_questions` are not empty, because the one
+      stop this command removes is the human reading of the plan, and a
+      planner saying it had to guess is exactly what that stop was for.
+      `--ignore-open-questions` is for when you have read them.
 
 ## What the live runs showed, and what is still open
 

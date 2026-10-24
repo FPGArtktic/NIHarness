@@ -67,6 +67,9 @@ suggestion. See [Architecture](concepts/architecture.md) and
   `nih plan approve PLAN.md` records that decision by digest.
 - `nih implement`: with a model served and the sandbox image built, it executes
   an approved plan task by task, each commit going through the gate.
+- `nih run SPEC.md`: both halves at once, with no approval stop - except for a
+  plan whose planner recorded open questions, which it refuses to implement
+  until somebody has read them.
 - The control plane: `nih runs`, `nih cancel`, `nih resume`, `--detach`,
   `--json`, and `nih mcp` - the management surface an agent drives, which
   cannot touch the code. See

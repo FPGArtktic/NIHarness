@@ -73,6 +73,13 @@ which is what `nih implement` runs. Approval is a human action and stays one;
 `--approve` on the planning command is for the case where the same person is
 doing both in one sitting.
 
+`nih run SPEC.md` chains both halves and approves the plan for you - with one
+exception. A plan whose `open_questions` are not empty is not implemented,
+because the only stop `nih run` removes is the human reading of the plan, and a
+planner that says it had to guess is exactly what that stop was for. The plan is
+left approved and the questions printed, so `nih implement` is one command away
+once you have read them; `--ignore-open-questions` says you have.
+
 ## Fresh runs at stage boundaries
 
 Two transitions start a **new run**, seeded only with an artifact:
