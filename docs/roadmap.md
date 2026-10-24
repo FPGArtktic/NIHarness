@@ -377,11 +377,11 @@ the change and stop.
       reviewer. A NAK is scored on where and why, and a verdict claiming the
       tests passed has to point at a green `run_tests` call in its own step
       ([ADR 0027](adr/0027-a-review-case-is-a-tree-and-its-verdict-must-be-earned.md)).
-- [ ] Record **which pathology** fired, per case and per task. Both suites
-      count interventions and keep the highest level reached, and neither says
-      what caused them - so a change to the intervention ladder cannot be
-      measured. Three L2 passes after the evidence check landed are consistent
-      with it firing and with it never firing once.
+- [x] Record **which pathology** fired, per case and per task. Both suites
+      counted interventions and kept the highest level reached, and neither
+      said what caused them - so a change to the intervention ladder could not
+      be measured, which three L2 passes demonstrated by being consistent with
+      the evidence check firing and with its never firing once.
 - [ ] Tighten L2's `mentions_any` to the tokens that discriminate. The first
       three passes put `reasoned_ratio` at 1.0 throughout, which means it
       distinguished nothing: some tokens appear on the line that changed, so a

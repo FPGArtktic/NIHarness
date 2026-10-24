@@ -113,6 +113,12 @@ class TaskScore(BaseModel):
     calls: int = Field(default=0, ge=0)
     rejected: int = Field(default=0, ge=0)
     interventions: int = Field(default=0, ge=0)
+    pathologies: dict[str, int] = Field(
+        default_factory=dict,
+        description="How many interventions each pathology caused. `interventions` "
+        "says how often the ladder was climbed; this says what for, and a change to "
+        "the ladder cannot be measured without it.",
+    )
     violations: dict[str, int] = Field(
         default_factory=dict,
         description="How many calls each rule refused. `valid_calls_ratio` says how "
@@ -206,6 +212,19 @@ class SuiteScore(BaseModel):
         eight, and no ratio above tells them apart.
         """
         return _ratio(sum(task.interventions for task in self.tasks), len(self.tasks), scale=1)
+
+    def pathologies(self) -> dict[str, int]:
+        """Every pathology a detector fired on, with how often, across the suite.
+
+        `loop_incidents_per_task` says how much interference there was; this
+        says which detector caused it, which is what a change to the ladder is
+        measured against.
+        """
+        tally: dict[str, int] = {}
+        for task in self.tasks:
+            for pathology, count in task.pathologies.items():
+                tally[pathology] = tally.get(pathology, 0) + count
+        return dict(sorted(tally.items(), key=lambda item: (-item[1], item[0])))
 
     def violations(self) -> dict[str, int]:
         """Every rule that refused a call, with how often, across the suite.
@@ -311,6 +330,7 @@ def score_task(
         calls=len(called),
         rejected=len(refused),
         interventions=len(interventions),
+        pathologies=_counted(event.pathology for event in interventions),
         violations=_counted(event.violation for event in refused),
         examples=_examples(refused),
         sequence_ok=sequence_ok,
@@ -571,6 +591,12 @@ class CaseScore(BaseModel):
     rejected: int = Field(default=0, ge=0)
     interventions: int = Field(default=0, ge=0)
     highest_intervention: int = Field(default=0, ge=0)
+    pathologies: dict[str, int] = Field(
+        default_factory=dict,
+        description="How many interventions each pathology caused. Without it a "
+        "clean `evidence_ratio` is consistent with the evidence check firing and "
+        "with its never having fired at all.",
+    )
     diff_lines: int = Field(default=0, ge=0)
     notes: tuple[str, ...] = ()
 
@@ -710,6 +736,14 @@ class L2Score(BaseModel):
             return float(sizes[middle])
         return (sizes[middle - 1] + sizes[middle]) / 2
 
+    def pathologies(self) -> dict[str, int]:
+        """Every pathology a detector fired on, with how often, across the suite."""
+        tally: dict[str, int] = {}
+        for case in self.cases:
+            for pathology, count in case.pathologies.items():
+                tally[pathology] = tally.get(pathology, 0) + count
+        return dict(sorted(tally.items(), key=lambda item: (-item[1], item[0])))
+
     def outcomes(self) -> tuple[tuple[str, bool], ...]:
         """Each case's id and whether it passed, for the across-passes report."""
         return tuple((case.case_id, case.passed) for case in self.cases)
@@ -799,6 +833,7 @@ def score_case(
         rejected=len(refused),
         interventions=len(interventions),
         highest_intervention=max((int(body.level) for body in interventions), default=0),
+        pathologies=_counted(body.pathology for body in interventions),
         diff_lines=diff_lines,
         notes=tuple(notes),
     )

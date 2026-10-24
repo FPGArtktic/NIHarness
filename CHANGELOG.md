@@ -24,6 +24,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   document left stale. When it did catch one it named the thing every time, so
   the gap is detection rather than articulation, which says the prompt is not
   where to look.
+- **Both benchmark records say which detector fired.** `loop_incidents` says
+  how much the ladder interfered and the highest level says how far it
+  climbed; neither says what for, so a change to one detector could not be
+  measured at all - the three L2 passes above are consistent with the evidence
+  check firing and with its never having fired once. Each case and task now
+  carries a `pathologies` tally, summed over the suite and printed next to the
+  metrics. A tally with the new detector missing from it is the measurement
+  saying it measured nothing, which is the reading that was unavailable.
 - **The evidence check was measured, and the measurement was designed
   wrong.** Three passes at `73a5c99` against three at `50a13ef`: precision
   **1.0 - 1.0 to 0.75 - 1.0**, recall **0.25 - 0.5 to 0.25 - 0.75**,

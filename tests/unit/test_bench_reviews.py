@@ -292,6 +292,36 @@ def test_the_worst_the_ladder_climbed_is_reported() -> None:
     assert score.loop_incidents_per_case == 2.0
 
 
+def test_which_detector_fired_is_recorded_not_only_how_often() -> None:
+    """A count cannot say whether a change to the ladder did anything.
+
+    Three passes after the evidence check landed read `evidence_ratio` 1.0
+    with interventions in them, which is consistent with the check firing and
+    with its never having fired once. The tally is what tells those apart.
+    """
+    climbed = score_case(
+        nak_case(),
+        verdict(Decision.NAK),
+        (
+            LoopIntervention(
+                level=InterventionLevel.SYNTHETIC_RESULT, pathology="unbacked_claim"
+            ),
+            LoopIntervention(
+                level=InterventionLevel.SYNTHETIC_RESULT, pathology="exact_repeat"
+            ),
+            LoopIntervention(level=InterventionLevel.REFLECTION_TURN, pathology="exact_repeat"),
+            *ran_the_tests(),
+        ),
+    )
+    quiet = score_case(ack_case(id="quiet"), verdict(Decision.ACK), ran_the_tests())
+    assert climbed.pathologies == {"exact_repeat": 2, "unbacked_claim": 1}
+    assert quiet.pathologies == {}
+    assert score_reviews((climbed, quiet)).pathologies() == {
+        "exact_repeat": 2,
+        "unbacked_claim": 1,
+    }
+
+
 def test_the_median_diff_size_describes_the_set() -> None:
     sizes = [10, 20, 30, 40]
     score = score_reviews(

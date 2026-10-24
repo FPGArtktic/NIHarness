@@ -232,6 +232,25 @@ def test_a_run_with_no_step_finished_is_not_a_termination() -> None:
 # -------------------------------------------------------------------- the suite
 
 
+def test_the_suite_says_which_detectors_fired() -> None:
+    """`loop_incidents_per_task` says how much; this says what for."""
+    noisy = score_task(
+        EDIT,
+        (
+            called("replace_in_file", path="x"),
+            LoopIntervention(
+                level=InterventionLevel.SYNTHETIC_RESULT, pathology="exact_repeat"
+            ),
+            LoopIntervention(level=InterventionLevel.REFLECTION_TURN, pathology="gate_thrash"),
+            finished(StopReason.DETECTOR_ESCALATION, calls=1),
+        ),
+    )
+    quiet = score_task(READ, answered(called("read_file", path="README.md")))
+    assert noisy.pathologies == {"exact_repeat": 1, "gate_thrash": 1}
+    assert quiet.pathologies == {}
+    assert score_suite([noisy, quiet]).pathologies() == {"exact_repeat": 1, "gate_thrash": 1}
+
+
 def test_the_suite_metrics_are_the_ones_the_suite_declares() -> None:
     good = score_task(READ, answered(called("read_file", path="README.md")))
     bad = score_task(

@@ -176,6 +176,7 @@ appended, in `niharness.domain.bench`:
 | `tool.called` against `tool.rejected` | `valid_calls_ratio` |
 | `tool.rejected` violations | a refusal task's expectation |
 | `loop.intervention` | `loop_incidents_per_task` |
+| `loop.intervention.pathology` | the `pathologies` tally |
 | `step.finished.stop_reason` | `terminated_ratio` |
 
 That makes the grader a pure function, unit-tested on recorded sequences with
@@ -361,13 +362,15 @@ check carries - pressure to back a claim can become a refusal to decide - and
 the reason is wrong on its own terms, because a language server does not run
 tests. One occurrence is a thing to watch in the next passes.
 
-The record also cannot answer the question that decides the matter: **did the
-check ever fire?** A case records how many interventions it saw and the
-highest level any of them reached, not which pathology produced them, so
-twenty-four reviews with `evidence_ratio` 1.0 are consistent with the check
-firing and with the check being dead code. Until the record names the
-pathology, nothing in the intervention ladder can be measured - it is on [the
-roadmap](../roadmap.md).
+The record could not answer the question that decides the matter either:
+**did the check ever fire?** A case kept how many interventions it saw and
+the highest level any of them reached, not which pathology produced them, so
+twenty-four reviews with `evidence_ratio` 1.0 were consistent with the check
+firing and with the check being dead code. Both suites now tally the
+pathology per case and per task, which is what the passes after this one are
+for: `unbacked_claim` in that tally is the check working, and its absence
+from a suite where `evidence_ratio` is already 1.0 means the check has never
+had an opportunity.
 
 ### What L2 does not measure yet
 
@@ -399,3 +402,11 @@ A model that finishes with a correct patch after sixty redundant calls is not
 equivalent to one that finishes in eight. The intervention ladder makes that
 visible as an event, so it becomes a number in L1 and L2 and therefore a
 model-selection criterion.
+
+The count alone is not enough, and finding that out cost a measurement. Each
+record also carries a `pathologies` tally - which detector fired, how often,
+per case and per task, and summed over the suite - because a change to the
+ladder is a change to one detector, and a count that lumps all of them
+together cannot say whether the one that changed ever ran. A tally with the
+new detector missing from it is the result that says "this measured nothing",
+and that is the result worth being able to read.
