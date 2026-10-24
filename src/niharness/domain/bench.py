@@ -502,6 +502,18 @@ def _ratio(part: int, whole: int, *, scale: float = 1.0) -> float:
     return round(part / whole * scale, 4) if whole else 0.0
 
 
+def _first_words(pairs: Sequence[tuple[str, str]]) -> dict[str, str]:
+    """Return the first summary seen for each key, truncated."""
+    found: dict[str, str] = {}
+    for key, detail in pairs:
+        trimmed = " ".join(detail.split())
+        found.setdefault(
+            key,
+            trimmed if len(trimmed) <= MAX_DETAIL else f"{trimmed[:MAX_DETAIL]}...",
+        )
+    return found
+
+
 def _examples(refused: Sequence[ToolRejected]) -> dict[str, str]:
     """Return the first refusal's detail for each rule, truncated."""
     found: dict[str, str] = {}
@@ -1602,6 +1614,17 @@ class BuildScore(BaseModel):
     calls: int = Field(default=0, ge=0)
     tokens: int = Field(default=0, ge=0)
     tools: dict[str, int] = Field(default_factory=dict)
+    failures: dict[str, int] = Field(
+        default_factory=dict,
+        description="How many of each tool's calls came back failed. A refusal never "
+        "executes and is counted by `violations`; this counts the calls that ran and "
+        "did not work, which is what a repeated accepted call is repeating.",
+    )
+    failure_examples: dict[str, str] = Field(
+        default_factory=dict,
+        description="One failed result's summary per tool. The tally says which tool "
+        "is not working; this says what it said about why.",
+    )
     rejected: int = Field(default=0, ge=0)
     violations: dict[str, int] = Field(
         default_factory=dict,
@@ -1714,6 +1737,18 @@ class L3Score(BaseModel):
         """Every rule that refused a call, with how often, across the suite."""
         return _tallied(build.violations for build in self.builds)
 
+    def failures(self) -> dict[str, int]:
+        """Every tool whose calls came back failed, with how often."""
+        return _tallied(build.failures for build in self.builds)
+
+    def failure_examples(self) -> dict[str, str]:
+        """One failed result's summary per tool, so the tally explains itself."""
+        found: dict[str, str] = {}
+        for build in self.builds:
+            for tool, detail in build.failure_examples.items():
+                found.setdefault(tool, detail)
+        return dict(sorted(found.items()))
+
     def examples(self) -> dict[str, str]:
         """One refusal's words per rule, so the tally explains itself."""
         found: dict[str, str] = {}
@@ -1791,6 +1826,12 @@ def score_build(
     attempts = [
         body for body in events if isinstance(body, ToolReturned) and body.call_id in commits
     ]
+    named = {body.call_id: body.name for body in called}
+    broke = [
+        (named[body.call_id], body.summary)
+        for body in events
+        if isinstance(body, ToolReturned) and not body.ok and body.call_id in named
+    ]
     finished = next(
         (body for body in events if isinstance(body, TaskFinished) and body.task_id == task.id),
         None,
@@ -1819,6 +1860,8 @@ def score_build(
         calls=len(called),
         tokens=sum(body.completion_tokens for body in responses),
         tools=_counted(body.name for body in called),
+        failures=_counted(tool for tool, _ in broke),
+        failure_examples=_first_words(broke),
         rejected=len(refused),
         violations=_counted(body.violation for body in refused),
         examples=_examples(refused),

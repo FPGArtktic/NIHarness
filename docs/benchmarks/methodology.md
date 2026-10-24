@@ -178,6 +178,8 @@ appended, in `niharness.domain.bench`:
 | `loop.intervention` | `loop_incidents_per_task` |
 | `loop.intervention.pathology` | the `pathologies` tally |
 | `tool.called` names, tallied | the `tools` tally |
+| `tool.returned.ok`, by the call's name | the `failures` tally |
+| `tool.rejected` violations, tallied | the `violations` tally |
 | `step.finished.stop_reason` | `terminated_ratio` |
 
 That makes the grader a pure function, unit-tested on recorded sequences with
@@ -709,9 +711,11 @@ detector other than `exact_repeat` has fired at all.
 
 The dominant failure is unchanged: `exact_repeat` ten to thirteen times a
 pass. It is not refusals any more, because the tally counts only one or two of
-those - so the repeats are calls that are accepted and come back failed, which
-the record counts per tool but not per outcome. That is the next thing it has
-to keep.
+those - so the repeats are calls that are accepted and come back **failed**.
+A refused call never runs and is counted by `violations`; a failed one ran and
+did not work, and the record counted calls per tool without their outcome. It
+keeps `failures` per tool now, and one failed result's own summary per tool,
+which is the half that says what to change.
 
 ### Three tasks is not ten per language
 

@@ -13,6 +13,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **L3 records which tools came back failed, and what they said.** A refused
+  call never runs and is counted by `violations`; a failed one ran and did not
+  work, and the record counted calls per tool without their outcome. That left
+  the dominant failure unexplained: `exact_repeat` ten to thirteen times a pass
+  while the refusal tally counted one or two, so the repeats are accepted calls
+  coming back failed and nothing said which tool. `failures` per tool now, with
+  one failed result's own summary each.
+
+### Added
+
 - **Measured: `commit_message` refusals 2/6/6 to 1/1/2 per pass, and the gate
   is reached.** Three L3 passes after the subject repair, against the three
   that found it: `git_commit` calls went from 0, 0, 0 to 0, 2, 1. What remains

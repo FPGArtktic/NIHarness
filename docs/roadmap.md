@@ -260,10 +260,14 @@ never attempted a diff.
 
 ## One rung of the ladder is all that has ever run
 
-`exact_repeat` has fired 29 times across three L1 passes and 6 times across
-six L2 passes. `state_cycle`, `progress_stall`, `gate_thrash`,
-`invalid_calls`, `degenerate_output` and `unbacked_claim` have fired **zero**
-times in every recorded run that tallies them.
+`exact_repeat` has fired 29 times across three L1 passes, 6 across six L2
+passes, and ten to fourteen *per pass* in L3. Two others have now appeared:
+`uncommitted_completion` fires in every L3 pass since the implementer's commit
+check landed, and `state_cycle` fired **once**, which is the first time any
+detector written before this session has fired anywhere other than
+`exact_repeat`. `progress_stall`, `gate_thrash`, `invalid_calls`,
+`degenerate_output` and `unbacked_claim` remain at **zero** in every recorded
+run that tallies them.
 
 - [ ] Find out which reading is true: thresholds in `[loop]` set past what
       these tasks provoke, or tasks that do not provoke them. A case built to

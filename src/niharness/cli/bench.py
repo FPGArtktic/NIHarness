@@ -1675,6 +1675,8 @@ def record_builds(
         "pathologies": score.pathologies(),
         "violations": score.violations(),
         "violation_examples": score.examples(),
+        "failures": score.failures(),
+        "failure_examples": score.failure_examples(),
         "unfinished": score.unfinished(),
         "inference_seconds": score.inference_seconds,
         "tool_seconds": score.tool_seconds,
@@ -1696,6 +1698,7 @@ def record_builds(
                 "calls": build.calls,
                 "tokens": build.tokens,
                 "tools": build.tools,
+                "failures": build.failures,
                 "rejected": build.rejected,
                 "violations": build.violations,
                 "interventions": build.interventions,
@@ -1738,6 +1741,12 @@ def human_builds(entry: dict[str, object], score: L3Score) -> str:
         lines.append(f"  {'refused by':<26} {detail}")
         for rule, example in score.examples().items():
             lines.append(f"    {rule}: {example}")
+    broke = score.failures()
+    if broke:
+        detail = ", ".join(f"{tool} x{count}" for tool, count in broke.items())
+        lines.append(f"  {'came back failed':<26} {detail}")
+        for tool, example in score.failure_examples().items():
+            lines.append(f"    {tool}: {example}")
     stuck = score.unfinished()
     if stuck:
         lines.append(f"  {'left unticked':<26}")

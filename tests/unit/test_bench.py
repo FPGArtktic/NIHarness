@@ -1013,3 +1013,52 @@ def test_a_build_records_why_a_call_was_refused() -> None:
     suite = score_builds((scored,))
     assert suite.violations() == {"find_not_found": 2}
     assert "find_not_found" in suite.examples()
+
+
+def test_a_build_records_which_tools_came_back_failed() -> None:
+    """A refused call never runs; a failed one ran and did not work.
+
+    `exact_repeat` fires ten to thirteen times a pass in L3 while the refusal
+    tally counts one or two, so the repeats are calls that were accepted and
+    came back failed - and the record counted calls per tool without their
+    outcome, so it could not say which tool.
+    """
+    scored = score_build(
+        build_task(),
+        (
+            ToolCalled(
+                call_id=CallId("e1"),
+                name="replace_in_file",
+                arguments={"path": "src/ledger.py"},
+                arguments_digest=digest_json({"n": 1}),
+            ),
+            ToolReturned(
+                call_id=CallId("e1"),
+                ok=False,
+                result_digest=digest_json({"n": 1}),
+                truncated=False,
+                summary="the passage does not occur in src/ledger.py; closest line is 31",
+            ),
+            ToolCalled(
+                call_id=CallId("e2"),
+                name="read_file",
+                arguments={"path": "src/ledger.py"},
+                arguments_digest=digest_json({"n": 2}),
+            ),
+            ToolReturned(
+                call_id=CallId("e2"),
+                ok=True,
+                result_digest=digest_json({"n": 2}),
+                truncated=False,
+                summary="read_file src/ledger.py: 40 lines",
+            ),
+            task_finished("a-task", outcome="handoff", reason="implement failed"),
+        ),
+        hidden_tests_passed=False,
+    )
+    assert scored.failures == {"replace_in_file": 1}, "only the call that did not work"
+    assert "closest line is 31" in scored.failure_examples["replace_in_file"]
+    assert scored.tools == {"replace_in_file": 1, "read_file": 1}, "calls are counted apart"
+    suite = score_builds((scored,))
+    assert suite.failures() == {"replace_in_file": 1}
+    assert "replace_in_file" in suite.failure_examples()
