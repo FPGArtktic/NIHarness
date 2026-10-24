@@ -13,6 +13,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **L3 records which Definition of Done items a model will not tick, and
+  which detector fired.** Three passes came back saying `implement failed`
+  with nothing else, and the record could not say whether the work was bad or
+  whether the model had refused to tick an item that did not apply to the
+  task - `answer.complete` demands every one of ten, and one unticked hands
+  the task back. `unfinished` keeps the item text verbatim, read from the run
+  result rather than the log, because the log keeps a digest of what a model
+  wrote and not its words.
+- The pathology tally was **left out of this layer's first record format**,
+  having been added to L1 and L2 the same day. That is how three passes came
+  back unable to say whether the check they were taken to measure had fired at
+  all. Third time the same gap has cost a measurement in two days, and the
+  first time it was mine to avoid.
+
+### Added
+
 - **The implementer is held to the standard the reviewer is held to.** An
   answer reporting the task done claims a commit - the Definition of Done says
   the change is one logical change in one commit, and the gate is `git_commit`

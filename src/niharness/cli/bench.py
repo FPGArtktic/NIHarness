@@ -41,7 +41,7 @@ from typer.core import TyperGroup
 from niharness.adapters.git import GitVcs
 from niharness.adapters.jsonl_events import JsonlEventSink
 from niharness.adapters.mcp import connect_tools
-from niharness.application.implement import ARTIFACT_SCHEMAS, ImplementationRun
+from niharness.application.implement import ARTIFACT_SCHEMAS, ImplementationRun, RunResult
 from niharness.application.step_runner import StepRunner
 from niharness.application.summarizer import ModelSummarizer
 from niharness.application.window import Window
@@ -1586,7 +1586,7 @@ async def run_build(
             generation_tps=model.measured_generation_tps,
             max_revisions=config.max_revisions,
         )
-        await run.run(
+        outcome = await run.run(
             plan_of(task),
             run_id,
             branch=worktree.branch,
@@ -1615,6 +1615,7 @@ async def run_build(
         payloads,
         hidden_tests_passed=passed,
         uncommitted_would_pass=loose,
+        unfinished=undone(outcome),
     )
     if passed:
         return scored
@@ -1622,6 +1623,22 @@ async def run_build(
     return scored.model_copy(
         update={"notes": (*scored.notes, f"{staged} hidden file(s) on {landed[:7]}: {detail}")}
     )
+
+
+def undone(outcome: RunResult) -> tuple[str, ...]:
+    """Return the Definition of Done items the last answer left unticked.
+
+    `answer.complete` demands every item, and a step without one is handed
+    back - so which items a model will not tick decides how often a task can
+    finish at all. Read from the result rather than from the log, because the
+    log keeps a digest of what the model wrote and not its text.
+    """
+    answers = [
+        step.answer for task in outcome.tasks for step in task.steps if step.answer is not None
+    ]
+    if not answers:
+        return ()
+    return tuple(item.statement for item in answers[-1].dod if not item.done)
 
 
 def record_builds(
@@ -1652,6 +1669,8 @@ def record_builds(
         "of_passes": of,
         **declared,
         "tools": score.tools(),
+        "pathologies": score.pathologies(),
+        "unfinished": score.unfinished(),
         "inference_seconds": score.inference_seconds,
         "tool_seconds": score.tool_seconds,
         "overhead_seconds": round(
@@ -1672,6 +1691,9 @@ def record_builds(
                 "calls": build.calls,
                 "tokens": build.tokens,
                 "tools": build.tools,
+                "interventions": build.interventions,
+                "pathologies": build.pathologies,
+                "unfinished": list(build.unfinished),
                 "inference_seconds": build.inference_seconds,
                 "tool_seconds": build.tool_seconds,
                 "notes": list(build.notes),
@@ -1699,6 +1721,14 @@ def human_builds(entry: dict[str, object], score: L3Score) -> str:
     if used:
         detail = ", ".join(f"{name} x{count}" for name, count in used.items())
         lines.append(f"  {'called':<26} {detail}")
+    fired = score.pathologies()
+    if fired:
+        detail = ", ".join(f"{name} x{count}" for name, count in fired.items())
+        lines.append(f"  {'intervened on':<26} {detail}")
+    stuck = score.unfinished()
+    if stuck:
+        lines.append(f"  {'left unticked':<26}")
+        lines += [f"    x{count}  {item}" for item, count in stuck.items()]
     lines += [
         "",
         f"  inference {score.inference_seconds}s, tools {score.tool_seconds}s, "

@@ -1602,6 +1602,20 @@ class BuildScore(BaseModel):
     calls: int = Field(default=0, ge=0)
     tokens: int = Field(default=0, ge=0)
     tools: dict[str, int] = Field(default_factory=dict)
+    interventions: int = Field(default=0, ge=0)
+    pathologies: dict[str, int] = Field(
+        default_factory=dict,
+        description="How many interventions each pathology caused. Left out of this "
+        "layer's first record format, which is how three passes came back unable to "
+        "say whether the check they were taken to measure had fired.",
+    )
+    unfinished: tuple[str, ...] = Field(
+        default=(),
+        description="The Definition of Done items the answer left undone, verbatim. "
+        "`answer.complete` demands every item, and a step is handed back without one - "
+        "so which items a model will not tick is the difference between work that "
+        "failed and work the checklist would not accept.",
+    )
     inference_seconds: float = Field(default=0.0, ge=0)
     tool_seconds: float = Field(default=0.0, ge=0)
     notes: tuple[str, ...] = ()
@@ -1680,6 +1694,18 @@ class L3Score(BaseModel):
         """Every tool the suite called, with how often, across every task."""
         return _tallied(build.tools for build in self.builds)
 
+    def pathologies(self) -> dict[str, int]:
+        """Every pathology a detector fired on, with how often, across the suite."""
+        return _tallied(build.pathologies for build in self.builds)
+
+    def unfinished(self) -> dict[str, int]:
+        """Every Definition of Done item left undone, with how often.
+
+        A step is handed back when one item is unticked, so the items a model
+        will not tick decide how often a task can finish at all.
+        """
+        return _tallied(dict.fromkeys(build.unfinished, 1) for build in self.builds)
+
     def outcomes(self) -> tuple[tuple[str, bool], ...]:
         """Each task's id and whether it passed, for the across-passes report."""
         return tuple((build.task_id, build.passed) for build in self.builds)
@@ -1703,6 +1729,7 @@ def score_build(
     *,
     hidden_tests_passed: bool,
     uncommitted_would_pass: bool = False,
+    unfinished: Sequence[str] = (),
 ) -> BuildScore:
     """Score one whole task by folding the run's events plus the hidden verdict.
 
@@ -1722,12 +1749,16 @@ def score_build(
             tests pass on the working tree regardless. Work done and never
             offered to the gate is a different failure from work that was
             wrong.
+        unfinished: the Definition of Done items the last answer left undone.
+            Passed in because an artifact is a step's end state and the log
+            keeps a digest of what the model wrote, not the text.
 
     Returns:
         The score, with a note for anything that did not go as asked.
     """
     called = [body for body in events if isinstance(body, ToolCalled)]
     responses = [body for body in events if isinstance(body, ModelResponse)]
+    interventions = [body for body in events if isinstance(body, LoopIntervention)]
     # `git_commit` is the gate (§4), and the gate's own events are appended by
     # the tool server's own sink, not this run's. Folding `gate.finished` here
     # counted zero on every task of every pass.
@@ -1763,6 +1794,9 @@ def score_build(
         calls=len(called),
         tokens=sum(body.completion_tokens for body in responses),
         tools=_counted(body.name for body in called),
+        interventions=len(interventions),
+        pathologies=_counted(body.pathology for body in interventions),
+        unfinished=tuple(unfinished),
         inference_seconds=_seconds(events, ModelResponse),
         tool_seconds=_seconds(events, ToolReturned),
         notes=tuple(notes),
