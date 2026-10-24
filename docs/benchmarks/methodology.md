@@ -408,6 +408,38 @@ measurable means a case that gives the reviewer a reason to claim rather than
 run, which is a case about the model's incentives and not about a defect.
 These eight are about defects.
 
+### What the strict key measured
+
+Three passes at `203c823`, the first with an answer key no quoted diff can
+satisfy. Only `reasoned_ratio` and a NAK case's `passed` depend on the key, so
+the other rows are the model's own variance and not an effect:
+
+| Metric | lenient key | strict key |
+|---|---|---|
+| `reasoned_ratio` | **1.0 - 1.0** | **0.5 - 0.5** |
+| `passed_ratio` | 0.5 - 0.75 | 0.625 - 0.625 |
+| `reviewer_precision` | 0.5 - 1.0 | 1.0 - 1.0 |
+| `reviewer_recall` | 0.25 - 0.5 | 0.5 - 0.5 |
+
+The metric distinguishes something now, and one case says exactly what it was
+hiding. `documentation-left-behind` was refused in all three passes - the
+right decision - and the notes never mention a document, `docs/limits.md`, or
+anything being out of date. Under the old key it scored as reasoned anyway,
+because `0.5` was in the token list and `0.5` is on the line the diff
+removes. A NAK that is right by accident was being counted as a NAK that was
+right.
+
+It is not measuring vocabulary, which was the risk. The other case that stops
+passing, `swallows-a-bad-reading`, fails on **where** and not on wording: it
+refused the change and anchored its note to `tests/test_sampler.py` rather
+than to the source the defect is in. The key did not cause that and does not
+score it.
+
+Worth noting without reading anything into it: the three strict-key passes
+agree exactly on precision, recall, decision and `passed_ratio`. Nine earlier
+passes spread across every one of those. Three identical passes are not
+evidence of a stable reviewer.
+
 ### A refusal can be confabulated, and that is checkable too
 
 The false positive from the passes before repeated here, on the same case and

@@ -26,6 +26,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   where to look.
 ### Changed
 
+- **Measured: `reasoned_ratio` 1.0 - 1.0 to 0.5 - 0.5.** Three passes with
+  the strict key, and the metric distinguishes something for the first time.
+  One case says what the old key was hiding: `documentation-left-behind` was
+  refused in all three passes, correctly, and the notes never mention a
+  document or `docs/limits.md` at all - it scored as reasoned under the old
+  key because `0.5` was a token and `0.5` is on the line the diff removes. A
+  NAK that was right by accident counted as a NAK that was right. And the key
+  is not measuring vocabulary: the other case that stops passing fails on
+  *where*, anchoring its note to the test file rather than the source.
 - **L2's answer key no longer scores a quoted diff.** `reasoned_ratio` read
   1.0 across six passes while distinguishing nothing, because `LOWER_BOUND`,
   `except` and `ValueError` are all on lines their cases change. One rule now
