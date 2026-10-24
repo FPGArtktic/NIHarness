@@ -187,6 +187,12 @@ class LoopState(BaseModel):
     synthetic_text: str = ""
     rollback_reason: str = ""
     invalid_responses: int = Field(default=0, ge=0)
+    reflecting: bool = Field(
+        default=False,
+        description="Whether the next turn is the reflection turn. It withholds tools "
+        "and asks for prose, so it must neither carry the artifact's grammar nor have "
+        "its answer read as the step's final one.",
+    )
     commit_asked: bool = Field(
         default=False,
         description="Whether a completed step has already been told it has not "
@@ -255,6 +261,13 @@ class CallModel(BaseModel):
     instruction: str = Field(
         default="",
         description="Appended to the window: a rejection, a reflection, a finalisation.",
+    )
+    expects_artifact: bool = Field(
+        default=False,
+        description="Whether this turn's grammar should demand the step's artifact. "
+        "Withholding tools is not the same question: a reflection turn withholds them "
+        "and asks for prose, and attaching the schema to it asks the model for two "
+        "incompatible things at once.",
     )
 
 
@@ -355,10 +368,15 @@ def next_action(state: LoopState) -> Action:
         return CallModel(
             tool_choice=ToolChoice.NONE,
             instruction=state.pending_instruction or FINALIZE_INSTRUCTION,
+            expects_artifact=True,
         )
     return CallModel(
         tool_choice=state.pending_tool_choice,
         instruction=state.pending_instruction,
+        # A turn with no tools is a turn that must answer *something*, and the
+        # artifact is what a step answers with - except the reflection turn,
+        # which asks for prose and gets a grammar it cannot satisfy otherwise.
+        expects_artifact=state.pending_tool_choice is ToolChoice.NONE and not state.reflecting,
     )
 
 
@@ -420,6 +438,7 @@ def _intervene(state: LoopState) -> tuple[LoopState, tuple[EventBody, ...]]:
             update={
                 "pending_instruction": REFLECTION_INSTRUCTION,
                 "pending_tool_choice": ToolChoice.NONE,
+                "reflecting": True,
             },
         )
     elif level is InterventionLevel.ROLLBACK_RESTART:
@@ -472,6 +491,9 @@ def observe_model(state: LoopState, response: ChatResponse, *, seconds: float = 
     working = working.model_copy(
         update={"pending_instruction": "", "pending_tool_choice": ToolChoice.AUTO},
     )
+    reflected = state.reflecting
+    if reflected:
+        working = working.model_copy(update={"reflecting": False})
 
     degenerate = degenerate_response(response, state.config.thresholds)
     if degenerate is not None:
@@ -488,8 +510,19 @@ def observe_model(state: LoopState, response: ChatResponse, *, seconds: float = 
         return Step(state=refused, events=tuple(emitted))
 
     if response.tool_calls:
+        # A call proposed on the reflection turn is still a call the detectors
+        # should see. The instruction said none would be accepted, and a model
+        # that answers it by re-sending the same one has earned the next rung.
         working, call_events = _handle_tool_call(working, response)
         emitted.extend(call_events)
+    elif reflected:
+        # The reflection turn asked for prose, so its answer is not the step's
+        # answer. Reading it as one ended the step on a checklist the model was
+        # never filling: measured on L3, where every task a detector touched
+        # came back handed over with the reflection's own words as its unticked
+        # Definition of Done. The rung meant to get a model unstuck was
+        # terminating its task instead.
+        pass
     else:
         working, answer_events = _handle_final_answer(working, response)
         emitted.extend(answer_events)

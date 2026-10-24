@@ -1619,9 +1619,12 @@ async def run_build(
     )
     if passed:
         return scored
+    # Which tree the output came from, said rather than implied: printing the
+    # working tree's result under a commit's sha read as "the commit passed".
+    where = f"on {landed[:7]}" if scored.committed else "on the uncommitted tree"
     detail = tail if scored.committed else loose_tail
     return scored.model_copy(
-        update={"notes": (*scored.notes, f"{staged} hidden file(s) on {landed[:7]}: {detail}")}
+        update={"notes": (*scored.notes, f"{staged} hidden file(s) {where}: {detail}")}
     )
 
 

@@ -703,3 +703,53 @@ def test_a_step_that_owes_no_commit_is_never_asked_for_one() -> None:
     answered = observe_model(state(), answers_complete())
     assert answered.state.stop_reason is StopReason.FINAL_ANSWER
     assert answered.state.commit_asked is False
+
+
+def reflecting() -> LoopState:
+    """A state whose next turn is the reflection turn."""
+    current = repeat_cycle(state(), {"path": "src/a.py"})
+    first = observe_model(current, proposes("read_file", {"path": "src/a.py"}))
+    second = observe_model(
+        injected(first.state).state, proposes("read_file", {"path": "src/a.py"})
+    )
+    assert second.state.reflecting is True
+    return second.state
+
+
+def test_the_reflection_turn_asks_for_prose_and_is_not_given_a_grammar() -> None:
+    """Withholding tools is not the same question as demanding the artifact.
+
+    The schema was attached whenever tools were off, and the reflection turn
+    turns them off - so the model was told to answer in plain prose by a
+    request whose grammar forced a `FinalAnswer`. It complied with the grammar.
+    """
+    action = next_action(reflecting())
+    assert isinstance(action, CallModel)
+    assert action.tool_choice is ToolChoice.NONE, "no tool call is accepted"
+    assert action.expects_artifact is False, "and no artifact is demanded either"
+
+    forced = start(config(budgets=Budgets(max_tool_calls=1, max_tokens=99, max_wall_seconds=9)))
+    finalising = next_action(forced.state)
+    assert isinstance(finalising, CallModel)
+    assert finalising.expects_artifact is True, "forced finalisation does want it"
+
+
+def test_the_reflections_own_words_do_not_end_the_step() -> None:
+    """Measured on L3: every task a detector touched was handed back.
+
+    The reflection's prose arrived as a `FinalAnswer` whose `dod` items were
+    the model's list of attempts, every one `done=False`, so the step ended
+    with an incomplete checklist and the task went to a human. The rung meant
+    to get a model unstuck was terminating its task.
+    """
+    answered = observe_model(reflecting(), answers(done=False, content="I tried a patch."))
+    assert answered.state.stop_reason is None, "the step goes on"
+    assert answered.state.final is None, "and that was not its answer"
+    assert answered.state.reflecting is False, "the turn happened"
+    assert next_action(answered.state).tool_choice is ToolChoice.AUTO, "tools come back"
+
+
+def test_a_call_proposed_on_the_reflection_turn_still_climbs_the_ladder() -> None:
+    """The instruction says none is accepted; repeating one has earned the next rung."""
+    third = observe_model(reflecting(), proposes("read_file", {"path": "src/a.py"}))
+    assert isinstance(next_action(third.state), Rollback)

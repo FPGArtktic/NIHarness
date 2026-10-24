@@ -11,6 +11,32 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The reflection turn was ending steps instead of unsticking them.** The
+  step's artifact schema was attached to any turn that withheld tools, and the
+  level-two intervention withholds them - so a rung that says "answer in plain
+  prose, no tool call is accepted" arrived with a grammar forcing a
+  `FinalAnswer`. The model complied with the grammar: its list of attempts
+  became the Definition of Done with every item unticked, `answer.complete`
+  was false, and the task went to a human. The rung meant to get a model
+  unstuck was terminating its work.
+- Withholding tools and demanding the artifact are now separate questions.
+  `CallModel.expects_artifact` says which turn wants the schema and only the
+  loop sets it, because only the loop knows why the tools are off. A
+  reflection turn's prose is no longer read as the step's answer; a tool call
+  proposed on it still reaches the detectors, since a model that answers
+  "what else could you try" by re-sending the same call has earned the next
+  rung.
+- Every measurement taken so far in which a detector reached level two is
+  affected. L1 and L2 both record `highest_intervention_level` 2.0, and L3's
+  passes show it plainly: `exact_repeat` fired six times in one pass and every
+  task it touched was handed back with the reflection's own words as its
+  unticked checklist - including two whose work the hidden tests accept.
+- A hidden-test tail from the working tree was printed under the commit's sha,
+  which read as "the commit passed" when nothing had been committed. It now
+  says which tree it came from.
+
 ### Added
 
 - **L3 records which Definition of Done items a model will not tick, and

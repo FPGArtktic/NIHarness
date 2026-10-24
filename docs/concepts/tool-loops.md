@@ -271,7 +271,16 @@ Each firing climbs exactly one rung, and the rung is an event
     and the repeat handed over a digest. It now hands back the advice.
 2. **Reflection turn**: the model must say what it tried, why each attempt
    failed, and one approach that differs - no tool call is accepted in that
-   turn.
+   turn, and **no artifact is demanded of it either**. The two are different
+   questions and were one: the step's schema used to be attached to any turn
+   that withheld tools, so this rung told a model to answer in plain prose
+   with a request whose grammar forced a `FinalAnswer`. It complied with the
+   grammar, put its list of attempts in the checklist with every item
+   unticked, and the step ended on an incomplete Definition of Done. The rung
+   meant to get a model unstuck was handing its task to a human. A call
+   proposed on this turn is still a call the detectors see, because a model
+   that answers "what else could you try" by re-sending the same call has
+   earned the next rung.
 3. **Rollback and restart** the step from the last green commit, with a
    `ContextSummary` of the failed attempts so they are not repeated.
 4. **Step failure**: the task goes back to the human with the diagnostics in

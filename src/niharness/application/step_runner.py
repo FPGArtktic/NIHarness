@@ -214,7 +214,11 @@ class StepRunner:
             # refuses the request with "failed to parse grammar" - but the
             # contradiction was ours, and it is the reason this is a condition
             # rather than a workaround.
-            response_format=None if offers_tools else config.response_format,
+            # Not `offers_tools`: a reflection turn withholds tools and asks
+            # for prose, and attaching the artifact's grammar to it demanded
+            # two incompatible things at once. The loop says which turn wants
+            # the artifact, because only the loop knows why the tools are off.
+            response_format=config.response_format if action.expects_artifact else None,
         )
         await self._events.append(
             ev.ModelRequest(
