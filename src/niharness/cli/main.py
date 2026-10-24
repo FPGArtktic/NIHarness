@@ -271,6 +271,13 @@ def run(
             help="Implement a plan whose planner says it had to guess.",
         ),
     ] = False,
+    review_spec: Annotated[
+        bool,
+        typer.Option(
+            "--spec-review/--no-spec-review",
+            help="Run the spec gate's reviewer pass before planning.",
+        ),
+    ] = True,
     json_mode: JsonOption = False,
 ) -> None:
     """Plan and implement without stopping for approval."""
@@ -279,6 +286,7 @@ def run(
         spec,
         local_tools=local_tools,
         ignore_open_questions=ignore_open_questions,
+        review_spec=review_spec,
         json_mode=json_mode,
     )
 

@@ -432,16 +432,26 @@ Usage: nih run [OPTIONS] {SPEC.md}
 │ *    SPEC.md      <path>  Path to SPEC.md [required]                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --project-root           -C      <path>  The project to operate on.          │
-│                                          [default: (.)]                      │
-│ --profile                        <str>   Override the profile.               │
-│ --unsafe-local-tools                     Run the tool server on this host    │
-│                                          instead of in the sandbox.          │
-│ --ignore-open-questions                  Implement a plan whose planner says │
-│                                          it had to guess.                    │
-│ --json                                   Print one JSON object instead of    │
-│                                          the human form.                     │
-│ --help                                   Show this message and exit.         │
+│ --project-root         -C                      <path>  The project to        │
+│                                                        operate on.           │
+│                                                        [default: (.)]        │
+│ --profile                                      <str>   Override the profile. │
+│ --unsafe-local-tools                                   Run the tool server   │
+│                                                        on this host instead  │
+│                                                        of in the sandbox.    │
+│ --ignore-open-questi…                                  Implement a plan      │
+│                                                        whose planner says it │
+│                                                        had to guess.         │
+│ --spec-review              --no-spec-review            Run the spec gate's   │
+│                                                        reviewer pass before  │
+│                                                        planning.             │
+│                                                        [default:             │
+│                                                        spec-review]          │
+│ --json                                                 Print one JSON object │
+│                                                        instead of the human  │
+│                                                        form.                 │
+│ --help                                                 Show this message and │
+│                                                        exit.                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 

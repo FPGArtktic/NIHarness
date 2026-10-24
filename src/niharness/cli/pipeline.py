@@ -48,6 +48,7 @@ def run(
     *,
     local_tools: bool,
     ignore_open_questions: bool,
+    review_spec: bool = True,
     json_mode: bool,
 ) -> None:
     """Plan `spec_file`, approve the plan, and implement it.
@@ -59,7 +60,13 @@ def run(
     spec = plan_module.load_spec(spec_file, json_mode=json_mode)
     if not json_mode:
         typer.secho(f"planning {spec_file}", bold=True)
-    planned = _planned(config, spec, local_tools=local_tools, json_mode=json_mode)
+    planned = _planned(
+        config,
+        spec,
+        local_tools=local_tools,
+        review_spec=review_spec,
+        json_mode=json_mode,
+    )
 
     store = PlanStore(config)
     store.submit(render_plan(planned))
@@ -107,6 +114,7 @@ def _planned(
     spec: Spec,
     *,
     local_tools: bool,
+    review_spec: bool,
     json_mode: bool,
 ) -> Plan:
     """Run the planning half and return its plan.
@@ -116,7 +124,13 @@ def _planned(
     """
     result = _guarded(
         lambda: blocking(
-            plan_module.execute(config, spec, local_tools=local_tools, quiet=json_mode),
+            plan_module.execute(
+                config,
+                spec,
+                local_tools=local_tools,
+                review_spec=review_spec,
+                quiet=json_mode,
+            ),
         ),
         json_mode=json_mode,
     )
